@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 COG_META = {
     "category": "leveling",
-    "commands": ["rank", "leaderboard", "levelrole", "levelnotify"]
+    "commands": ["rank", "levelleaderboard", "levelrole", "levelnotify"]
 }
 
 
@@ -157,9 +157,9 @@ class Leveling(commands.Cog):
         
         await ctx.send(embed=embed)
 
-    @commands.command(aliases=["lb"])
-    @help_meta(section="Leveling", usage=".leaderboard", desc="Show server leaderboard")
-    async def leaderboard(self, ctx, top: int = 10):
+    @help_meta(section="Leveling", usage=".llb", desc="Show server XP leaderboard")
+    @commands.command(name="levelleaderboard", aliases=["llb", "xpleaderboard"])
+    async def levelleaderboard(self, ctx, top: int = 10):
         """Show the server's top users by XP."""
         top = min(top, 50)  # Max 50
         leaderboard = get_leaderboard(ctx.guild.id, limit=top)
