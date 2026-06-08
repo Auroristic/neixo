@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 COG_META = {
     "category": "profile",
-    "commands": ["setavatar", "removeavatar", "profile"]
+    "commands": ["setavatar", "removeavatar", "profile", "viewavatar"]
 }
 
 
@@ -146,6 +146,7 @@ class GuildAvatars(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(hidden=True)
+    @help_meta(section="Guild Avatars", usage=".viewavatar [@user]", desc="View a user's custom server avatar")
     async def viewavatar(self, ctx, member: discord.Member = None):
         """Quick view someone's custom avatar in this server."""
         member = member or ctx.author
