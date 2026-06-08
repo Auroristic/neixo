@@ -3,8 +3,10 @@ import logging
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
+from functools import lru_cache
+import time
 
 DATA_DIR = "data"
 DB_FILE  = f"{DATA_DIR}/bot.db"
@@ -41,6 +43,7 @@ def _get_conn() -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")   # concurrent reads while writing
         conn.execute("PRAGMA synchronous=NORMAL")  # fast enough, still safe
         conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache for better performance
         _local.conn = conn
     # Always ensure schema exists on a live connection.
     _ensure_db()
@@ -158,63 +161,82 @@ def init_files():
     """Kept for import compatibility. SQLite schema is set up at module load."""
     pass
 
-# ── Caches ───────────────────────────────────────────────────────
+# ── Caches with TTL (Time-To-Live) for auto-refresh ─────────────────────────────────────
+
+_CACHE_TTL_SECONDS = 300  # 5 minutes cache TTL
 
 _config_cache       = None
+_config_cache_time  = 0
 _ignore_cache       = None
+_ignore_cache_time  = 0
 _dm_whitelist_cache = None
+_dm_whitelist_cache_time = 0
 _aliases_cache      = None
+_aliases_cache_time = 0
+
+
+def _cache_valid(cache_time: float) -> bool:
+    """Check if cache is still valid based on TTL."""
+    return (time.time() - cache_time) < _CACHE_TTL_SECONDS
 
 
 def get_config():
-    global _config_cache
-    if _config_cache is None:
+    global _config_cache, _config_cache_time
+    if _config_cache is None or not _cache_valid(_config_cache_time):
         _config_cache = load_json(CONFIG_FILE)
+        _config_cache_time = time.time()
     return _config_cache
 
 
 def invalidate_config():
-    global _config_cache
+    global _config_cache, _config_cache_time
     _config_cache = None
+    _config_cache_time = 0
 
 
 def get_ignore_list():
-    global _ignore_cache
-    if _ignore_cache is None:
+    global _ignore_cache, _ignore_cache_time
+    if _ignore_cache is None or not _cache_valid(_ignore_cache_time):
         _ignore_cache = load_json(IGNORE_LIST_FILE)
+        _ignore_cache_time = time.time()
     return _ignore_cache
 
 
 def invalidate_ignore():
-    global _ignore_cache
+    global _ignore_cache, _ignore_cache_time
     _ignore_cache = None
+    _ignore_cache_time = 0
 
 
 def get_dm_whitelist():
-    global _dm_whitelist_cache
-    if _dm_whitelist_cache is None:
+    global _dm_whitelist_cache, _dm_whitelist_cache_time
+    if _dm_whitelist_cache is None or not _cache_valid(_dm_whitelist_cache_time):
         _dm_whitelist_cache = load_json(DM_WHITELIST_FILE)
+        _dm_whitelist_cache_time = time.time()
     return _dm_whitelist_cache
 
 
 def invalidate_dm_whitelist():
-    global _dm_whitelist_cache
+    global _dm_whitelist_cache, _dm_whitelist_cache_time
     _dm_whitelist_cache = None
+    _dm_whitelist_cache_time = 0
 
 
 def get_aliases():
-    global _aliases_cache
-    if _aliases_cache is None:
+    global _aliases_cache, _aliases_cache_time
+    if _aliases_cache is None or not _cache_valid(_aliases_cache_time):
         raw = load_json(ALIASES_FILE) or {}
         _aliases_cache = {
             str(k).lower(): str(v).lower() for k, v in raw.items()
         }
+        _aliases_cache_time = time.time()
     return _aliases_cache
 
 
 def invalidate_aliases():
-    global _aliases_cache
+    global _aliases_cache, _aliases_cache_time
     _aliases_cache = None
+    _aliases_cache_time = 0
 
 # ── Helpers ──────────────────────────────────────────────────────
 

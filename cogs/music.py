@@ -163,7 +163,9 @@ class Music(commands.Cog):
 
     async def _lrclib_lyrics(self, artist: str, title: str) -> Optional[Tuple[str, Optional[List[Tuple[int, str]]]]]:
         url = f"https://lrclib.net/api/get?artist_name={urllib.parse.quote(artist)}&track_name={urllib.parse.quote(title)}"
-        async with aiohttp.ClientSession() as session:
+        # Reuse existing session instead of creating new one each time
+        session = self._http_session or aiohttp.ClientSession()
+        try:
             async with session.get(url) as resp:
                 if resp.status != 200:
                     return None
@@ -178,10 +180,14 @@ class Music(commands.Cog):
                 if plain_raw:
                     return (plain_raw, None)
                 return None
+        except Exception:
+            return None
 
     async def _ovh_lyrics(self, artist: str, title: str) -> Optional[str]:
         url = f"https://api.lyrics.ovh/v1/{urllib.parse.quote(artist)}/{urllib.parse.quote(title)}"
-        async with aiohttp.ClientSession() as session:
+        # Reuse existing session instead of creating new one each time
+        session = self._http_session or aiohttp.ClientSession()
+        try:
             async with session.get(url) as resp:
                 if resp.status != 200:
                     return None
@@ -191,6 +197,8 @@ class Music(commands.Cog):
                     return None
                 raw = raw.replace("\\n", "\n").replace("\\r", "")
                 return raw
+        except Exception:
+            return None
 
     async def _schedule_lyrics_fetch(
         self,
@@ -389,11 +397,15 @@ class Music(commands.Cog):
             return []
         url = f"https://www.youtube.com/watch?v={vid_id}&list=RD{vid_id}"
         headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}
-        async with aiohttp.ClientSession() as session:
+        # Reuse existing session instead of creating new one each time
+        session = self._http_session or aiohttp.ClientSession()
+        try:
             async with session.get(url, headers=headers) as resp:
                 if resp.status != 200:
                     return []
                 text = await resp.text()
+        except Exception:
+            return []
         match = re.search(r"ytInitialData\s*=\s*(\{.*?\});", text, re.DOTALL)
         if not match:
             return []
