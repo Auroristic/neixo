@@ -1,0 +1,13 @@
+discord.py>=2.4.0
+wavelink>=3.4.0
+python-dotenv
+openai
+duckduckgo_search
+aiohttp
+Pillow
+curl_cffi
+beautifulsoup4
+aiosqlite
+spotify_scraper
+syncedlyrics
+

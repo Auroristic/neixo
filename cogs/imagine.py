@@ -1,0 +1,96 @@
+from __future__ import annotations
+import os
+import json
+import base64
+import io
+
+import discord
+from discord.ext import commands
+import aiohttp
+
+from utils import help_meta
+
+
+COG_META = {
+    "category": "fun",
+    "label": "Fun",
+    "desc": "Fun staff tools.",
+}
+
+
+class ImagineCog(commands.Cog, name="Imagine"):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.session: aiohttp.ClientSession | None = None
+
+    async def cog_load(self):
+        self.session = aiohttp.ClientSession()
+
+    async def cog_unload(self):
+        if self.session:
+            await self.session.close()
+
+    @help_meta(
+        usage="`.imagine <prompt>`",
+        desc="Generate an image using AI.",
+    )
+    @commands.command(name="imagine", aliases=["draw", "gen"])
+    async def imagine_cmd(self, ctx: commands.Context, *, prompt: str):
+        """Generate an image using AI."""
+        await ctx.typing()
+
+        key = None
+        for k_name in ("NVIDIA_API_KEY_1", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3"):
+            k = os.getenv(k_name)
+            if k:
+                key = k
+                break
+
+        if not key:
+            return await ctx.send("-# no API key configured")
+
+        url = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b"
+        payload = {
+            "prompt": prompt,
+            "samples": 1,
+            "seed": 0,
+            "steps": 4,
+        }
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with self.session.post(
+                url, json=payload, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=120)
+            ) as resp:
+                raw = await resp.read()
+                if resp.status != 200:
+                    return await ctx.send("-# image generation failed")
+
+                data = json.loads(raw)
+                artifacts = data.get("artifacts", [])
+                if artifacts:
+                    b64_img = artifacts[0].get("base64", "")
+                    if b64_img:
+                        img_bytes = base64.b64decode(b64_img)
+                        file = discord.File(io.BytesIO(img_bytes), filename="output.png")
+                        await ctx.send(file=file)
+                        return
+
+                img_url = data.get("data", [{}])[0].get("url") or data.get("image", "")
+                if img_url:
+                    e = discord.Embed()
+                    e.set_image(url=img_url)
+                    await ctx.send(embed=e)
+                    return
+
+                await ctx.send("-# image generation returned no data")
+        except Exception:
+            await ctx.send("-# image generation error")
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(ImagineCog(bot))

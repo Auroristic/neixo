@@ -1,0 +1,288 @@
+neixoname = "Neixo"
+embedcolor = "0x121516"
+seoulities_server_id = 1252213834370777171
+
+[neixoemojis]
+check = "<:7079verifiedblacksimplified:1255031445806780467>"
+cross = "<:00_bcross:1252548323034927134>"
+error = "<:Death:1252608920342761544>"
+search = "<:MekoSearch:1370025476994633808>"
+category = "<:Category:1370079955333157036>"
+utility = "<:MekoUtility:1370080744361300021>"
+music = "<:musicmoji:1372812506912919634>"
+cd = "<:02_Bblack:1252608783251673139>"
+clock = "<:Clock:1372815058278678620>"
+user = "<:user:1372815179242274946>"
+home = "<:MekoHome:1370292713768878110>"
+autoplay = "<:autoplay:1370310864808317021>"
+ping = "<:MekoPing:1371026294208466994>"
+rightarrow = "<:02_Bblack:1252608783251673139>"
+leftarrow = "<a:BlackStar:1259882268802154508>"
+love = "<a:emoji_44:1253070278259642521>"
+
+# ── Custom GIFs ──────────────────────────────────────────────
+# Add your own gif URLs per emotion/category.
+# The AI will pick from these FIRST (instant, no scraping needed).
+# Add as many links as you want per category — it picks randomly.
+
+[gifs.happy]
+links = [
+    "https://tenor.com/view/anime-girl-happy-gif-17569687980361230361"
+]
+
+[gifs.sad]
+links = [
+    "https://tenor.com/view/bocchi-the-rock-anime-sad-gif-27615865",
+    "https://tenor.com/view/sad-anime-girl-teary-eyed-cute-gif-1741911582653475332",
+]
+
+[gifs.angry]
+links = [
+    "https://tenor.com/view/ram-re-zero-downlook-disgusted-anime-gif-16841200256546358049",
+    "https://tenor.com/view/angry-mad-trigger-anime-gif-18499756",
+]
+
+[gifs.shocked]
+links = [
+    "https://tenor.com/view/k-on-gif-7725079966726728974",
+    "https://tenor.com/view/esiledoodles-esiledoodles-cora-esile-esiledoodles-deadpan-anime-gif-15216314118662597519",
+    "https://tenor.com/view/marin-kitagawa-sono-bisque-doll-cute-marin-kitagawa-my-dress-up-darling-anime-girl-gif-12853739934995332113",
+    "https://tenor.com/view/sousou-no-frieren-frieren-beyond-journey-frieren-anime-frieren-book-drop-book-dropping-gif-5586080115796339217",
+    "https://tenor.com/view/flcl-mamimi-aaahhh-wtf-shocked-gif-24981847",
+    "https://tenor.com/view/nichijou-hakase-shinonome-shocked-anime-surprised-gif-21124329",
+]
+
+[gifs.shy]
+links = [
+    "https://tenor.com/view/yoru-no-kurage-wa-oyogenai-anime-shake-head-anime-no-shy-anime-takanashi-gif-2557703020205130567"
+]
+
+[gifs.love]
+links = [
+    "https://tenor.com/view/pink-hair-anime-anime-girl-hearts-love-gif-16461481851479870830",
+    "https://tenor.com/view/my-dress-up-darling-anime-love-marin-kitagawa-gif-25055013",
+]
+
+[gifs.laugh]
+links = [
+    "https://tenor.com/view/shikimori-shikimoris-not-just-cute-shikimoris-not-just-a-cutie-anime-anime-anime-girl-gif-26002808"
+]
+
+[gifs.cry]
+links = [
+    "https://tenor.com/view/bocchi-the-rock-crying-crying-girl-crying-anime-crying-anime-girl-gif-4473502144398719776",
+    "https://tenor.com/view/k-on-anime-crying-anime-girl-crying-anime-gif-13169278634449647712",
+    "https://tenor.com/view/my-dress-up-darling-my-dress-up-darling-s2-my-dress-up-darling-season-2-oceanicsx0-sono-bisque-doll-wa-koi-wo-suru-gif-12539583238573371058",
+]
+
+[gifs.dance]
+links = [
+    "https://tenor.com/view/bocchi-the-rock-bocchi-bocchi-dance-anime-dance-anime-cute-dance-gif-8640564821222907754",
+    "https://tenor.com/view/dancing-cat-dancing-kitten-60fps-boogie-cat-gif-24303276",
+]
+
+[gifs.hug]
+links = [
+    ""
+]
+
+[gifs.wave]
+links = [
+    ""
+]
+
+[gifs.confused]
+links = [
+    ""
+]
+
+[gifs.smug]
+links = [
+    ""
+]
+
+[gifs.cringe]
+links = [
+    ""
+]
+
+[gifs.excited]
+links = [
+    ""
+]
+
+[gifs.hmph]
+links = [
+    "https://tenor.com/view/mao-amatsuka-gjbu-gjclub-pout-sad-gif-7840065060810181648",
+    "https://tenor.com/view/anime-pout-mad-angry-i-dont-wanna-gif-17112834",
+]
+
+[gifs.tch]
+links = [
+    "https://tenor.com/view/suou-yuki-roshidere-sister-suou-yuki-gif-1663464780068510263"
+]
+
+[gifs.disgusting]
+links = [
+    ""
+]
+
+[gifs.eww]
+links = [
+    ""
+]
+
+[gifs.really]
+links = [
+    ""
+]
+
+[gifs.fuck_off]
+links = [
+    ""
+]
+
+[gifs.middle_finger]
+links = [
+    ""
+]
+
+[gifs.eye_roll]
+links = [
+    ""
+]
+
+[gifs.facepalm]
+links = [
+    ""
+]
+
+[gifs.sigh]
+links = [
+    ""
+]
+
+[gifs.bored]
+links = [
+    ""
+]
+
+[gifs.nervous]
+links = [
+    ""
+]
+
+[gifs.panic]
+links = [
+    ""
+]
+
+[gifs.smirk]
+links = [
+    ""
+]
+
+[gifs.wink]
+links = [
+    ""
+]
+
+[gifs.pout]
+links = [
+    ""
+]
+
+[gifs.jealous]
+links = [
+    ""
+]
+
+[gifs.sleepy]
+links = [
+    ""
+]
+
+[gifs.done]
+links = [
+    ""
+]
+
+[gifs.judging]
+links = [
+    ""
+]
+
+[gifs.simp]
+links = [
+    ""
+]
+
+[gifs.blush]
+links = [
+    ""
+]
+
+[gifs.scream]
+links = [
+    ""
+]
+
+[gifs.clap]
+links = [
+    ""
+]
+
+[gifs.peace]
+links = [
+    ""
+]
+
+[gifs.bye]
+links = [
+    ""
+]
+
+[gifs.sorry]
+links = [
+    ""
+]
+
+[gifs.proud]
+links = [
+    ""
+]
+
+[gifs.sus]
+links = [
+    ""
+]
+
+[gifs.bonk]
+links = [
+    ""
+]
+
+[gifs.slap]
+links = [
+    ""
+]
+
+[gifs.pat]
+links = [
+    ""
+]
+
+[gifs.nom]
+links = [
+    ""
+]
+
+[gifs.stare]
+links = [
+    ""
+]
+
+[gifs.dead]
+links = [
+    ""
+]
