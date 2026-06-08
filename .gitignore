@@ -1,1 +1,22 @@
-(empty)
+```
+# Compiled Python files
+__pycache__/
+*.pyc
+
+# Dependencies
+.venv/
+venv/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+```

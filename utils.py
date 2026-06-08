@@ -73,6 +73,50 @@ def _ensure_db():
             PRIMARY KEY (filepath)
         )
     """)
+    
+    # NEW: Per-guild avatars table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS guild_avatars (
+            guild_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            avatar_url TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        )
+    """)
+    
+    # NEW: Music playlists table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS playlists (
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            tracks TEXT NOT NULL,
+            PRIMARY KEY (user_id, name)
+        )
+    """)
+    
+    # NEW: XP and leveling table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_xp (
+            user_id TEXT NOT NULL,
+            guild_id TEXT NOT NULL,
+            xp INTEGER DEFAULT 0,
+            level INTEGER DEFAULT 0,
+            messages INTEGER DEFAULT 0,
+            voice_minutes INTEGER DEFAULT 0,
+            PRIMARY KEY (user_id, guild_id)
+        )
+    """)
+    
+    # NEW: Level roles table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS level_roles (
+            guild_id TEXT NOT NULL,
+            level INTEGER NOT NULL,
+            role_id TEXT NOT NULL,
+            PRIMARY KEY (guild_id, level)
+        )
+    """)
+    
     _db_initialized = True
 
 # ── List-file detection (same logic as before) ───────────────────
@@ -444,4 +488,188 @@ def get_help_meta(cmd) -> dict | None:
         callback = getattr(cmd, "callback", None)
         meta = getattr(callback, "help_meta", None) if callback else None
     return meta
+
+
+# ── NEW: Per-Guild Avatar Helpers ──────────────────────────────────────
+
+def set_guild_avatar(guild_id: int | str, user_id: int | str, avatar_url: str) -> None:
+    """Set a custom avatar for a user in a specific guild."""
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO guild_avatars (guild_id, user_id, avatar_url) VALUES (?, ?, ?) "
+            "ON CONFLICT(guild_id, user_id) DO UPDATE SET avatar_url = excluded.avatar_url",
+            (str(guild_id), str(user_id), avatar_url)
+        )
+
+
+def get_guild_avatar(guild_id: int | str, user_id: int | str) -> str | None:
+    """Get custom avatar for a user in a specific guild. Returns None if not set."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT avatar_url FROM guild_avatars WHERE guild_id = ? AND user_id = ?",
+            (str(guild_id), str(user_id))
+        ).fetchone()
+    return row[0] if row else None
+
+
+def remove_guild_avatar(guild_id: int | str, user_id: int | str) -> bool:
+    """Remove custom avatar for a user in a specific guild. Returns True if removed."""
+    with _db() as conn:
+        cursor = conn.execute(
+            "DELETE FROM guild_avatars WHERE guild_id = ? AND user_id = ?",
+            (str(guild_id), str(user_id))
+        )
+        return cursor.rowcount > 0
+
+
+# ── NEW: Music Playlist Helpers ──────────────────────────────────────
+
+def save_playlist(user_id: int | str, name: str, tracks: list) -> None:
+    """Save a playlist for a user."""
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO playlists (user_id, name, tracks) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, name) DO UPDATE SET tracks = excluded.tracks",
+            (str(user_id), name.lower(), json.dumps(tracks))
+        )
+
+
+def load_playlist(user_id: int | str, name: str) -> list | None:
+    """Load a playlist by name. Returns None if not found."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT tracks FROM playlists WHERE user_id = ? AND name = ?",
+            (str(user_id), name.lower())
+        ).fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def delete_playlist(user_id: int | str, name: str) -> bool:
+    """Delete a playlist. Returns True if deleted."""
+    with _db() as conn:
+        cursor = conn.execute(
+            "DELETE FROM playlists WHERE user_id = ? AND name = ?",
+            (str(user_id), name.lower())
+        )
+        return cursor.rowcount > 0
+
+
+def list_playlists(user_id: int | str) -> list[str]:
+    """List all playlist names for a user."""
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT name FROM playlists WHERE user_id = ?",
+            (str(user_id),)
+        ).fetchall()
+    return [row[0] for row in rows]
+
+
+# ── NEW: XP & Leveling Helpers ──────────────────────────────────────
+
+def add_xp(user_id: int | str, guild_id: int | str, xp_amount: int = 10, messages: int = 1) -> dict:
+    """
+    Add XP to a user. Returns dict with level info if leveled up.
+    Default: 10 XP per message.
+    """
+    level_up_info = {"leveled_up": False}
+    
+    with _db() as conn:
+        # Get current XP
+        row = conn.execute(
+            "SELECT xp, level, messages FROM user_xp WHERE user_id = ? AND guild_id = ?",
+            (str(user_id), str(guild_id))
+        ).fetchone()
+        
+        if row:
+            current_xp, current_level, current_messages = row
+            new_xp = current_xp + xp_amount
+            new_messages = current_messages + messages
+        else:
+            new_xp = xp_amount
+            current_level = 0
+            new_messages = messages
+        
+        # Calculate new level (formula: level = sqrt(xp / 100))
+        import math
+        new_level = int(math.sqrt(new_xp / 100))
+        
+        # Check for level up
+        if new_level > current_level:
+            level_up_info["leveled_up"] = True
+            level_up_info["old_level"] = current_level
+            level_up_info["new_level"] = new_level
+        
+        # Upsert
+        conn.execute(
+            "INSERT INTO user_xp (user_id, guild_id, xp, level, messages) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id, guild_id) DO UPDATE SET "
+            "xp = excluded.xp, level = excluded.level, messages = excluded.messages",
+            (str(user_id), str(guild_id), new_xp, new_level, new_messages)
+        )
+        
+        level_up_info["xp"] = new_xp
+        level_up_info["level"] = new_level
+        level_up_info["messages"] = new_messages
+    
+    return level_up_info
+
+
+def add_voice_xp(user_id: int | str, guild_id: int | str, minutes: int = 1) -> dict:
+    """Add voice time XP (5 XP per minute). Returns level info if leveled up."""
+    return add_xp(user_id, guild_id, xp_amount=minutes * 5, messages=0)
+
+
+def get_user_xp(user_id: int | str, guild_id: int | str) -> dict | None:
+    """Get XP data for a user in a guild."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT xp, level, messages, voice_minutes FROM user_xp WHERE user_id = ? AND guild_id = ?",
+            (str(user_id), str(guild_id))
+        ).fetchone()
+    if row:
+        return {"xp": row[0], "level": row[1], "messages": row[2], "voice_minutes": row[3]}
+    return None
+
+
+def get_leaderboard(guild_id: int | str, limit: int = 10) -> list[dict]:
+    """Get top users by XP in a guild."""
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT user_id, xp, level, messages FROM user_xp "
+            "WHERE guild_id = ? ORDER BY xp DESC LIMIT ?",
+            (str(guild_id), limit)
+        ).fetchall()
+    return [{"user_id": row[0], "xp": row[1], "level": row[2], "messages": row[3]} for row in rows]
+
+
+# ── NEW: Level Roles Helpers ──────────────────────────────────────
+
+def set_level_role(guild_id: int | str, level: int, role_id: int | str) -> None:
+    """Set a role to be given at a specific level."""
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO level_roles (guild_id, level, role_id) VALUES (?, ?, ?) "
+            "ON CONFLICT(guild_id, level) DO UPDATE SET role_id = excluded.role_id",
+            (str(guild_id), level, str(role_id))
+        )
+
+
+def get_level_role(guild_id: int | str, level: int) -> str | None:
+    """Get role ID for a specific level."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT role_id FROM level_roles WHERE guild_id = ? AND level = ?",
+            (str(guild_id), level)
+        ).fetchone()
+    return row[0] if row else None
+
+
+def get_all_level_roles(guild_id: int | str) -> dict[int, str]:
+    """Get all level-role mappings for a guild."""
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT level, role_id FROM level_roles WHERE guild_id = ?",
+            (str(guild_id),)
+        ).fetchall()
+    return {row[0]: row[1] for row in rows}
 
