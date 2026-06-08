@@ -290,7 +290,8 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
             await ctx.send("forbidden.")
             return
         
-        config = load_json(CONFIG_FILE)
+        # Use cached config instead of loading from disk
+        config = get_config()
         guild_config = config.get(str(SEOULITIES_SERVER_ID), {})
         whitelist = guild_config.get('whitelist', [])
         
@@ -300,6 +301,8 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
         
         confessions = load_json(CONFESSIONS_FILE)
         
+        # Batch fetch all unique user IDs at once to avoid N+1 API calls
+        user_ids_to_fetch = set()
         if target == "latest":
             guild_confessions = {k: v for k, v in confessions.items() if v.get('guild_id') == str(SEOULITIES_SERVER_ID)}
             if not guild_confessions:
@@ -307,21 +310,35 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
                 return
             
             latest = max(guild_confessions.values(), key=lambda x: x['id'])
-            user_obj = await self.bot.fetch_user(int(latest['user_id']))
+            user_ids_to_fetch.add(int(latest['user_id']))
+            # Collect reply user IDs too
+            if latest.get('replies'):
+                for reply in latest['replies'][:5]:
+                    user_ids_to_fetch.add(int(reply['user_id']))
+            
+            # Batch fetch all users at once
+            user_cache = {}
+            for uid in user_ids_to_fetch:
+                try:
+                    user_cache[uid] = await self.bot.fetch_user(uid)
+                except Exception:
+                    user_cache[uid] = None
+            
+            user_obj = user_cache.get(int(latest['user_id']))
             
             embed = discord.Embed(
                 title=f"Confession #{latest['id']:03d} Revealed",
                 description=latest['text'],
                 color=get_embed_color(SEOULITIES_SERVER_ID)
             )
-            embed.add_field(name="Author", value=f"{user_obj.mention} ({user_obj.id})")
+            embed.add_field(name="Author", value=f"{user_obj.mention} ({user_obj.id})" if user_obj else f"Unknown ({latest['user_id']})")
             embed.add_field(name="Timestamp", value=latest['timestamp'])
             
             if latest.get('replies'):
                 replies_text = ""
                 for reply in latest['replies'][:5]:
-                    reply_user = await self.bot.fetch_user(int(reply['user_id']))
-                    replies_text += f"R#{reply['reply_id']:03d} by {reply_user.mention}\n"
+                    reply_user = user_cache.get(int(reply['user_id']))
+                    replies_text += f"R#{reply['reply_id']:03d} by {reply_user.mention if reply_user else 'Unknown'}\n"
                 embed.add_field(name="Replies", value=replies_text or "None", inline=False)
             
             await ctx.send(embed=embed)
@@ -339,11 +356,13 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
                 await ctx.send(f"nun found from that user")
                 return
             
+            # Fetch the user once and reuse
             try:
                 user_obj = await self.bot.fetch_user(int(user_id))
                 user_name = user_obj.name
-            except:
+            except Exception:
                 user_name = "Unknown User"
+                user_obj = None
             
             confession_list = "\n".join([f"#{c['id']:03d}: {c['text'][:50]}..." for c in user_confessions[:10]])
             
@@ -366,21 +385,34 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
                 await ctx.send(f"Confession #{confession_id:03d} not found.")
                 return
             
-            user_obj = await self.bot.fetch_user(int(confession['user_id']))
+            # Batch fetch user and reply users together
+            user_ids_to_fetch = {int(confession['user_id'])}
+            if confession.get('replies'):
+                for reply in confession['replies'][:5]:
+                    user_ids_to_fetch.add(int(reply['user_id']))
+            
+            user_cache = {}
+            for uid in user_ids_to_fetch:
+                try:
+                    user_cache[uid] = await self.bot.fetch_user(uid)
+                except Exception:
+                    user_cache[uid] = None
+            
+            user_obj = user_cache.get(int(confession['user_id']))
             
             embed = discord.Embed(
                 title=f"Confession #{confession_id:03d} Revealed",
                 description=confession['text'],
                 color=get_embed_color(SEOULITIES_SERVER_ID)
             )
-            embed.add_field(name="Author", value=f"{user_obj.mention} ({user_obj.id})")
+            embed.add_field(name="Author", value=f"{user_obj.mention} ({user_obj.id})" if user_obj else f"Unknown ({confession['user_id']})")
             embed.add_field(name="Timestamp", value=confession['timestamp'])
             
             if confession.get('replies'):
                 replies_text = ""
                 for reply in confession['replies'][:5]:
-                    reply_user = await self.bot.fetch_user(int(reply['user_id']))
-                    replies_text += f"R#{reply['reply_id']:03d} by {reply_user.mention}\n"
+                    reply_user = user_cache.get(int(reply['user_id']))
+                    replies_text += f"R#{reply['reply_id']:03d} by {reply_user.mention if reply_user else 'Unknown'}\n"
                 embed.add_field(name="Replies", value=replies_text or "None", inline=False)
             
             await ctx.send(embed=embed)

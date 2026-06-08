@@ -248,7 +248,8 @@ class MiscCog(commands.Cog, name="Misc"):
         else:
             guild_id = str(SEOULITIES_SERVER_ID)
         
-        config = load_json(CONFIG_FILE)
+        # Single config load for all checks (was loading multiple times before)
+        config = get_config()
         guild_config = config.get(guild_id, {})
         whitelist = guild_config.get('whitelist', [])
         
@@ -273,7 +274,8 @@ class MiscCog(commands.Cog, name="Misc"):
         else:
             guild_id = str(SEOULITIES_SERVER_ID)
         
-        config = load_json(CONFIG_FILE)
+        # Single config load for all checks (was loading multiple times before)
+        config = get_config()
         guild_config = config.get(guild_id, {})
         whitelist = guild_config.get('whitelist', [])
         
@@ -364,7 +366,8 @@ class EchoCog(commands.Cog):
     async def echo_prefix(self, ctx):
         if not ctx.guild:
             return
-        config = load_json(CONFIG_FILE)
+        # Use cached config instead of loading from disk each time
+        config = get_config()
         guild_config = config.get(str(ctx.guild.id), {})
         whitelist = guild_config.get('whitelist', [])
         
