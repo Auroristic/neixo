@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 COG_META = {
     "category": "leveling",
-    "commands": ["rank", "levelleaderboard", "levelrole", "levelnotify"]
+    "commands": ["rank", "levelleaderboard", "levelrole", "levelnotify", "givexp"]
 }
 
 
@@ -308,7 +308,7 @@ class Leveling(commands.Cog):
         await ctx.send("✅ Level-up notifications **enabled**!")
 
     @commands.command(hidden=True)
-    @app_commands.describe(xp="Amount of XP to give", user="User to give XP to")
+    @help_meta(section="Leveling", usage=".givexp <amount> [@user]", desc="Give XP to a user (admin only)")
     async def givexp(self, ctx, xp: int, user: discord.Member = None):
         """Admin command to give XP (hidden)."""
         if not (ctx.author.id == ctx.guild.owner_id or ctx.author.id == 887382911924441139):
