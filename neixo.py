@@ -645,11 +645,13 @@ async def help_slash(interaction: discord.Interaction, command: str = None):
 
 async def load_cogs() -> None:
     dirs = ["./cogs", "./cogs/events"]
+    # Files that are helpers/views (not actual cogs with setup functions)
+    skip_files = {"music_helpers.py", "music_views.py", "theme_helpers.py", "theme_views.py"}
     for d in dirs:
         if not os.path.exists(d):
             continue
         for f in os.listdir(d):
-            if f.endswith(".py") and f != "__init__.py":
+            if f.endswith(".py") and f != "__init__.py" and f not in skip_files:
                 ext = d.replace("./", "").replace("/", ".") + f".{f[:-3]}"
                 try:
                     await bot.load_extension(ext)
