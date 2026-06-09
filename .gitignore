@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 ```
 .env
+print_all_help.py
+commands.json
