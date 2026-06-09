@@ -23,14 +23,18 @@ log = logging.getLogger(__name__)
 SERVERSTATS_DB = f"{DATA_DIR}/serverstats.db"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# ── Font paths (same as cogs/reactions.py) ──────────────────────────
+# ── Font paths (JetBrains Mono preferred, fallback chain) ───────────
 _FONT_REG_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Regular.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "arial.ttf",
 ]
 _FONT_BOLD_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Bold.ttf",
+    "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Bold.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -115,6 +119,16 @@ def _progress_ago(t: int) -> str:
         return f"{h}h {m}m"
     d, h = divmod(h, 24)
     return f"{d}d {h}h"
+
+def _format_vc_duration(total_seconds: int) -> str:
+    """Format VC total seconds into 'Xh Ym' display string."""
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    if hours > 0:
+        return f"{hours}h {minutes:02d}m"
+    return f"{minutes}m"
 
 
 # ── Emoji helpers (twemoji for unicode, Discord CDN for custom) ─────
@@ -267,7 +281,7 @@ def _render_lb_card(
     icon_bytes: bytes | None,
     title: str,
     subtitle: str,
-    rows: list[tuple[int, str, int]],
+    rows: list[tuple[int, str, int | str]],
     page_str: str,
     bot_avatar_bytes: bytes | None,
     bot_name: str,
@@ -303,9 +317,9 @@ def _render_lb_card(
 
     title_font    = _load_font(44, bold=True)
     subtitle_font = _load_font(24, bold=False)
-    rank_font     = _load_font(30, bold=True)
-    name_font     = _load_font(30, bold=False)
-    count_font    = _load_font(30, bold=True)
+    rank_font     = _load_font(28, bold=True)
+    name_font     = _load_font(28, bold=False)
+    count_font    = _load_font(28, bold=True)
     footer_font   = _load_font(20, bold=False)
     footer_bold   = _load_font(20, bold=True)
 
@@ -314,9 +328,9 @@ def _render_lb_card(
     draw.line([(90, 200), (W - 90, 200)], fill=(255, 255, 255, 60), width=1)
 
     start_y = 230
-    row_h   = 60
+    row_h   = 64
     rank_x  = 90
-    name_x  = 170
+    name_x  = 175
     count_x = W - 90
 
     tints = {
@@ -325,11 +339,20 @@ def _render_lb_card(
         3: (205, 127, 50, 255),
     }
 
+    medal_prefix = {1: "\U0001f947 ", 2: "\U0001f948 ", 3: "\U0001f949 "}
+
     for i, (rank, name, count) in enumerate(rows):
         y = start_y + i * row_h
-        rank_str = f"{rank}."
+
+        if i % 2 == 0:
+            draw.rounded_rectangle(
+                [rank_x - 8, y - 4, count_x + 8, y + row_h - 4],
+                radius=8, fill=(255, 255, 255, 6),
+            )
+
+        rank_str = medal_prefix.get(rank, f"  {rank}.")
         rank_color = tints.get(rank, (255, 255, 255, 235))
-        draw.text((rank_x, y), rank_str, font=rank_font, fill=rank_color)
+        draw.text((rank_x - 4, y), rank_str, font=rank_font, fill=rank_color)
 
         max_w = (count_x - 90) - name_x
         name_disp = name
@@ -339,7 +362,10 @@ def _render_lb_card(
             name_disp = (name_disp + "\u2026") if name_disp else "\u2026"
         draw.text((name_x, y), name_disp, font=name_font, fill=(255, 255, 255, 220))
 
-        count_str = f"{count:,}{unit}"
+        if isinstance(count, str):
+            count_str = count
+        else:
+            count_str = f"{count:,}{unit}"
         cw = draw.textbbox((0, 0), count_str, font=count_font)[2]
         draw.text((count_x - cw, y), count_str, font=count_font, fill=rank_color)
 
@@ -417,6 +443,8 @@ class LBPageView(discord.ui.View):
         if rank is None:
             return "unranked"
         count = self.rows[rank - 1][1]
+        if isinstance(count, str):
+            return f"#{rank} \u00b7 {count}"
         unit = f" {self.unit.strip()}" if self.unit else ""
         return f"#{rank} \u00b7 {count:,}{unit}"
 
@@ -761,7 +789,7 @@ class ServerStatsCog(commands.Cog):
             await ctx.send_help(ctx.command)
 
     @help_meta(usage="`.lb messages`", desc="top 200 message senders in the server.", section="Leaderboards")
-    @leaderboard.command(name="messages", aliases=["msgs", "msg"])
+    @leaderboard.command(name="messages", aliases=["msgs", "msg", "lbm"])
     async def lb_messages(self, ctx: commands.Context):
         rows = self._get_msg_top(ctx.guild.id, 200)
         if not rows:
@@ -777,11 +805,12 @@ class ServerStatsCog(commands.Cog):
         view.message = await ctx.send(file=file, view=view)
 
     @help_meta(usage="`.lb vctime`", desc="top 200 VC time leaders in the server.", section="Leaderboards")
-    @leaderboard.command(name="vctime", aliases=["vc", "voice"])
+    @leaderboard.command(name="vctime", aliases=["vc", "voice", "lbv"])
     async def lb_vctime(self, ctx: commands.Context):
-        rows = self._get_vc_top(ctx.guild.id, 200)
-        if not rows:
+        raw = self._get_vc_top(ctx.guild.id, 200)
+        if not raw:
             return await ctx.send("No VC time data yet.")
+        rows = [(uid, _format_vc_duration(secs)) for uid, secs in raw]
         view = LBPageView(
             self.bot, ctx, rows,
             title="VC Time Leaderboard",

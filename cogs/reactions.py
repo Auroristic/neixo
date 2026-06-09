@@ -66,15 +66,18 @@ def _emoji_str(emoji):
 
 # ── Leaderboard image renderer (music-card aesthetic) ──────────
 
-# Try fonts in order. Noto Sans CJK covers Korean/Japanese/Chinese names.
-# Falls back through DejaVu and finally Arial which the bot already uses.
+# JetBrains Mono preferred, fallback chain for cross-platform compatibility.
 _FONT_REG_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Regular.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "arial.ttf",
 ]
 _FONT_BOLD_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Bold.ttf",
+    "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Bold.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -144,7 +147,7 @@ def _render_leaderboard_card(
     icon_bytes: bytes | None,
     title: str,
     subtitle: str,
-    rows: list[tuple[int, str, int]],   # (rank, display_name, count)
+    rows: list[tuple[int, str, int | str]],
     page_str: str,
     bot_avatar_bytes: bytes | None,
     bot_name: str,
@@ -186,9 +189,9 @@ def _render_leaderboard_card(
 
     title_font    = _load_font(44, bold=True)
     subtitle_font = _load_font(24, bold=False)
-    rank_font     = _load_font(30, bold=True)
-    name_font     = _load_font(30, bold=False)
-    count_font    = _load_font(30, bold=True)
+    rank_font     = _load_font(28, bold=True)
+    name_font     = _load_font(28, bold=False)
+    count_font    = _load_font(28, bold=True)
     footer_font   = _load_font(20, bold=False)
     footer_bold   = _load_font(20, bold=True)
 
@@ -209,22 +212,31 @@ def _render_leaderboard_card(
 
     # ── Rows ──
     start_y = 230
-    row_h   = 60
+    row_h   = 64
     rank_x  = 90
-    name_x  = 170
-    count_x = W - 90  # right edge
+    name_x  = 175
+    count_x = W - 90
 
     tints = {
-        1: (255, 215, 64,  255),   # gold
-        2: (200, 200, 210, 255),   # silver
-        3: (205, 127, 50,  255),   # bronze
+        1: (255, 215, 64,  255),
+        2: (200, 200, 210, 255),
+        3: (205, 127, 50,  255),
     }
+
+    medal_prefix = {1: "\U0001f947 ", 2: "\U0001f948 ", 3: "\U0001f949 "}
 
     for i, (rank, name, count) in enumerate(rows):
         y = start_y + i * row_h
-        rank_str = f"{rank}."
+
+        if i % 2 == 0:
+            draw.rounded_rectangle(
+                [rank_x - 8, y - 4, count_x + 8, y + row_h - 4],
+                radius=8, fill=(255, 255, 255, 6),
+            )
+
+        rank_str = medal_prefix.get(rank, f"  {rank}.")
         rank_color = tints.get(rank, (255, 255, 255, 235))
-        draw.text((rank_x, y), rank_str, font=rank_font, fill=rank_color)
+        draw.text((rank_x - 4, y), rank_str, font=rank_font, fill=rank_color)
 
         max_w = (count_x - 90) - name_x
         name_disp = name
@@ -234,7 +246,10 @@ def _render_leaderboard_card(
             name_disp = (name_disp + "…") if name_disp else "…"
         draw.text((name_x, y), name_disp, font=name_font, fill=(255, 255, 255, 220))
 
-        count_str = f"{count:,}"
+        if isinstance(count, str):
+            count_str = count
+        else:
+            count_str = f"{count:,}"
         cw = draw.textbbox((0, 0), count_str, font=count_font)[2]
         draw.text((count_x - cw, y), count_str, font=count_font, fill=rank_color)
 

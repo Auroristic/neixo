@@ -155,31 +155,24 @@ class Leveling(commands.Cog):
     @commands.command(name="levelleaderboard", aliases=["llb", "xpleaderboard"])
     async def levelleaderboard(self, ctx, top: int = 10):
         """Show the server's top users by XP."""
-        top = min(top, 50)  # Max 50
-        leaderboard = get_leaderboard(ctx.guild.id, limit=top)
-        
-        if not leaderboard:
+        top = min(top, 200)
+        data = get_leaderboard(ctx.guild.id, limit=top)
+        if not data:
             await ctx.send("No XP data yet. Start chatting!")
             return
         
-        embed = discord.Embed(
-            title=f"🏆 {ctx.guild.name} Leaderboard",
-            color=discord.Color(get_embed_color(ctx.guild.id))
+        rows = [(int(e["user_id"]), e["xp"]) for e in data]
+        from cogs.serverstats import LBPageView
+        view = LBPageView(
+            self.bot, ctx, rows,
+            title="XP Leaderboard",
+            subtitle=f"highest XP in /{ctx.guild.name}",
+            unit=" XP",
         )
-        
-        for i, entry in enumerate(leaderboard, 1):
-            user_id = int(entry["user_id"])
-            user = ctx.guild.get_member(user_id)
-            name = user.display_name if user else f"<@{user_id}>"
-            suffix = "th" if 11 <= i <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(i % 10, "th")
-            
-            embed.add_field(
-                name=f"**{i}{suffix}** - {name}",
-                value=f"Level {entry['level']} • {entry['xp']:,} XP",
-                inline=False
-            )
-        
-        await ctx.send(embed=embed)
+        async with ctx.typing():
+            await view.fetch_assets()
+            file = await view.render_file()
+            view.message = await ctx.send(file=file, view=view)
 
     @commands.group(invoke_without_command=True)
     @help_meta(section="Leveling", usage=".levelrole [level] [@role]", desc="Manage level roles", admin=True)
