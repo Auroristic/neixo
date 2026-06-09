@@ -108,7 +108,7 @@ class Neixo(commands.Bot):
 
         try:
             # Collect everything (owners see all)
-            categories, _ = _collect(self, is_owner=True, is_wl=True)
+            categories, _ = _collect(self, is_owner=True, is_wl=True, has_admin=True)
 
             for cat_id, cat in categories.items():
                 known_targets.add(cat_id)
@@ -375,7 +375,7 @@ bot = Neixo()
 @bot.command(name="debughelp")
 async def debug_help(ctx):
     from cogs.help import _collect
-    cats, cmd_index = _collect(bot, True, True)
+    cats, cmd_index = _collect(bot, True, True, True)
     lines = []
     if not cats:
         lines.append("cats is EMPTY — no COG_META found in any cog")

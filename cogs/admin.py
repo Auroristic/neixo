@@ -125,6 +125,24 @@ class AdminCog(commands.Cog, name="Admin"):
             invalidate_ignore()
             await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
 
+    # ── ignorelist ────────────────────────────────────────────
+    @commands.command(name="ignorelist")
+    @help_meta(usage=".ignorelist", desc="shows all users currently ignored by the bot in AI channels.", section="Server Management", staff=True)
+    async def ignore_list(self, ctx):
+        if not is_owner_or_creator(ctx):
+            return await ctx.send("owner only")
+        ignore_list = get_ignore_list()
+        if not ignore_list:
+            embed = discord.Embed(description="no one is ignored", color=get_embed_color(ctx.guild.id))
+            return await ctx.send(embed=embed)
+        lines = [f"• <@{uid}>" for uid in ignore_list]
+        embed = discord.Embed(
+            title="Ignored Users",
+            description="\n".join(lines),
+            color=get_embed_color(ctx.guild.id)
+        )
+        await ctx.send(embed=embed)
+
     # ── confess set ────────────────────────────────────────────
     @commands.command(name="confess")
     @help_meta(usage=".confess set #channel", desc="sets the confession channel.", section="Server Management", admin=True)

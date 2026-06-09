@@ -39,3 +39,5 @@ target/
 .mypy_cache/
 .pytest_cache/
 ```
+print_all_help.py
+commands.json
