@@ -17,9 +17,9 @@ from utils import (
 # ── cogs/admin.py ───────────────────────────────────────────────
 COG_META = {
     "category": "admin",
-    "label": "Owner",
+    "label": "Admin",
     "desc": "Server management and AI configuration.",
-    "owner": True,
+    "admin": True,
 }
  
 
@@ -107,7 +107,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── ignore ─────────────────────────────────────────────────
     @commands.command(name="ignore")
-    @help_meta(usage=".ignore @user", desc="toggles ignoring a user — bot won't respond to them in AI channels.", section="Server Management", owner=True)
+    @help_meta(usage=".ignore @user", desc="toggles ignoring a user — bot won't respond to them in AI channels.", section="Server Management", staff=True)
     async def ignore_user(self, ctx, user: discord.Member = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -127,7 +127,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── confess set ────────────────────────────────────────────
     @commands.command(name="confess")
-    @help_meta(usage=".confess set #channel", desc="sets the confession channel.", section="Server Management", owner=True)
+    @help_meta(usage=".confess set #channel", desc="sets the confession channel.", section="Server Management", admin=True)
     async def confess_prefix(self, ctx, action: str = None, channel: discord.TextChannel = None):
         if action == "set":
             if not is_owner_or_creator(ctx):
@@ -151,7 +151,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── alias ──────────────────────────────────────────────────
     @commands.command(name="alias")
-    @help_meta(usage=".alias · .alias <new> <existing> · .alias remove <name>", desc="list / add / remove custom command aliases.", section="Server Management", owner=True)
+    @help_meta(usage=".alias · .alias <new> <existing> · .alias remove <name>", desc="list / add / remove custom command aliases.", section="Server Management", admin=True)
     async def alias(self, ctx, *args: str):
         """List, add, or remove custom command aliases."""
         # ── show list (anyone) ────────────────────────────────

@@ -101,10 +101,10 @@ def _sec_icon(sec_label: str) -> str:
 
 # ── permission helpers ────────────────────────────────────────
 
-def _can_see(d: Dict[str, Any], is_owner: bool, is_wl: bool) -> bool:
+def _can_see(d: Dict[str, Any], is_owner: bool, is_wl: bool, has_admin: bool) -> bool:
     if d.get("owner") and not is_owner:
         return False
-    if d.get("admin") and not is_owner:
+    if d.get("admin") and not (is_owner or has_admin):
         return False
     if d.get("staff") and not (is_owner or is_wl):
         return False
@@ -113,7 +113,7 @@ def _can_see(d: Dict[str, Any], is_owner: bool, is_wl: bool) -> bool:
 
 # ── runtime metadata collector ────────────────────────────────
 
-def _collect(bot: commands.Bot, is_owner: bool, is_wl: bool):
+def _collect(bot: commands.Bot, is_owner: bool, is_wl: bool, has_admin: bool):
     categories: Dict[str, Any] = {}
     cmd_index: Dict[str, Any] = {}
     seen_metas: set[int] = set()
@@ -128,12 +128,14 @@ def _collect(bot: commands.Bot, is_owner: bool, is_wl: bool):
 
         cmd_owner = meta.get("owner", False)
         cmd_staff = meta.get("staff", False)
+        cmd_admin = meta.get("admin", False)
 
         d = {
             "owner": cmd_owner,
             "staff": cmd_staff,
+            "admin": cmd_admin,
         }
-        if not _can_see(d, is_owner, is_wl):
+        if not _can_see(d, is_owner, is_wl, has_admin):
             return
 
         cmd_name = cmd.qualified_name
@@ -176,8 +178,11 @@ def _collect(bot: commands.Bot, is_owner: bool, is_wl: bool):
         cat_desc = str(meta.get("desc", "")).strip()
         cat_staff = meta.get("staff", False)
         cat_owner = meta.get("owner", False)
+        cat_admin = meta.get("admin", False)
 
         if cat_owner and not is_owner:
+            continue
+        if cat_admin and not (is_owner or has_admin):
             continue
         if cat_staff and not (is_owner or is_wl):
             continue
@@ -188,6 +193,7 @@ def _collect(bot: commands.Bot, is_owner: bool, is_wl: bool):
                 "desc": cat_desc,
                 "staff": cat_staff,
                 "owner": cat_owner,
+                "admin": cat_admin,
                 "sections": {},
             }
 
@@ -247,11 +253,12 @@ class HelpCog(commands.Cog, name="Help"):
         whitelist = guild_config.get("whitelist", [])
         is_owner = is_owner_or_creator(ctx)
         is_wl = str(ctx.author.id) in whitelist
+        has_admin = ctx.author.guild_permissions.administrator if ctx.guild else False
         color = get_embed_color(guild_id)
 
         if command:
             cmd = command.lower().lstrip(".")
-            _, cmd_index = _collect(self.bot, is_owner, is_wl)
+            _, cmd_index = _collect(self.bot, is_owner, is_wl, has_admin)
 
             if cmd in cmd_index:
                 d = cmd_index[cmd]
