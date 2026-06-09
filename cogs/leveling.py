@@ -50,6 +50,9 @@ class Leveling(commands.Cog):
         # Ignore if in ignored channel (check config)
         from utils import get_ignore_list
         ignore_list = get_ignore_list()
+        # Ensure ignore_list is a dict (it might be a list if file doesn't exist yet)
+        if isinstance(ignore_list, list):
+            ignore_list = {}
         guild_ignores = ignore_list.get(str(message.guild.id), [])
         if str(message.channel.id) in guild_ignores:
             return
