@@ -1,7 +1,41 @@
 ```
-__pycache__/
+# Compiled Python files
 *.pyc
-```
+__pycache__/
+
+# Virtual environments
+venv/
+.venv/
 .env
-print_all_help.py
-commands.json
+.env.local
+*.env.*
+
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+
+# Coverage reports
+.coverage
+coverage/
+htmlcov/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+target/
+.mypy_cache/
+.pytest_cache/
+```

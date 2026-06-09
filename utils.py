@@ -465,6 +465,7 @@ def help_meta(
     desc: str = None,
     staff: bool = False,
     owner: bool = False,
+    admin: bool = False,
 ):
     """Decorator to attach help metadata to a command."""
     def decorator(func):
@@ -474,6 +475,7 @@ def help_meta(
             "desc": desc,
             "staff": staff,
             "owner": owner,
+            "admin": admin,
         }
         func.__dict__["help_meta"] = meta
         callback = getattr(func, "callback", None)
