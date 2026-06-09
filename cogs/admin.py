@@ -85,9 +85,7 @@ class AdminCog(commands.Cog, name="Admin"):
     @commands.command(name='setcolor')
     @help_meta(usage=".setcolor #HEX", desc="changes the embed accent colour for this server.", section="Server Management", owner=True)
     async def setcolor(self, ctx, color: str):
-        config_check = load_json(CONFIG_FILE)
-        whitelist_check = config_check.get(str(ctx.guild.id), {}).get('whitelist', [])
-        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in whitelist_check:
+        if not is_owner_or_creator(ctx):
             return await ctx.send("no perms")
         
         color = color.strip('#')
@@ -109,8 +107,11 @@ class AdminCog(commands.Cog, name="Admin"):
     @commands.command(name="ignore")
     @help_meta(usage=".ignore @user", desc="toggles ignoring a user — bot won't respond to them in AI channels.", section="Server Management", staff=True)
     async def ignore_user(self, ctx, user: discord.Member = None):
-        if not is_owner_or_creator(ctx):
-            return await ctx.send("owner only")
+        config = get_config()
+        guild_config = config.get(str(ctx.guild.id), {})
+        whitelist = guild_config.get('whitelist', [])
+        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in whitelist:
+            return await ctx.send("no perms")
         if not user:
             return await ctx.send(".ignore @user")
         ignore_list = load_json(IGNORE_LIST_FILE)
@@ -129,8 +130,11 @@ class AdminCog(commands.Cog, name="Admin"):
     @commands.command(name="ignorelist")
     @help_meta(usage=".ignorelist", desc="shows all users currently ignored by the bot in AI channels.", section="Server Management", staff=True)
     async def ignore_list(self, ctx):
-        if not is_owner_or_creator(ctx):
-            return await ctx.send("owner only")
+        config = get_config()
+        guild_config = config.get(str(ctx.guild.id), {})
+        whitelist = guild_config.get('whitelist', [])
+        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in whitelist:
+            return await ctx.send("no perms")
         ignore_list = get_ignore_list()
         if not ignore_list:
             embed = discord.Embed(description="no one is ignored", color=get_embed_color(ctx.guild.id))
@@ -148,8 +152,8 @@ class AdminCog(commands.Cog, name="Admin"):
     @help_meta(usage=".confess set #channel", desc="sets the confession channel.", section="Server Management", admin=True)
     async def confess_prefix(self, ctx, action: str = None, channel: discord.TextChannel = None):
         if action == "set":
-            if not is_owner_or_creator(ctx):
-                await ctx.send("buddy u aint the owner back off.")
+            if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
+                await ctx.send("admin only")
                 return
             
             if not channel:
@@ -176,8 +180,8 @@ class AdminCog(commands.Cog, name="Admin"):
         if not args:
             return await self._show_alias_list(ctx)
 
-        # ── modifications: owner/creator only ─────────────────
-        if not is_owner_or_creator(ctx):
+        # ── modifications: admin only ─────────────────────────
+        if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
             return await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
 
         action = args[0].lower()

@@ -3,9 +3,9 @@ from discord.ext import commands
 import aiosqlite
 import os
 
-from utils import help_meta
+from utils import help_meta, DATA_DIR
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "vanity.db")
+DB_PATH = os.path.join(DATA_DIR, "vanity.db")
 
 # ── cogs/vanity.py ──────────────────────────────────────────────
 COG_META = {

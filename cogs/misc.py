@@ -330,14 +330,14 @@ class EchoModal(discord.ui.Modal, title="Echo Message"):
         try:
             await interaction.channel.send(self.message_text.value)
             await interaction.response.send_message(
-                "? Message sent!",
+                "✅ Message sent!",
                 ephemeral=True
             )
             log_audit("echo_command", interaction.guild_id, interaction.user.id, 
                      f"Channel: {interaction.channel.id}, Message: {self.message_text.value[:50]}")
         except Exception as e:
             await interaction.response.send_message(
-                f"? Failed to send message: {str(e)}",
+                f"❌ Failed to send message: {str(e)}",
                 ephemeral=True
             )
 
@@ -350,29 +350,24 @@ class EchoButton(discord.ui.View):
         modal = EchoModal()
         await interaction.response.send_modal(modal)
 
-COG_META = {
-    "category": "misc",
-    "label": "Echo",
-    "desc": "Staff utility to echo messages through the bot.",
-    "staff": True,
-}
-
 class EchoCog(commands.Cog):
+    COG_META = {
+        "category": "misc",
+        "label": "Echo",
+        "desc": "Staff utility to echo messages through the bot.",
+        "staff": True,
+    }
+
     def __init__(self, bot):
         self.bot = bot
 
-    @help_meta(usage="`.echo <message>`", desc="repeats your message as the bot.", staff=True)
+    @help_meta(usage="`.echo <message>`", desc="repeats your message as the bot.", admin=True)
     @commands.command(name="echo")
     async def echo_prefix(self, ctx):
         if not ctx.guild:
             return
-        # Use cached config instead of loading from disk each time
-        config = get_config()
-        guild_config = config.get(str(ctx.guild.id), {})
-        whitelist = guild_config.get('whitelist', [])
-        
-        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in whitelist:
-            await ctx.send("? You don't have permission to use this command!")
+        if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
+            await ctx.send("admin only")
             return
 
         view = EchoButton()

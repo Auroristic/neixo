@@ -370,6 +370,41 @@ def gif_cooldown_msg(seconds):
     ]
     return _random.choice(msgs)
 
+# ── Imagine cooldown ──────────────────────────────────────────
+IMAGINE_COOLDOWN_SECONDS = 25
+_imagine_cooldowns: dict = {}
+
+def check_imagine_cooldown(user_id: int):
+    now = _dt.now(timezone.utc)
+    for k in [k for k, v in _imagine_cooldowns.items() if isinstance(v, _dt) and v < now]:
+        _imagine_cooldowns.pop(k, None)
+        _imagine_cooldowns.pop(f"{k}_warned", None)
+    if user_id in _imagine_cooldowns:
+        time_left = (_imagine_cooldowns[user_id] - now).total_seconds()
+        if time_left > 0:
+            if _imagine_cooldowns.get(f"{user_id}_warned"):
+                return "silent"
+            _imagine_cooldowns[f"{user_id}_warned"] = True
+            return time_left
+    _imagine_cooldowns[user_id] = now + timedelta(seconds=IMAGINE_COOLDOWN_SECONDS)
+    _imagine_cooldowns.pop(f"{user_id}_warned", None)
+    return None
+
+def imagine_cooldown_msg(seconds):
+    msgs = [
+        f"chill lol, wait {seconds}s",
+        f"ur too fast omg.. {seconds}s",
+        f"slow down bestie {seconds}s",
+        f"nuh uh {seconds}s",
+        f"wait ur turn {seconds}s",
+        f"patience... {seconds}s",
+        f"g-go easy on me {seconds}s",
+        f"CHILLLL {seconds}s",
+        f"sloW DOWN {seconds}s",
+        f"nuh uh slower {seconds}s",
+    ]
+    return _random.choice(msgs)
+
 # ── Constants ────────────────────────────────────────────────────
 
 from neixoconfig import SeoulitiesServerID as SEOULITIES_SERVER_ID

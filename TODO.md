@@ -1,3 +1,0 @@
-- [ ] Rewrite README.md for private GitHub publishing + accurate run instructions/env vars/storage/Lavalink notes
-- [ ] Improve SETUP.md to match the actual code (DISCORD_TOKEN + Lavalink defaults + where data/ comes from + more portable)
-- [ ] Keep secrets safe (confirm .env is in .gitignore; don’t mention real token values)

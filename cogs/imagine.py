@@ -8,7 +8,7 @@ import discord
 from discord.ext import commands
 import aiohttp
 
-from utils import help_meta
+from utils import help_meta, check_imagine_cooldown, imagine_cooldown_msg
 
 
 COG_META = {
@@ -37,6 +37,11 @@ class ImagineCog(commands.Cog, name="Imagine"):
     @commands.command(name="imagine", aliases=["draw", "gen"])
     async def imagine_cmd(self, ctx: commands.Context, *, prompt: str):
         """Generate an image using AI."""
+        cd = check_imagine_cooldown(ctx.author.id)
+        if cd:
+            if cd != "silent":
+                await ctx.send(imagine_cooldown_msg(int(cd)))
+            return
         await ctx.typing()
 
         key = None

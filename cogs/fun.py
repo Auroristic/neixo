@@ -291,11 +291,7 @@ class FunCog(commands.Cog, name="Fun"):
     async def uwulist(self, ctx):
         if not ctx.guild:
             return
-        config = load_json(CONFIG_FILE)
-        guild_config = config.get(str(ctx.guild.id), {})
-        whitelist = guild_config.get("whitelist", [])
-
-        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in whitelist:
+        if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.manage_messages:
             return await ctx.send("no perms")
 
         if not _lock_scopes:

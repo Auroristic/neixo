@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from utils import get_embed_color, DATA_DIR, help_meta
+from utils import get_embed_color, DATA_DIR, help_meta, is_owner_or_creator
 
 log = logging.getLogger(__name__)
 
@@ -631,11 +631,12 @@ class ReactionsCog(commands.Cog, name="Reactions"):
     @help_meta(
         usage="`.rur @user`",
         desc="resets all reaction data for a specific user.",
-        staff=True,
+        owner=True,
     )
     @commands.command(name="rur", aliases=["resetusereaction"])
-    @commands.has_permissions(manage_guild=True)
     async def reset_user_reactions(self, ctx, member: discord.Member):
+        if not is_owner_or_creator(ctx):
+            return await ctx.send("owner only")
         conn = _get_react_conn()
         conn.execute("DELETE FROM reaction_stats WHERE guild_id = ? AND user_id = ?",
                      (ctx.guild.id, member.id))
@@ -645,11 +646,12 @@ class ReactionsCog(commands.Cog, name="Reactions"):
     @help_meta(
         usage="`.rsr`",
         desc="resets ALL reaction data for this server.",
-        staff=True,
+        owner=True,
     )
     @commands.command(name="rsr", aliases=["resetservereactions"])
-    @commands.has_permissions(administrator=True)
     async def reset_server_reactions(self, ctx):
+        if not is_owner_or_creator(ctx):
+            return await ctx.send("owner only")
         confirm_msg = await ctx.send("⚠️ wipe ALL reaction data for this server? type `yes` to confirm")
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ["yes", "no"]

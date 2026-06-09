@@ -278,6 +278,12 @@ class Neixo(commands.Bot):
         if message.author.bot:
             return
 
+        # ── Ignore list (block ALL commands and AI for ignored users) ─
+        if message.guild:
+            ignore_list = get_ignore_list()
+            if message.author.id in ignore_list:
+                return
+
         # ── Custom alias rewrite ──────────────────────────────
         # One-shot only (no chained alias→alias expansion).
         self._rewrite_alias(message)
@@ -296,9 +302,6 @@ class Neixo(commands.Bot):
             return
 
         # ── Guild AI handling ─────────────────────────────────
-        ignore_list = get_ignore_list()
-        if message.author.id in ignore_list:
-            return
 
         # If this is a real command we already handled it via process_commands,
         # so skip the AI flow.

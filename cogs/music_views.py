@@ -14,6 +14,7 @@ from cogs.music_helpers import (
     _err_embed,
     _fmt_time,
     _ok_embed,
+    _spotify,
     log,
 )
 
@@ -427,22 +428,28 @@ class GenreSelect(Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         genre = self.values[0]
-        vid_id = GENRE_MAP.get(genre)
-        if not vid_id:
+        playlist_id = GENRE_MAP.get(genre)
+        if not playlist_id:
             return await interaction.response.send_message("Invalid genre.", ephemeral=True)
         await interaction.response.defer()
         player: wavelink.Player = self.ctx.voice_client
-        fetched = await self.cog._fetch_similar(vid_id)
-        if not fetched:
-            return await interaction.followup.send("Couldn't fetch songs from YouTube.")
+        try:
+            names = await _spotify.get_playlist_tracks(playlist_id)
+        except Exception as e:
+            log.warning("Spotify genre fetch error: %s", e)
+            return await interaction.followup.send("Couldn't reach Spotify API.")
+        if not names:
+            return await interaction.followup.send("No tracks found on Spotify.")
+        names = names[:10]
         added = 0
-        for data in fetched:
-            track = await wavelink.Playable.search(data["url"], source=wavelink.TrackSource.YouTubeMusic)
-            if isinstance(track, list) and track:
-                track = track[0]
-            if isinstance(track, wavelink.Playable):
-                player.queue.put(track)
-                added += 1
+        for name in names:
+            try:
+                results = await self.cog._yt_search_with_retry(name, source="ytsearch")
+                if results:
+                    await player.queue.put_wait(results[0])
+                    added += 1
+            except Exception as e:
+                log.warning("GenreSelect search error for %r: %s", name, e)
         if not player.playing and not player.queue.is_empty:
             await player.play(player.queue.get())
         await interaction.followup.send(

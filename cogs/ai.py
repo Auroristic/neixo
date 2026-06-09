@@ -456,7 +456,7 @@ class AICog(commands.Cog, name="AI"):
         try:
             from cogs.help import _collect
             # Collect for non-owners, but include whitelisted (staff) commands
-            categories, _ = _collect(self.bot, is_owner=False, is_wl=True)
+            categories, _ = _collect(self.bot, is_owner=False, is_wl=True, has_admin=False)
             
             groups: dict[str, list[str]] = {}
             for cat_id, cat in categories.items():

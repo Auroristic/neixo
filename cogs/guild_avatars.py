@@ -4,7 +4,7 @@ from discord import app_commands
 import logging
 from utils import (
     set_guild_avatar, get_guild_avatar, remove_guild_avatar,
-    get_embed_color, help_meta
+    get_embed_color, help_meta, is_owner_or_creator
 )
 
 logger = logging.getLogger(__name__)
@@ -30,11 +30,8 @@ class GuildAvatars(commands.Cog):
     @commands.command()
     @help_meta(section="Profile", usage=".setavatar <image_url>", desc="Set a custom avatar for this server only")
     async def setavatar(self, ctx, *, image_url: str = None):
-        """Set a custom avatar that only shows in this server.
-        
-        You can provide an image URL or attach an image to the message.
-        This overrides your global avatar only in this server.
-        """
+        if not is_owner_or_creator(ctx):
+            return await ctx.send("owner only")
         # Get image URL from attachment or argument
         if ctx.message.attachments:
             image_url = ctx.message.attachments[0].url

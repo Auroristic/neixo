@@ -42,11 +42,11 @@ SEARCH_RETRIES = 2
 SEARCH_RETRY_DELAY = 0.5
 
 GENRE_MAP = {
-    "phonk": "8LQP804v2cA",
-    "hindi_romantic": "-2RAq5o5pwc",
-    "hindi_sad": "8of5w7RgcTc",
-    "english": "Acj_kh5IH-E",
-    "viral": "ki0Ocze98U8",
+    "phonk": "37i9dQZF1DWWY64wDtewQt",
+    "hindi_romantic": "0zc6Hq9OIAengtGG6a3lfs",
+    "hindi_sad": "45Jl6Uuj7HVwYrpFwQM0Zs",
+    "english": "37i9dQZF1DXcBWIGoYBM5M",
+    "viral": "37i9dQZF1DX82GYyH4GL4U",
 }
 
 # ── HELPERS ───────────────────────────────────────────────────

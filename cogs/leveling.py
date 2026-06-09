@@ -5,7 +5,7 @@ import logging
 from utils import (
     add_xp, add_voice_xp, get_user_xp, get_leaderboard,
     set_level_role, get_level_role, get_all_level_roles,
-    get_embed_color, help_meta, get_help_meta
+    get_embed_color, help_meta, get_help_meta, is_owner_or_creator
 )
 import math
 
@@ -47,15 +47,6 @@ class Leveling(commands.Cog):
         if message.author.bot or message.guild is None:
             return
         
-        # Ignore if in ignored channel (check config)
-        from utils import get_ignore_list
-        ignore_list = get_ignore_list()
-        # Ensure ignore_list is a dict (it might be a list if file doesn't exist yet)
-        if isinstance(ignore_list, list):
-            ignore_list = {}
-        guild_ignores = ignore_list.get(str(message.guild.id), [])
-        if str(message.channel.id) in guild_ignores:
-            return
         
         # Simple cooldown: 1 XP per minute per user
         import time
@@ -183,16 +174,19 @@ class Leveling(commands.Cog):
             suffix = "th" if 11 <= i <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(i % 10, "th")
             
             embed.add_field(
-                value=f"**{i}{suffix}** - {name}\nLevel {entry['level']} • {entry['xp']:,} XP",
+                name=f"**{i}{suffix}** - {name}",
+                value=f"Level {entry['level']} • {entry['xp']:,} XP",
                 inline=False
             )
         
         await ctx.send(embed=embed)
 
     @commands.group(invoke_without_command=True)
-    @help_meta(section="Leveling", usage=".levelrole [level] [@role]", desc="Manage level roles")
+    @help_meta(section="Leveling", usage=".levelrole [level] [@role]", desc="Manage level roles", admin=True)
     async def levelrole(self, ctx, level: int = None, role: discord.Role = None):
         """Manage level-up roles. Use `.levelrole 5 @Role` to set a role for level 5."""
+        if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
+            return await ctx.send("admin only")
         if level is None or role is None:
             # Show all level roles
             roles = get_all_level_roles(ctx.guild.id)
