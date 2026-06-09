@@ -233,25 +233,6 @@ def _build_detail_embed(
     return embed
 
 
-# ── simple main embed ─────────────────────────────────────────
-
-def _build_simple_help_embed(
-    bot: commands.Bot,
-    color: int,
-    author: discord.User,
-) -> discord.Embed:
-    desc = (
-        f"{author.mention} **https://auroristic.github.io/xo/** "
-        f"for all commands, use `.help <command>` for specific command or ping n ask me"
-    )
-    embed = discord.Embed(description=desc, color=color)
-    embed.set_footer(
-        text=f"{bot.user.display_name} • .gg/seoulities",
-        icon_url=bot.user.display_avatar.url,
-    )
-    return embed
-
-
 # ── cog ───────────────────────────────────────────────────────
 
 class HelpCog(commands.Cog, name="Help"):
@@ -297,8 +278,10 @@ class HelpCog(commands.Cog, name="Help"):
                 f"Command `{cmd}` not found. Use `.help` to browse all commands."
             )
 
-        embed = _build_simple_help_embed(self.bot, color, ctx.author)
-        await ctx.send(embed=embed)
+        await ctx.send(
+            f"{ctx.author.mention} **https://auroristic.github.io/xo/** for all commands,\n"
+            f"use `.help <command>` for specific command or ping n ask me"
+        )
 
 
 async def setup(bot: commands.Bot):
