@@ -241,8 +241,8 @@ def _build_simple_help_embed(
     author: discord.User,
 ) -> discord.Embed:
     desc = (
-        f"{author.mention} **https://auroristic.github.io/xo/** for all commands."
-        f"use `.help <command>` for specific command or ping n ask me"
+        f"{author.mention} **https://auroristic.github.io/xo/** "
+        f"for all commands, use `.help <command>` for specific command or ping n ask me"
     )
     embed = discord.Embed(description=desc, color=color)
     embed.set_footer(
