@@ -317,9 +317,9 @@ def _render_lb_card(
 
     title_font    = _load_font(44, bold=True)
     subtitle_font = _load_font(24, bold=False)
-    rank_font     = _load_font(28, bold=True)
-    name_font     = _load_font(28, bold=False)
-    count_font    = _load_font(28, bold=True)
+    rank_font     = _load_font(30, bold=True)
+    name_font     = _load_font(30, bold=False)
+    count_font    = _load_font(30, bold=True)
     footer_font   = _load_font(20, bold=False)
     footer_bold   = _load_font(20, bold=True)
 
@@ -328,9 +328,9 @@ def _render_lb_card(
     draw.line([(90, 200), (W - 90, 200)], fill=(255, 255, 255, 60), width=1)
 
     start_y = 230
-    row_h   = 64
+    row_h   = 60
     rank_x  = 90
-    name_x  = 175
+    name_x  = 170
     count_x = W - 90
 
     tints = {
@@ -339,20 +339,11 @@ def _render_lb_card(
         3: (205, 127, 50, 255),
     }
 
-    medal_prefix = {1: "\U0001f947 ", 2: "\U0001f948 ", 3: "\U0001f949 "}
-
     for i, (rank, name, count) in enumerate(rows):
         y = start_y + i * row_h
-
-        if i % 2 == 0:
-            draw.rounded_rectangle(
-                [rank_x - 8, y - 4, count_x + 8, y + row_h - 4],
-                radius=8, fill=(255, 255, 255, 6),
-            )
-
-        rank_str = medal_prefix.get(rank, f"  {rank}.")
+        rank_str = f"{rank}."
         rank_color = tints.get(rank, (255, 255, 255, 235))
-        draw.text((rank_x - 4, y), rank_str, font=rank_font, fill=rank_color)
+        draw.text((rank_x, y), rank_str, font=rank_font, fill=rank_color)
 
         max_w = (count_x - 90) - name_x
         name_disp = name
