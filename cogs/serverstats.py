@@ -75,7 +75,9 @@ def _get_conn() -> _sql.Connection:
             );
             CREATE TABLE IF NOT EXISTS starboard_config (
                 guild_id INTEGER PRIMARY KEY,
-                channel_id INTEGER NOT NULL
+                channel_id INTEGER NOT NULL,
+                emoji TEXT NOT NULL DEFAULT '\u2b50',
+                threshold INTEGER NOT NULL DEFAULT 1
             );
             CREATE TABLE IF NOT EXISTS starboard_entries (
                 guild_id    INTEGER NOT NULL,
@@ -83,6 +85,19 @@ def _get_conn() -> _sql.Connection:
                 PRIMARY KEY (guild_id, message_id)
             )
         """)
+        # migrate old starboard_config rows that lack emoji/threshold columns
+        try:
+            _stats_conn.executescript(
+                "ALTER TABLE starboard_config ADD COLUMN emoji TEXT NOT NULL DEFAULT '\u2b50';"
+            )
+        except Exception:
+            pass
+        try:
+            _stats_conn.executescript(
+                "ALTER TABLE starboard_config ADD COLUMN threshold INTEGER NOT NULL DEFAULT 1;"
+            )
+        except Exception:
+            pass
         _stats_conn.commit()
     return _stats_conn
 
@@ -603,24 +618,22 @@ class ServerStatsCog(commands.Cog):
 
     # ── Starboard ─────────────────────────────────────────────────────
 
-    STARBOARD_EMOJI = "\u2b50"
-    STARBOARD_THRESHOLD = 3
-
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         if payload.guild_id is None:
             return
-        if payload.emoji.name != self.STARBOARD_EMOJI:
-            return
 
         conn = _get_conn()
         row = conn.execute(
-            "SELECT channel_id FROM starboard_config WHERE guild_id = ?",
+            "SELECT channel_id, emoji, threshold FROM starboard_config WHERE guild_id = ?",
             (payload.guild_id,),
         ).fetchone()
         if row is None:
             return
-        channel_id = row[0]
+        channel_id, star_emoji, threshold = row
+
+        if str(payload.emoji) != star_emoji and payload.emoji.name != star_emoji:
+            return
 
         # Skip if already starboarded
         already = conn.execute(
@@ -642,15 +655,13 @@ class ServerStatsCog(commands.Cog):
         except Exception:
             return
 
-        # Count star reactions on this message
         star_count = sum(
             1 for r in msg.reactions
-            if str(r.emoji) == self.STARBOARD_EMOJI
+            if str(r.emoji) == star_emoji
         )
-        if star_count < self.STARBOARD_THRESHOLD:
+        if star_count < threshold:
             return
 
-        # Mark as posted (before sending to prevent duplicates on error)
         conn.execute(
             "INSERT OR IGNORE INTO starboard_entries (guild_id, message_id) VALUES (?, ?)",
             (payload.guild_id, payload.message_id),
@@ -679,25 +690,71 @@ class ServerStatsCog(commands.Cog):
             value=f"[jump to message]({msg.jump_url}) in #{channel.name}",
             inline=False,
         )
-        embed.set_footer(text=f"\u2b50 {star_count} \u00b7 {msg.author.id}")
+        embed.set_footer(text=f"{star_emoji} {star_count} \u00b7 {msg.author.id}")
 
         await star_channel.send(embed=embed)
 
     @help_meta(
-        usage="`.starboard #channel`",
-        desc="set the starboard channel.",
+        usage="`.starboard #channel [emoji] [threshold]`\n`.starboard emoji 😭`\n`.starboard threshold 5`",
+        desc="manage the starboard: channel, emoji, and reaction threshold.",
         staff=True,
     )
-    @commands.command(name="starboard")
+    @commands.group(name="starboard", invoke_without_command=True)
     @commands.has_permissions(administrator=True)
-    async def starboard(self, ctx: commands.Context, channel: discord.TextChannel):
+    async def starboard(self, ctx: commands.Context, channel: discord.TextChannel = None, emoji: str = None, threshold: int = None):
+        if channel is None:
+            return await ctx.send_help(ctx.command)
         conn = _get_conn()
+        existing = conn.execute(
+            "SELECT emoji, threshold FROM starboard_config WHERE guild_id = ?",
+            (ctx.guild.id,),
+        ).fetchone()
+        final_emoji = emoji or (existing[0] if existing else "\u2b50")
+        final_threshold = threshold if threshold is not None else (existing[1] if existing else 1)
         conn.execute(
-            "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id) VALUES (?, ?)",
-            (ctx.guild.id, channel.id),
+            "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
+            (ctx.guild.id, channel.id, final_emoji, final_threshold),
         )
         conn.commit()
-        await ctx.send(f"\u2b50 Starboard channel set to {channel.mention}")
+        await ctx.send(f"\u2b50 Starboard set to {channel.mention} \u00b7 emoji: {final_emoji} \u00b7 threshold: {final_threshold}")
+
+    @starboard.command(name="emoji")
+    @commands.has_permissions(administrator=True)
+    async def starboard_emoji(self, ctx: commands.Context, emoji: str):
+        conn = _get_conn()
+        existing = conn.execute(
+            "SELECT channel_id, threshold FROM starboard_config WHERE guild_id = ?",
+            (ctx.guild.id,),
+        ).fetchone()
+        if not existing:
+            return await ctx.send("set a channel first with `.starboard #channel`")
+        channel_id, threshold = existing
+        conn.execute(
+            "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
+            (ctx.guild.id, channel_id, emoji, threshold),
+        )
+        conn.commit()
+        await ctx.send(f"\u2b50 Starboard emoji changed to {emoji}")
+
+    @starboard.command(name="threshold")
+    @commands.has_permissions(administrator=True)
+    async def starboard_threshold(self, ctx: commands.Context, threshold: int):
+        if threshold < 1:
+            return await ctx.send("threshold must be at least 1")
+        conn = _get_conn()
+        existing = conn.execute(
+            "SELECT channel_id, emoji FROM starboard_config WHERE guild_id = ?",
+            (ctx.guild.id,),
+        ).fetchone()
+        if not existing:
+            return await ctx.send("set a channel first with `.starboard #channel`")
+        channel_id, emoji = existing
+        conn.execute(
+            "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
+            (ctx.guild.id, channel_id, emoji, threshold),
+        )
+        conn.commit()
+        await ctx.send(f"\u2b50 Starboard threshold set to {threshold}")
 
     # ── Commands ───────────────────────────────────────────────────────────
     @help_meta(
