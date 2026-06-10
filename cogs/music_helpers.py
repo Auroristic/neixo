@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import io
 import logging
 import os
 import re
-import time
 from typing import List, Optional, Tuple
 
 import aiohttp
@@ -15,28 +13,25 @@ import wavelink
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from neixoconfig import Neixocolor, Neixoemojis
 from utils import get_embed_color
-from spotify_scraper import SpotifyClient as SpotifyScraper
 
 log = logging.getLogger(__name__)
 
 # ── CONSTANTS ─────────────────────────────────────────────────
 
-SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
-SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
-SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
-SPOTIFY_API_BASE = "https://api.spotify.com/v1"
-
 SPOTIFY_TRACK_RE = re.compile(r"spotify\.com/track/([A-Za-z0-9]+)")
 SPOTIFY_PLAYLIST_RE = re.compile(r"spotify\.com/playlist/([A-Za-z0-9]+)")
 SPOTIFY_ALBUM_RE = re.compile(r"spotify\.com/album/([A-Za-z0-9]+)")
+APPLE_MUSIC_RE = re.compile(r"music\.apple\.com/")
+BANDCAMP_RE = re.compile(r"bandcamp\.com/")
+TWITCH_RE = re.compile(r"twitch\.tv/")
+VIMEO_RE = re.compile(r"vimeo\.com/")
+HTTP_AUDIO_RE = re.compile(r"https?://.*\.(mp3|ogg|flac|wav|aac|m4a)", re.IGNORECASE)
 SOUNDCLOUD_RE = re.compile(r"soundcloud\.com/")
 
 GENIUS_ACCESS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN", "")
 GENIUS_API_BASE = "https://api.genius.com"
 
-SPOTIFY_PLAYLIST_CAP = 100
 MAX_TRACK_DURATION_MS = 30 * 60 * 1000
-SPOTIFY_BATCH_SIZE = 5
 SEARCH_RETRIES = 2
 SEARCH_RETRY_DELAY = 0.5
 
@@ -116,150 +111,6 @@ def _is_track_allowed(track) -> Tuple[bool, str]:
             f"max is {_fmt_time(MAX_TRACK_DURATION_MS)}."
         )
     return True, ""
-
-# ── SPOTIFY CLIENT ────────────────────────────────────────────
-
-class SpotifyClient:
-    def __init__(self) -> None:
-        self._token: Optional[str] = None
-        self._expires: float = 0.0
-        self._session: Optional[aiohttp.ClientSession] = None
-
-    async def _get_session(self) -> aiohttp.ClientSession:
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
-        return self._session
-
-    async def _ensure_token(self) -> None:
-        session = await self._get_session()
-        if self._token and time.monotonic() < self._expires:
-            return
-        creds = base64.b64encode(f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()).decode()
-        headers = {"Authorization": f"Basic {creds}"}
-        data = {"grant_type": "client_credentials"}
-        async with session.post(SPOTIFY_TOKEN_URL, headers=headers, data=data) as r:
-            if r.status != 200:
-                raise RuntimeError(f"Spotify token fetch failed: {r.status}")
-            body = await r.json()
-            self._token = body["access_token"]
-            self._expires = time.monotonic() + body["expires_in"] - 30
-
-    async def _get(self, path: str) -> dict:
-        await self._ensure_token()
-        session = await self._get_session()
-        headers = {"Authorization": f"Bearer {self._token}"}
-        async with session.get(f"{SPOTIFY_API_BASE}{path}", headers=headers) as r:
-            if r.status != 200:
-                raise RuntimeError(f"Spotify API error {r.status}: {path}")
-            return await r.json()
-
-    async def get_track(self, track_id: str) -> List[str]:
-        data = await self._get(f"/tracks/{track_id}")
-        name = data["name"]
-        artists = ", ".join(a["name"] for a in data["artists"])
-        return [f"{artists} - {name}"]
-
-    async def get_album_tracks(self, album_id: str) -> List[str]:
-        album_data = await self._get(f"/albums/{album_id}")
-        album_artists = ", ".join(a["name"] for a in album_data.get("artists", []))
-        tracks = []
-        offset = 0
-        while len(tracks) < SPOTIFY_PLAYLIST_CAP:
-            page = await self._get(
-                f"/albums/{album_id}/tracks?limit=50&offset={offset}"
-            )
-            items = page.get("items", [])
-            if not items:
-                break
-            for item in items:
-                artist = ", ".join(a["name"] for a in item.get("artists", [])) or album_artists
-                tracks.append(f"{artist} - {item['name']}")
-            if len(items) < 50:
-                break
-            offset += len(items)
-        return tracks[:SPOTIFY_PLAYLIST_CAP]
-
-    async def get_playlist_tracks(self, playlist_id: str) -> List[str]:
-        # Spotify Feb 2026: playlist items only available for owner/collaborator
-        # when using client credentials in Development Mode.
-        # Try the deprecated /tracks endpoint (still works for Extended Quota),
-        # then fall back to the playlist object which may have items embedded.
-        tracks: List[str] = []
-        offset = 0
-        limit = 50  # new max for /items endpoint
-        while len(tracks) < SPOTIFY_PLAYLIST_CAP:
-            try:
-                data = await self._get(
-                    f"/playlists/{playlist_id}/tracks"
-                    f"?fields=items(track(name,artists(name)))"
-                    f"&limit={limit}&offset={offset}"
-                )
-            except RuntimeError:
-                # /tracks endpoint restricted (Development Mode) — try playlist object
-                data = await self._get(f"/playlists/{playlist_id}")
-                items = (data.get("tracks") or data.get("items") or {}).get("items", [])
-                if not items:
-                    log.warning(
-                        "Spotify playlist tracks unavailable — app is in Development Mode "
-                        "and is not the playlist owner/collaborator. Upgrade to Extended "
-                        "Quota Mode at developer.spotify.com to restore playlist support."
-                    )
-                for item in items[:SPOTIFY_PLAYLIST_CAP]:
-                    t = item.get("track") or item.get("item")
-                    if not t:
-                        continue
-                    name = t.get("name", "")
-                    artists = ", ".join(a["name"] for a in t.get("artists", []))
-                    if name and artists:
-                        tracks.append(f"{artists} - {name}")
-                    elif name:
-                        tracks.append(name)
-                break
-
-            items = data.get("items", [])
-            if not items:
-                break
-            for item in items:
-                t = item.get("track")
-                if not t:
-                    continue
-                name = t.get("name", "")
-                artists = ", ".join(a["name"] for a in t.get("artists", []))
-                if name and artists:
-                    tracks.append(f"{artists} - {name}")
-                elif name:
-                    tracks.append(name)
-            if len(items) < limit:
-                break
-            offset += limit
-        return tracks[:SPOTIFY_PLAYLIST_CAP]
-
-    async def close(self) -> None:
-        if self._session and not self._session.closed:
-            await self._session.close()
-
-_spotify = SpotifyClient()
-
-# ── SPOTIFY SCRAPER (playlist fallback) ──────────────────────
-
-async def _scrape_spotify_playlist(url: str) -> List[str]:
-    def sync_scrape():
-        client = SpotifyScraper()
-        try:
-            info = client.get_playlist_info(url)
-            tracks = []
-            for item in info.get("tracks", []):
-                name = item.get("name")
-                artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
-                if name and artists:
-                    tracks.append(f"{artists} - {name}")
-                elif name:
-                    tracks.append(name)
-            return tracks
-        finally:
-            if hasattr(client, "close"):
-                client.close()
-    return await asyncio.get_event_loop().run_in_executor(None, sync_scrape)
 
 # ── MUSIC CARD GENERATOR ─────────────────────────────────────
 
