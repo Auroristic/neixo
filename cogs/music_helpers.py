@@ -188,11 +188,11 @@ class SpotifyClient:
         return tracks[:SPOTIFY_PLAYLIST_CAP]
 
     async def get_playlist_tracks(self, playlist_id: str) -> List[str]:
-        data = await self._get(
-            f"/playlists/{playlist_id}/tracks?limit=100"
-        )
+        # Use the main playlist endpoint — works reliably with client-credentials
+        # for public playlists, whereas /tracks alone can 403.
+        data = await self._get(f"/playlists/{playlist_id}")
         tracks = []
-        for item in data.get("items", [])[:SPOTIFY_PLAYLIST_CAP]:
+        for item in (data.get("tracks") or {}).get("items", [])[:SPOTIFY_PLAYLIST_CAP]:
             t = item.get("track")
             if not t:
                 continue
