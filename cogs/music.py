@@ -19,23 +19,22 @@ from neixoconfig import Neixocolor, Neixoemojis
 from utils import help_meta
 
 from cogs.music_helpers import (
-    APPLE_MUSIC_RE,
-    BANDCAMP_RE,
-    HTTP_AUDIO_RE,
-    SEARCH_RETRIES,
-    SEARCH_RETRY_DELAY,
-    SOUNDCLOUD_RE,
-    SPOTIFY_ALBUM_RE,
-    SPOTIFY_PLAYLIST_RE,
-    SPOTIFY_TRACK_RE,
-    TWITCH_RE,
-    VIMEO_RE,
     _err_embed,
     _fmt_time,
     _gen_music_card,
     _is_track_allowed,
     _ok_embed,
     _parse_lrc,
+    _scrape_spotify_playlist,
+    _spotify,
+    SEARCH_RETRIES,
+    SEARCH_RETRY_DELAY,
+    SOUNDCLOUD_RE,
+    SPOTIFY_ALBUM_RE,
+    SPOTIFY_BATCH_SIZE,
+    SPOTIFY_PLAYLIST_CAP,
+    SPOTIFY_PLAYLIST_RE,
+    SPOTIFY_TRACK_RE,
 )
 from cogs.music_views import (
     GenreView,
@@ -68,14 +67,17 @@ class Music(commands.Cog):
         self._http_session: Optional[aiohttp.ClientSession] = None
         self._live_tasks: dict[int, asyncio.Task] = {}
         self._live_msgs: dict[int, discord.Message] = {}
+        # Guilds where the ⏮ (prev) button was just pressed. Set before the
+        # replace-style player.play() in prev_btn, cleared in on_track_end so
+        # the queue auto-advance for the *replaced* track is suppressed.
         self._prev_pressed: set[int] = set()
-        self._session_stats: dict[int, dict] = {}
 
     async def cog_load(self) -> None:
         """Initialize HTTP session when cog loads"""
         self._http_session = aiohttp.ClientSession()
 
     async def cog_unload(self) -> None:
+        await _spotify.close()
         if self._http_session and not self._http_session.closed:
             await self._http_session.close()
 
@@ -435,14 +437,15 @@ class Music(commands.Cog):
             tracks.append({"title": title, "identifier": vid, "url": f"https://www.youtube.com/watch?v={vid}"})
         return tracks
 
-    async def _search_with_fallback(self, query: str):
-        results = await self._yt_search_with_retry(query + " audio", source="ytsearch")
-        if results:
-            return results
-        results = await self._yt_search_with_retry(query, source="ytsearch")
-        if results:
-            return results
-        return await self._yt_search_with_retry(query, source="scsearch")
+    async def _resolve_spotify(self, query: str) -> List[str]:
+        if m := SPOTIFY_TRACK_RE.search(query):
+            return await _spotify.get_track(m.group(1))
+        if m := SPOTIFY_ALBUM_RE.search(query):
+            return await _spotify.get_album_tracks(m.group(1))
+        if m := SPOTIFY_PLAYLIST_RE.search(query):
+            tracks = await _scrape_spotify_playlist(query)
+            return tracks[:SPOTIFY_PLAYLIST_CAP]
+        return []
 
     async def _yt_search_with_retry(self, query: str, source: str = "ytsearch"):
         """wavelink search with retries on transient errors. Returns list/Playlist or [] on failure."""
@@ -568,71 +571,88 @@ class Music(commands.Cog):
         if not hasattr(player, "home"):
             player.home = ctx.channel
 
-        # ── Source detection ─────────────────────────────────
         is_spotify = (
             "spotify.com" in query
-            and (SPOTIFY_TRACK_RE.search(query) or SPOTIFY_PLAYLIST_RE.search(query) or SPOTIFY_ALBUM_RE.search(query))
+            and (
+                SPOTIFY_TRACK_RE.search(query)
+                or SPOTIFY_PLAYLIST_RE.search(query)
+                or SPOTIFY_ALBUM_RE.search(query)
+            )
         )
-        is_apple_music = APPLE_MUSIC_RE.search(query)
-        is_direct_url = (
-            BANDCAMP_RE.search(query)
-            or TWITCH_RE.search(query)
-            or VIMEO_RE.search(query)
-            or HTTP_AUDIO_RE.search(query)
-        )
-
-        if is_spotify or is_apple_music:
+        if is_spotify:
             try:
-                result = await wavelink.Playable.search(query)
+                names = await self._resolve_spotify(query)
             except Exception as e:
-                log.warning("LavaSrc resolve error: %s", e)
-                return await ctx.send(embed=_err_embed("couldn't resolve that link.", ctx))
+                log.warning("Spotify resolve error: %s", e)
+                return await ctx.send(embed=_err_embed("couldn't reach Spotify API.", ctx))
 
-            if not result:
-                return await ctx.send(embed=_err_embed("no tracks found for that link.", ctx))
+            if not names:
+                return await ctx.send(embed=_err_embed("no tracks found on Spotify.", ctx))
 
-            if isinstance(result, wavelink.Playlist):
-                added = 0
-                rejected = 0
-                for t in result.tracks:
-                    ok, _reason = _is_track_allowed(t)
-                    if not ok:
+            capped = len(names) < SPOTIFY_PLAYLIST_CAP
+            status_msg = await ctx.send(
+                embed=_ok_embed(f"loading {len(names)} Spotify track(s)...", ctx)
+            )
+
+            sem = asyncio.Semaphore(SPOTIFY_BATCH_SIZE)
+
+            async def _resolve_one(name: str):
+                async with sem:
+                    results = await self._yt_search_with_retry(name + " audio", source="ytsearch")
+                if not results:
+                    async with sem:
+                        results = await self._yt_search_with_retry(name, source="ytsearch")
+                if not results:
+                    return None
+                # results is list[Playable] for ytsearch
+                if isinstance(results, list) and len(results) > 1:
+                    track = self._prefer_audio_track(results, name)
+                else:
+                    track = results[0] if isinstance(results, list) else None
+                if not track:
+                    return None
+                ok, _reason = _is_track_allowed(track)
+                return track if ok else None
+
+            added = 0
+            rejected = 0
+            chunk_size = 20  # batch progress updates and start playback early
+            for chunk_start in range(0, len(names), chunk_size):
+                # Ensure we have a live player before queueing this chunk
+                player = await self._ensure_player_connected(player, ctx)
+                if player is None:
+                    break
+                chunk = names[chunk_start : chunk_start + chunk_size]
+                resolved = await asyncio.gather(
+                    *[_resolve_one(n) for n in chunk], return_exceptions=False
+                )
+                for t in resolved:
+                    if t is None:
                         rejected += 1
                         continue
-                    t.requester_id = ctx.author.id
                     await player.queue.put_wait(t)
                     added += 1
-                if added == 0:
-                    return await ctx.send(embed=_err_embed(
-                        f"every track in **{result.name}** was filtered out (too long / live).", ctx
-                    ))
-                extra = f" {rejected} skipped (too long or live)." if rejected else ""
-                await ctx.send(embed=_ok_embed(
-                    f"added **{result.name}** ({added} tracks).{extra}", ctx
-                ))
-            else:
-                t = result[0] if isinstance(result, list) else result
-                ok, reason = _is_track_allowed(t)
-                if not ok:
-                    return await ctx.send(embed=_err_embed(reason, ctx))
-                t.requester_id = ctx.author.id
-                pos = player.queue.count + 1
-                await player.queue.put_wait(t)
-                ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(pos, f"{pos}th")
-                await ctx.send(embed=_ok_embed(f"added **{t.title}** to {ordinal} in the queue.", ctx))
 
-            guild_id = player.guild.id
-            if guild_id not in self._track_locks:
-                self._track_locks[guild_id] = asyncio.Lock()
-            async with self._track_locks[guild_id]:
-                if not player.playing and not player.queue.is_empty:
-                    player = await self._ensure_player_connected(player, ctx)
-                    if player is None:
-                        return
+                # Start playback as soon as we have something
+                if added and not player.playing and not player.queue.is_empty:
                     try:
                         await player.play(player.queue.get())
                     except Exception as e:
-                        log.warning("failed to start playback: %s", e)
+                        log.warning("Spotify initial play failed: %s", e)
+
+                if chunk_start + chunk_size < len(names):
+                    try:
+                        await status_msg.edit(
+                            embed=_ok_embed(f"loading... {added}/{len(names)} tracks queued", ctx)
+                        )
+                    except discord.HTTPException:
+                        pass
+
+            suffix = "" if capped else f" (capped at {SPOTIFY_PLAYLIST_CAP})"
+            extra = f" {rejected} skipped (too long / live / unavailable)." if rejected else ""
+            await status_msg.edit(
+                embed=_ok_embed(f"queued **{added}** Spotify track(s){suffix}.{extra}", ctx)
+            )
             return
 
         if SOUNDCLOUD_RE.search(query):
@@ -642,29 +662,16 @@ class Music(commands.Cog):
             await self._queue_tracks(ctx, player, tracks, source_label="SoundCloud")
             return
 
-        if is_direct_url:
-            try:
-                result = await wavelink.Playable.search(query)
-            except Exception as e:
-                log.warning("Direct URL resolve error: %s", e)
-                return await ctx.send(embed=_err_embed("couldn't resolve that url.", ctx))
-
-            if isinstance(result, wavelink.Playlist):
-                for t in result.tracks:
-                    t.requester_id = ctx.author.id
-                await self._queue_tracks(ctx, player, result)
-            else:
-                t = result[0] if isinstance(result, list) else result
-                t.requester_id = ctx.author.id
-                await self._queue_tracks(ctx, player, [t])
+        tracks = await self._yt_search_with_retry(query + " audio", source="ytsearch")
+        if not tracks:
+            tracks = await self._yt_search_with_retry(query, source="ytsearch")
+        if not tracks:
+            view = SCRetryView(self, ctx, query)
+            await ctx.send(embed=_err_embed("couldn't find anything on YouTube.", ctx), view=view)
             return
 
-        tracks = await self._search_with_fallback(query)
-        if not tracks:
-            return await ctx.send(embed=_err_embed("couldn't find anything.", ctx))
-
         if isinstance(tracks, list) and len(tracks) > 1:
-            tracks = [self._prefer_audio_track(tracks, query)]
+            tracks = [self._prefer_audio_track(tracks, query)] 
 
         await self._queue_tracks(ctx, player, tracks)
 
@@ -681,7 +688,6 @@ class Music(commands.Cog):
             added = 0
             rejected = 0
             for t in tracks.tracks:
-                t.requester_id = ctx.author.id
                 ok, _reason = _is_track_allowed(t)
                 if not ok:
                     rejected += 1
@@ -697,8 +703,7 @@ class Music(commands.Cog):
                 embed=_ok_embed(f"added playlist **{tracks.name}** ({added} songs){src}.{extra}", ctx)
             )
         else:
-            track = tracks[0] if isinstance(tracks, list) else tracks
-            track.requester_id = ctx.author.id
+            track = tracks[0]
             ok, reason = _is_track_allowed(track)
             if not ok:
                 return await ctx.send(embed=_err_embed(reason, ctx))
@@ -709,6 +714,8 @@ class Music(commands.Cog):
                 embed=_ok_embed(f"added **{track.title}** to {ordinal} in the queue{src}.", ctx)
             )
 
+        # Serialize playback start through the per-guild lock so we don't race
+        # with a concurrent _queue_tracks call or with on_wavelink_track_end.
         guild_id = player.guild.id
         if guild_id not in self._track_locks:
             self._track_locks[guild_id] = asyncio.Lock()
@@ -835,15 +842,6 @@ class Music(commands.Cog):
 
         if hasattr(player, "_skip_votes"):
             player._skip_votes.clear()
-            player._skip_initiator = None
-
-        guild_id = player.guild.id
-        stats = self._session_stats.setdefault(guild_id, {"tracks": 0, "total_ms": 0, "requesters": {}})
-        stats["tracks"] += 1
-        stats["total_ms"] += track.length or 0
-        rid = getattr(track, "requester_id", None)
-        if rid:
-            stats["requesters"][rid] = stats["requesters"].get(rid, 0) + 1
 
         if player.channel:
             await self._update_vc_status(player.channel.id, f"{track.title} | Neixo")
@@ -1002,66 +1000,35 @@ class Music(commands.Cog):
             return await ctx.send(embed=_err_embed("gimme something to play. `.play <query>`", ctx))
         await self._play_core(ctx, query)
 
-    async def _handle_skip(self, ctx: commands.Context, *, vote_initiator: discord.Member = None) -> None:
+    @help_meta(usage="`.skip`", desc="skips the current track. requires a vote if multiple people are in VC.", section="Playback")
+    @commands.command(aliases=["next"])
+    async def skip(self, ctx: commands.Context) -> None:
+        if not await self._check_vc(ctx) or not await self._check_playing(ctx):
+            return
         player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         channel = player.channel
         if not channel:
             return
-        listeners = [m for m in channel.members if not m.bot]
-        required = max(1, (len(listeners) + 1) // 2)
 
-        # solo listener, manage_guild, or track requester → insta-skip
-        if (
-            len(listeners) <= 1
-            or ctx.author.guild_permissions.manage_guild
-            or (player.current and getattr(player.current, "requester_id", None) == ctx.author.id)
-        ):
-            if player.current and getattr(player.current, "requester_id", None) == ctx.author.id and not ctx.author.guild_permissions.manage_guild and len(listeners) > 1:
-                await player.skip(force=True)
-                return await ctx.send(embed=_ok_embed("skipped your own track.", ctx))
+        listeners = [m for m in channel.members if not m.bot]
+        required = max(1, len(listeners) // 2)
+
+        if len(listeners) <= 1 or ctx.author.guild_permissions.manage_guild:
             await player.skip(force=True)
             return await ctx.send(embed=_ok_embed("skipped.", ctx))
 
         if not hasattr(player, "_skip_votes"):
             player._skip_votes = set()
-        if not hasattr(player, "_skip_initiator"):
-            player._skip_initiator = None
-
-        if player._skip_initiator is None and vote_initiator is not None:
-            player._skip_initiator = vote_initiator
-
-        if ctx.author.id in player._skip_votes:
-            return await ctx.send(embed=_err_embed("you already voted to skip this track.", ctx))
 
         player._skip_votes.add(ctx.author.id)
         votes = len(player._skip_votes)
 
         if votes >= required:
             player._skip_votes.clear()
-            player._skip_initiator = None
             await player.skip(force=True)
             await ctx.send(embed=_ok_embed(f"vote passed ({votes}/{required}) — skipped.", ctx))
         else:
-            initiator_name = player._skip_initiator.display_name if player._skip_initiator else "someone"
-            await ctx.send(embed=_ok_embed(
-                f"skip vote: **{votes}/{required}** — need {required - votes} more vote(s). started by {initiator_name}.",
-                ctx
-            ))
-
-    @help_meta(usage="`.skip`", desc="skips the current track. requires a vote if multiple people are in VC.", section="Playback")
-    @commands.command(aliases=["next"])
-    async def skip(self, ctx: commands.Context) -> None:
-        if not await self._check_vc(ctx) or not await self._check_playing(ctx):
-            return
-        await self._handle_skip(ctx, vote_initiator=ctx.author)
-
-    @help_meta(usage="`.voteskip`", desc="starts a vote to skip the current track.", section="Playback")
-    @commands.command(aliases=["vs"])
-    @commands.cooldown(1, 10, commands.BucketType.user)
-    async def voteskip(self, ctx: commands.Context) -> None:
-        if not await self._check_vc(ctx) or not await self._check_playing(ctx):
-            return
-        await self._handle_skip(ctx, vote_initiator=ctx.author)
+            await ctx.send(embed=_ok_embed(f"skip vote: **{votes}/{required}** — need {required - votes} more.", ctx))
 
     @help_meta(usage="`.disconnect`", desc="stops playback, clears queue, and leaves voice.", section="Playback")
     @commands.command(aliases=["dc", "stop"])
@@ -1085,7 +1052,6 @@ class Music(commands.Cog):
 
         self._history.pop(guild_id, None)
         self._track_locks.pop(guild_id, None)
-        self._session_stats.pop(guild_id, None)
         await player.disconnect()
         await ctx.send(embed=_ok_embed("disconnected.", ctx))
 
@@ -1865,13 +1831,16 @@ class Music(commands.Cog):
         player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         if not player:
             return await ctx.send(embed=_err_embed("not connected.", ctx))
-        tracks = await self._search_with_fallback(query)
+        tracks = await self._yt_search_with_retry(query + " audio", source="ytsearch")
+        if not tracks:
+            tracks = await self._yt_search_with_retry(query, source="ytsearch")
         if not tracks:
             return await ctx.send(embed=_err_embed("nothing found.", ctx))
         if isinstance(tracks, list) and len(tracks) > 1:
             tracks = [self._prefer_audio_track(tracks, query)]
         track = tracks[0] if isinstance(tracks, list) else tracks
         if isinstance(track, wavelink.Playlist):
+            # take the first allowed track from the playlist
             track = next(
                 (t for t in track.tracks if _is_track_allowed(t)[0]),
                 None,
@@ -1883,183 +1852,8 @@ class Music(commands.Cog):
         ok, reason = _is_track_allowed(track)
         if not ok:
             return await ctx.send(embed=_err_embed(reason, ctx))
-        track.requester_id = ctx.author.id
         player.queue.put_at(0, track)
         await ctx.send(embed=_ok_embed(f"**{track.title}** will play next.", ctx))
-
-    @help_meta(usage="`.tts <text>`", desc="text-to-speech via Flowery TTS. max 200 chars.", section="Playback")
-    @commands.command()
-    @commands.cooldown(1, 5, commands.BucketType.user)
-    async def tts(self, ctx: commands.Context, *, text: str = None) -> None:
-        if not text:
-            return await ctx.send(embed=_err_embed("gimme some text. `.tts <text>`", ctx))
-        if len(text) > 200:
-            return await ctx.send(embed=_err_embed("text too long — max 200 characters.", ctx))
-        if not await self._check_vc(ctx):
-            return
-        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
-        if not player:
-            try:
-                channel = ctx.author.voice.channel
-                player = await channel.connect(cls=wavelink.Player)
-            except (AttributeError, discord.ClientException):
-                return
-            player.autoplay = wavelink.AutoPlayMode.disabled
-            if not hasattr(player, "home"):
-                player.home = ctx.channel
-        query = f"ftts://{urllib.parse.quote(text)}"
-        try:
-            result = await wavelink.Playable.search(query)
-        except Exception as e:
-            log.warning("ftts resolve error: %s", e)
-            return await ctx.send(embed=_err_embed("tts failed.", ctx))
-        if isinstance(result, list) and result:
-            track = result[0]
-        elif not isinstance(result, list):
-            track = result
-        else:
-            return await ctx.send(embed=_err_embed("tts returned nothing.", ctx))
-        await player.queue.put_wait(track)
-        pos = player.queue.count
-        if not player.playing:
-            await player.play(player.queue.get())
-        else:
-            await ctx.send(embed=_ok_embed(f"queued tts at position **{pos}**.", ctx))
-
-    @help_meta(usage="`.radio <name>`", desc="play an internet radio station by name.", section="Playback")
-    @commands.command()
-    async def radio(self, ctx: commands.Context, *, name: str = None) -> None:
-        if not name:
-            return await ctx.send(embed=_err_embed("gimme a station name. `.radio <name>`", ctx))
-        if not await self._check_vc(ctx):
-            return
-        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
-        if not player:
-            try:
-                channel = ctx.author.voice.channel
-                player = await channel.connect(cls=wavelink.Player)
-            except (AttributeError, discord.ClientException):
-                return
-            player.autoplay = wavelink.AutoPlayMode.disabled
-            if not hasattr(player, "home"):
-                player.home = ctx.channel
-        url = f"https://de1.api.radio-browser.info/json/stations/byname/{urllib.parse.quote(name)}?limit=1&hidebroken=true&order=clickcount"
-        session = await self._get_session()
-        try:
-            async with session.get(url) as r:
-                if r.status != 200:
-                    return await ctx.send(embed=_err_embed("radio lookup failed.", ctx))
-                data = await r.json()
-        except Exception:
-            return await ctx.send(embed=_err_embed("radio lookup failed.", ctx))
-        if not data:
-            return await ctx.send(embed=_err_embed("no station found for that name.", ctx))
-        station = data[0]
-        stream_url = station.get("url_resolved") or station.get("url")
-        if not stream_url:
-            return await ctx.send(embed=_err_embed("station has no stream url.", ctx))
-        try:
-            result = await wavelink.Playable.search(stream_url)
-        except Exception as e:
-            log.warning("radio resolve error: %s", e)
-            return await ctx.send(embed=_err_embed("couldn't play station.", ctx))
-        if isinstance(result, list) and result:
-            track = result[0]
-        elif not isinstance(result, list):
-            track = result
-        else:
-            return await ctx.send(embed=_err_embed("station returned nothing.", ctx))
-        await player.queue.put_wait(track)
-        if not player.playing:
-            await player.play(player.queue.get())
-        await ctx.send(embed=_ok_embed(f"playing **{station.get('name', name)}** {Neixoemojis.get('cd')}", ctx))
-
-    @help_meta(usage="`.queue skipto <pos>`", desc="skips to a specific position in the queue.", section="Controls")
-    @queue_group.command(name="skipto", aliases=["st"])
-    async def queue_skipto(self, ctx: commands.Context, position: int) -> None:
-        if not await self._check_vc(ctx):
-            return
-        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
-        q = list(player.queue)
-        if not q:
-            return await ctx.send(embed=_err_embed("queue is empty.", ctx))
-        if position < 1 or position > len(q):
-            return await ctx.send(embed=_err_embed(f"invalid position. pick 1–{len(q)}.", ctx))
-        target = q[position - 1]
-        player.queue.clear()
-        for t in q[position:]:
-            await player.queue.put_wait(t)
-        await player.skip(force=True)
-        await ctx.send(embed=_ok_embed(f"skipped to **{target.title}** (position {position}).", ctx))
-
-    @help_meta(usage="`.queue dedupe`", desc="removes duplicate tracks from the queue.", section="Controls")
-    @queue_group.command(name="dedupe")
-    async def queue_dedupe(self, ctx: commands.Context) -> None:
-        if not await self._check_vc(ctx):
-            return
-        player: wavelink.Player = ctx.voice_client
-        q = list(player.queue)
-        if not q:
-            return await ctx.send(embed=_err_embed("queue is empty.", ctx))
-        seen = set()
-        unique = []
-        removed = 0
-        for t in q:
-            uri = getattr(t, "uri", None) or getattr(t, "identifier", str(id(t)))
-            if uri in seen:
-                removed += 1
-            else:
-                seen.add(uri)
-                unique.append(t)
-        if removed == 0:
-            return await ctx.send(embed=_ok_embed("no duplicates found.", ctx))
-        player.queue.clear()
-        for t in unique:
-            await player.queue.put_wait(t)
-        await ctx.send(embed=_ok_embed(f"removed **{removed}** duplicate(s).", ctx))
-
-    @help_meta(usage="`.exportqueue`", desc="DMs you the current queue as clickable links.", section="Controls")
-    @commands.command(aliases=["eq"])
-    async def exportqueue(self, ctx: commands.Context) -> None:
-        player: wavelink.Player = ctx.voice_client
-        if not player or not player.current:
-            return await ctx.send(embed=_err_embed("nothing playing.", ctx))
-        lines = [f"**now playing:** [{player.current.title}]({player.current.uri})"]
-        for i, t in enumerate(player.queue, 1):
-            lines.append(f"**{i}.** [{t.title}]({t.uri})")
-        content = "\n".join(lines)
-        try:
-            for chunk in [content[i:i+1900] for i in range(0, len(content), 1900)]:
-                await ctx.author.send(chunk)
-            await ctx.send(embed=_ok_embed("queue sent to your DMs.", ctx))
-        except discord.Forbidden:
-            await ctx.send(embed=_err_embed("couldn't DM you. check your privacy settings.", ctx))
-
-    @help_meta(usage="`.stats`", desc="session stats: tracks played, total time, top requester.", section="Playback")
-    @commands.command()
-    async def stats(self, ctx: commands.Context) -> None:
-        if not ctx.guild:
-            return
-        stats = self._session_stats.get(ctx.guild.id)
-        if not stats:
-            return await ctx.send(embed=_err_embed("no stats for this session yet.", ctx))
-        total_time = _fmt_time(stats["total_ms"])
-        top_rid = max(stats["requesters"], key=stats["requesters"].get, default=None) if stats["requesters"] else None
-        top_name = "nobody"
-        if top_rid:
-            member = ctx.guild.get_member(top_rid)
-            top_name = member.display_name if member else str(top_rid)
-        desc = (
-            f"-# tracks played: **{stats['tracks']}**\n"
-            f"-# total time: **{total_time}**\n"
-            f"-# top requester: **{top_name}** ({stats['requesters'].get(top_rid, 0)} tracks)"
-        )
-        await ctx.send(embed=discord.Embed(description=desc, color=Neixocolor))
-
-    @voteskip.error
-    async def voteskip_error(self, ctx: commands.Context, error):
-        if isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(embed=_err_embed("please wait 10 seconds before starting another vote.", ctx), delete_after=5)
 
     
 async def setup(bot: commands.Bot) -> None:

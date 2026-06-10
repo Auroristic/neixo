@@ -16,6 +16,7 @@ from cogs.music_helpers import (
     _err_embed,
     _fmt_time,
     _ok_embed,
+    _spotify,
 )
 
 # ─────────────────────────────────────────────────────────────
@@ -433,22 +434,22 @@ class GenreSelect(Select):
         await interaction.response.defer()
         player: wavelink.Player = self.ctx.voice_client
         try:
-            result = await wavelink.Playable.search(
-                f"https://open.spotify.com/playlist/{playlist_id}"
-            )
+            names = await _spotify.get_playlist_tracks(playlist_id)
         except Exception as e:
             log.warning("Spotify genre fetch error: %s", e)
             return await interaction.followup.send("Couldn't reach Spotify API.")
-        if not result or (isinstance(result, wavelink.Playlist) and not result.tracks):
+        if not names:
             return await interaction.followup.send("No tracks found on Spotify.")
-        tracks = result.tracks if isinstance(result, wavelink.Playlist) else ([result] if not isinstance(result, list) else result)
-        tracks = tracks[:10]
+        names = names[:10]
         added = 0
-        for track in tracks:
-            if not track:
-                continue
-            await player.queue.put_wait(track)
-            added += 1
+        for name in names:
+            try:
+                results = await self.cog._yt_search_with_retry(name, source="ytsearch")
+                if results:
+                    await player.queue.put_wait(results[0])
+                    added += 1
+            except Exception as e:
+                log.warning("GenreSelect search error for %r: %s", name, e)
         if not player.playing and not player.queue.is_empty:
             await player.play(player.queue.get())
         await interaction.followup.send(
