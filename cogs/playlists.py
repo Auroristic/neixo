@@ -38,67 +38,65 @@ class Playlists(commands.Cog):
         - .playlist list - Show all your playlists
         """
         if not name:
-            # Show user's playlists
             playlists = list_playlists(ctx.author.id)
             if not playlists:
                 await ctx.send("You don't have any saved playlists. Use `.playlist save <name>` to create one!")
                 return
             
             embed = discord.Embed(
-                title=f"🎵 Your Playlists",
+                title="Your Playlists",
                 description="\n".join(f"• `{p}`" for p in sorted(playlists)),
                 color=discord.Color(get_embed_color(ctx.guild.id))
             )
             await ctx.send(embed=embed)
         else:
-            # Try to load and play playlist
             tracks = load_playlist(ctx.author.id, name)
             if not tracks:
                 await ctx.send(f"Playlist '{name}' not found! Use `.playlist list` to see your playlists.")
                 return
             
-            # Get music cog
-            music_cog = self.bot.get_cog("Music")
-            if not music_cog:
-                await ctx.send("Music system is not available!")
-                return
-            
-            await ctx.send(f"🎵 Loading playlist **{name}** ({len(tracks)} tracks)...")
-            
-            # Add tracks to queue
-            player = music_cog.get_player(ctx.guild.id)
+            import wavelink
+            player = ctx.voice_client
             if not player:
-                # Need to connect to voice first
                 if not ctx.author.voice or not ctx.author.voice.channel:
                     await ctx.send("You need to be in a voice channel first!")
                     return
-                
                 try:
-                    player = await music_cog.connect_to_voice(ctx.author.voice.channel)
+                    player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+                    player.autoplay = wavelink.AutoPlayMode.disabled
+                    if not hasattr(player, "home"):
+                        player.home = ctx.channel
                 except Exception as e:
                     await ctx.send(f"Failed to connect: {e}")
                     return
             
+            await ctx.send(f"Loading playlist **{name}** ({len(tracks)} tracks)...")
             added = 0
             for track in tracks:
                 try:
-                    # Try to search and add track
-                    search_results = await music_cog.search_tracks(track)
-                    if search_results:
-                        await player.add_track(search_results[0], requester=ctx.author)
-                        added += 1
+                    results = await wavelink.Playable.search(track)
+                    if not results:
+                        continue
+                    t = results[0] if isinstance(results, list) else results
+                    if isinstance(t, wavelink.Playlist):
+                        t = next((x for x in t.tracks if x.length and x.length <= 30*60*1000), None)
+                        if t is None:
+                            continue
+                    await player.queue.put_wait(t)
+                    added += 1
                 except Exception:
-                    logger.warning(f"Failed to add track: {track}")
+                    logger.warning(f"Failed to add track: %s", track)
                     continue
             
             if added == 0:
                 await ctx.send("Could not add any tracks from the playlist.")
             else:
-                await ctx.send(f"✅ Added {added}/{len(tracks)} tracks to the queue!")
-                
-                # Auto-play if nothing is playing
-                if not player.is_playing:
-                    await player.play()
+                await ctx.send(f"Added {added}/{len(tracks)} tracks to the queue!")
+                if not player.playing and not player.queue.is_empty:
+                    try:
+                        await player.play(player.queue.get())
+                    except Exception as e:
+                        logger.warning("failed to start playlist: %s", e)
 
     @playlist.command()
     @help_meta(section="Music", usage=".playlist save <name>", desc="Save current queue as playlist")
@@ -110,8 +108,8 @@ class Playlists(commands.Cog):
             await ctx.send("Music system is not available!")
             return
         
-        player = music_cog.get_player(ctx.guild.id)
-        if not player or not player.queue:
+        player = ctx.voice_client
+        if not player or player.queue.is_empty:
             await ctx.send("There's no queue to save! Add some tracks first.")
             return
         
@@ -143,19 +141,13 @@ class Playlists(commands.Cog):
     @playlist.command()
     @help_meta(section="Music", usage=".playlist load <name>", desc="Load a playlist to queue")
     async def load(self, ctx, *, name: str):
-        """Load a playlist to the queue without immediately playing."""
         tracks = load_playlist(ctx.author.id, name)
         if not tracks:
             await ctx.send(f"Playlist '{name}' not found!")
             return
         
-        # Get music cog
-        music_cog = self.bot.get_cog("Music")
-        if not music_cog:
-            await ctx.send("Music system is not available!")
-            return
-        
-        player = music_cog.get_player(ctx.guild.id)
+        import wavelink
+        player = ctx.voice_client
         if not player:
             await ctx.send("No active player! Join a voice channel and play something first.")
             return
@@ -163,14 +155,20 @@ class Playlists(commands.Cog):
         added = 0
         for track in tracks:
             try:
-                search_results = await music_cog.search_tracks(track)
-                if search_results:
-                    await player.add_track(search_results[0], requester=ctx.author)
-                    added += 1
+                results = await wavelink.Playable.search(track)
+                if not results:
+                    continue
+                t = results[0] if isinstance(results, list) else results
+                if isinstance(t, wavelink.Playlist):
+                    t = next((x for x in t.tracks if x.length and x.length <= 30*60*1000), None)
+                    if t is None:
+                        continue
+                await player.queue.put_wait(t)
+                added += 1
             except Exception:
                 continue
         
-        await ctx.send(f"✅ Added {added}/{len(tracks)} tracks from playlist `{name}` to queue.")
+        await ctx.send(f"Added {added}/{len(tracks)} tracks from playlist `{name}` to queue.")
 
     @playlist.command(aliases=["del"])
     @help_meta(section="Music", usage=".playlist delete <name>", desc="Delete a playlist")

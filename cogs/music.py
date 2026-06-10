@@ -14,6 +14,7 @@ import discord
 import syncedlyrics
 import wavelink
 from discord.ext import commands
+from discord.ui import Select, View
 
 from neixoconfig import Neixocolor, Neixoemojis
 from utils import help_meta
