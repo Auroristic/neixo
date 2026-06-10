@@ -189,11 +189,10 @@ class SpotifyClient:
 
     async def get_playlist_tracks(self, playlist_id: str) -> List[str]:
         data = await self._get(
-            f"/playlists/{playlist_id}"
-            f"?fields=tracks.items(track(name,artists(name)))"
+            f"/playlists/{playlist_id}/tracks?limit=100"
         )
         tracks = []
-        for item in data.get("tracks", {}).get("items", [])[:SPOTIFY_PLAYLIST_CAP]:
+        for item in data.get("items", [])[:SPOTIFY_PLAYLIST_CAP]:
             t = item.get("track")
             if not t:
                 continue
