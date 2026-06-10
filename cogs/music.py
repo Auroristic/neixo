@@ -25,12 +25,12 @@ from cogs.music_helpers import (
     _is_track_allowed,
     _ok_embed,
     _parse_lrc,
+    _scrape_spotify_playlist,
     _spotify,
     SEARCH_RETRIES,
     SEARCH_RETRY_DELAY,
     SOUNDCLOUD_RE,
     SPOTIFY_ALBUM_RE,
-    SPOTIFY_ARTIST_RE,
     SPOTIFY_BATCH_SIZE,
     SPOTIFY_PLAYLIST_CAP,
     SPOTIFY_PLAYLIST_RE,
@@ -443,9 +443,8 @@ class Music(commands.Cog):
         if m := SPOTIFY_ALBUM_RE.search(query):
             return await _spotify.get_album_tracks(m.group(1))
         if m := SPOTIFY_PLAYLIST_RE.search(query):
-            return await _spotify.get_playlist_tracks(m.group(1))
-        if m := SPOTIFY_ARTIST_RE.search(query):
-            return await _spotify.get_artist_top_tracks(m.group(1))
+            tracks = await _scrape_spotify_playlist(query)
+            return tracks[:SPOTIFY_PLAYLIST_CAP]
         return []
 
     async def _yt_search_with_retry(self, query: str, source: str = "ytsearch"):
@@ -578,7 +577,6 @@ class Music(commands.Cog):
                 SPOTIFY_TRACK_RE.search(query)
                 or SPOTIFY_PLAYLIST_RE.search(query)
                 or SPOTIFY_ALBUM_RE.search(query)
-                or SPOTIFY_ARTIST_RE.search(query)
             )
         )
         if is_spotify:
