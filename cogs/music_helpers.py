@@ -32,7 +32,6 @@ GENIUS_ACCESS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN", "")
 GENIUS_API_BASE = "https://api.genius.com"
 
 MAX_TRACK_DURATION_MS = 30 * 60 * 1000
-SPOTIFY_PLAYLIST_CAP = 100
 SEARCH_RETRIES = 2
 SEARCH_RETRY_DELAY = 0.5
 
@@ -43,45 +42,6 @@ GENRE_MAP = {
     "english": "37i9dQZF1DXcBWIGoYBM5M",
     "viral": "37i9dQZF1DX82GYyH4GL4U",
 }
-
-# ── SPOTIFY SCRAPER (playlist fallback) ──────────────────────
-
-try:
-    from spotify_scraper import SpotifyClient as SpotifyScraper
-    _HAS_SPOTIFY_SCRAPER = True
-except ImportError:
-    SpotifyScraper = None
-    _HAS_SPOTIFY_SCRAPER = False
-    log.info("spotify-scraper not installed — playlist URLs will fall back to LavaSrc (may fail for playlists)")
-
-
-async def _scrape_spotify_playlist(url: str) -> List[str]:
-    """Scrape a Spotify playlist via spotify-scraper (web UI). Returns ["Artist - Title", ...] up to SPOTIFY_PLAYLIST_CAP."""
-    if not _HAS_SPOTIFY_SCRAPER:
-        log.warning("spotify-scraper not available")
-        return []
-
-    def sync_scrape():
-        client = SpotifyScraper()
-        try:
-            info = client.get_playlist_info(url)
-            tracks = []
-            for item in info.get("tracks", []):
-                if len(tracks) >= SPOTIFY_PLAYLIST_CAP:
-                    break
-                name = item.get("name")
-                artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
-                if name and artists:
-                    tracks.append(f"{artists} - {name}")
-                elif name:
-                    tracks.append(name)
-            return tracks
-        finally:
-            if hasattr(client, "close"):
-                client.close()
-
-    return await asyncio.get_event_loop().run_in_executor(None, sync_scrape)
-
 
 # ── HELPERS ───────────────────────────────────────────────────
 

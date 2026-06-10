@@ -26,7 +26,6 @@ from cogs.music_helpers import (
     SEARCH_RETRY_DELAY,
     SOUNDCLOUD_RE,
     SPOTIFY_ALBUM_RE,
-    SPOTIFY_PLAYLIST_CAP,
     SPOTIFY_PLAYLIST_RE,
     SPOTIFY_TRACK_RE,
     TWITCH_RE,
@@ -37,7 +36,6 @@ from cogs.music_helpers import (
     _is_track_allowed,
     _ok_embed,
     _parse_lrc,
-    _scrape_spotify_playlist,
 )
 from cogs.music_views import (
     GenreView,
@@ -584,69 +582,6 @@ class Music(commands.Cog):
         )
 
         if is_spotify or is_apple_music:
-            # Playlist URLs: LavaSrc fails (Spotify API restriction post Feb 2026) → use scraper
-            if SPOTIFY_PLAYLIST_RE.search(query):
-                track_names = await _scrape_spotify_playlist(query)
-                if not track_names:
-                    return await ctx.send(embed=_err_embed("couldn't load that playlist.", ctx))
-
-                added = 0
-                rejected = 0
-                prog_msg = await ctx.send(f"-# searching {len(track_names)} tracks...")
-
-                batch_size = 5
-                for i in range(0, len(track_names), batch_size):
-                    batch = track_names[i:i + batch_size]
-                    tasks = [self._search_with_fallback(name) for name in batch]
-                    results = await asyncio.gather(*tasks)
-
-                    for result, name in zip(results, batch):
-                        if not result:
-                            continue
-                        track = result[0] if isinstance(result, list) else result
-                        if isinstance(track, wavelink.Playlist):
-                            track = next((t for t in track.tracks if _is_track_allowed(t)[0]), None)
-                            if track is None:
-                                continue
-                        ok, reason = _is_track_allowed(track)
-                        if not ok:
-                            rejected += 1
-                            continue
-                        track.requester_id = ctx.author.id
-                        await player.queue.put_wait(track)
-                        added += 1
-
-                    done = min(i + batch_size, len(track_names))
-                    try:
-                        await prog_msg.edit(content=f"-# searching... {done}/{len(track_names)} ({added} added, {rejected} filtered)")
-                    except discord.HTTPException:
-                        pass
-
-                try:
-                    await prog_msg.delete()
-                except discord.HTTPException:
-                    pass
-
-                if added == 0:
-                    return await ctx.send(embed=_err_embed("no playable tracks found in that playlist.", ctx))
-
-                extra = f" {rejected} filtered (too long/live)." if rejected else ""
-                await ctx.send(embed=_ok_embed(f"added **{added}** tracks from playlist.{extra}", ctx))
-
-                guild_id = player.guild.id
-                if guild_id not in self._track_locks:
-                    self._track_locks[guild_id] = asyncio.Lock()
-                async with self._track_locks[guild_id]:
-                    if not player.playing and not player.queue.is_empty:
-                        player = await self._ensure_player_connected(player, ctx)
-                        if player is None:
-                            return
-                        try:
-                            await player.play(player.queue.get())
-                        except Exception as e:
-                            log.warning("failed to start playback: %s", e)
-                return
-
             try:
                 result = await wavelink.Playable.search(query)
             except Exception as e:
