@@ -188,32 +188,22 @@ class SpotifyClient:
         return tracks[:SPOTIFY_PLAYLIST_CAP]
 
     async def get_playlist_tracks(self, playlist_id: str) -> List[str]:
+        data = await self._get(
+            f"/playlists/{playlist_id}"
+            f"?fields=tracks.items(track(name,artists(name)))"
+        )
         tracks = []
-        offset = 0
-        limit = 100
-        while len(tracks) < SPOTIFY_PLAYLIST_CAP:
-            data = await self._get(
-                f"/playlists/{playlist_id}/tracks"
-                f"?fields=items(track(name,artists(name)))"
-                f"&limit={limit}&offset={offset}"
-            )
-            items = data.get("items", [])
-            if not items:
-                break
-            for item in items:
-                t = item.get("track")
-                if not t:
-                    continue
-                name = t.get("name", "")
-                artists = ", ".join(a["name"] for a in t.get("artists", []))
-                if name and artists:
-                    tracks.append(f"{artists} - {name}")
-                elif name:
-                    tracks.append(name)
-            if len(items) < limit:
-                break
-            offset += limit
-        return tracks[:SPOTIFY_PLAYLIST_CAP]
+        for item in data.get("tracks", {}).get("items", [])[:SPOTIFY_PLAYLIST_CAP]:
+            t = item.get("track")
+            if not t:
+                continue
+            name = t.get("name", "")
+            artists = ", ".join(a["name"] for a in t.get("artists", []))
+            if name and artists:
+                tracks.append(f"{artists} - {name}")
+            elif name:
+                tracks.append(name)
+        return tracks
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
