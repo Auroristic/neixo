@@ -30,6 +30,7 @@ from cogs.music_helpers import (
     SEARCH_RETRY_DELAY,
     SOUNDCLOUD_RE,
     SPOTIFY_ALBUM_RE,
+    SPOTIFY_ARTIST_RE,
     SPOTIFY_BATCH_SIZE,
     SPOTIFY_PLAYLIST_CAP,
     SPOTIFY_PLAYLIST_RE,
@@ -163,8 +164,7 @@ class Music(commands.Cog):
 
     async def _lrclib_lyrics(self, artist: str, title: str) -> Optional[Tuple[str, Optional[List[Tuple[int, str]]]]]:
         url = f"https://lrclib.net/api/get?artist_name={urllib.parse.quote(artist)}&track_name={urllib.parse.quote(title)}"
-        # Reuse existing session instead of creating new one each time
-        session = self._http_session or aiohttp.ClientSession()
+        session = await self._get_session()
         try:
             async with session.get(url) as resp:
                 if resp.status != 200:
@@ -185,8 +185,7 @@ class Music(commands.Cog):
 
     async def _ovh_lyrics(self, artist: str, title: str) -> Optional[str]:
         url = f"https://api.lyrics.ovh/v1/{urllib.parse.quote(artist)}/{urllib.parse.quote(title)}"
-        # Reuse existing session instead of creating new one each time
-        session = self._http_session or aiohttp.ClientSession()
+        session = await self._get_session()
         try:
             async with session.get(url) as resp:
                 if resp.status != 200:
@@ -397,8 +396,7 @@ class Music(commands.Cog):
             return []
         url = f"https://www.youtube.com/watch?v={vid_id}&list=RD{vid_id}"
         headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}
-        # Reuse existing session instead of creating new one each time
-        session = self._http_session or aiohttp.ClientSession()
+        session = await self._get_session()
         try:
             async with session.get(url, headers=headers) as resp:
                 if resp.status != 200:
@@ -446,6 +444,8 @@ class Music(commands.Cog):
             return await _spotify.get_album_tracks(m.group(1))
         if m := SPOTIFY_PLAYLIST_RE.search(query):
             return await _spotify.get_playlist_tracks(m.group(1))
+        if m := SPOTIFY_ARTIST_RE.search(query):
+            return await _spotify.get_artist_top_tracks(m.group(1))
         return []
 
     async def _yt_search_with_retry(self, query: str, source: str = "ytsearch"):
@@ -574,7 +574,12 @@ class Music(commands.Cog):
 
         is_spotify = (
             "spotify.com" in query
-            and (SPOTIFY_TRACK_RE.search(query) or SPOTIFY_PLAYLIST_RE.search(query) or SPOTIFY_ALBUM_RE.search(query))
+            and (
+                SPOTIFY_TRACK_RE.search(query)
+                or SPOTIFY_PLAYLIST_RE.search(query)
+                or SPOTIFY_ALBUM_RE.search(query)
+                or SPOTIFY_ARTIST_RE.search(query)
+            )
         )
         if is_spotify:
             try:
@@ -615,6 +620,10 @@ class Music(commands.Cog):
             rejected = 0
             chunk_size = 20  # batch progress updates and start playback early
             for chunk_start in range(0, len(names), chunk_size):
+                # Ensure we have a live player before queueing this chunk
+                player = await self._ensure_player_connected(player, ctx)
+                if player is None:
+                    break
                 chunk = names[chunk_start : chunk_start + chunk_size]
                 resolved = await asyncio.gather(
                     *[_resolve_one(n) for n in chunk], return_exceptions=False
@@ -628,9 +637,6 @@ class Music(commands.Cog):
 
                 # Start playback as soon as we have something
                 if added and not player.playing and not player.queue.is_empty:
-                    player = await self._ensure_player_connected(player, ctx)
-                    if player is None:
-                        continue
                     try:
                         await player.play(player.queue.get())
                     except Exception as e:
@@ -730,7 +736,8 @@ class Music(commands.Cog):
         if getattr(player, "connected", False):
             return player
         try:
-            saved_queue = [player.queue.get_nowait() for _ in range(player.queue.qsize())]
+            saved_queue = list(player.queue)
+            player.queue.clear()
             vc = ctx.voice_client
             if vc:
                 await vc.disconnect(force=True)
@@ -1095,17 +1102,15 @@ class Music(commands.Cog):
             description=f"**{track.title}** by {track.author}\n-# generating card...",
             color=Neixocolor,
         ))
-        
-        if not player.current or player.current != track:
-            return await msg.edit(embed=_err_embed("track changed before card could generate.", ctx))
+
         pos = player.position
         try:
             progress = pos / track.length if track.length else 0.0
             card_file = await _gen_music_card(
-                track.title, 
-                track.author, 
-                track.artwork, 
-                _fmt_time(track.length), 
+                track.title,
+                track.author,
+                track.artwork,
+                _fmt_time(track.length),
                 progress=progress,
                 position_str=_fmt_time(pos),
                 session=self._http_session
@@ -1113,6 +1118,10 @@ class Music(commands.Cog):
         except Exception as e:
             log.warning("nowplaying card gen failed: %s", e)
             return await msg.edit(embed=_err_embed("couldn't generate card.", ctx))
+
+        if not player.current or player.current != track:
+            return await msg.edit(embed=_err_embed("track changed before card could generate.", ctx))
+
         embed = discord.Embed(
             description=f"-# **[{track.title}]({track.uri})** by {track.author}",
             color=Neixocolor,

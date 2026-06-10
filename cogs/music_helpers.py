@@ -28,6 +28,7 @@ SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 SPOTIFY_TRACK_RE = re.compile(r"spotify\.com/track/([A-Za-z0-9]+)")
 SPOTIFY_PLAYLIST_RE = re.compile(r"spotify\.com/playlist/([A-Za-z0-9]+)")
 SPOTIFY_ALBUM_RE = re.compile(r"spotify\.com/album/([A-Za-z0-9]+)")
+SPOTIFY_ARTIST_RE = re.compile(r"spotify\.com/artist/([A-Za-z0-9]+)")
 SOUNDCLOUD_RE = re.compile(r"soundcloud\.com/")
 
 GENIUS_ACCESS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN", "")
@@ -159,19 +160,31 @@ class SpotifyClient:
         return [f"{artists} - {name}"]
 
     async def get_album_tracks(self, album_id: str) -> List[str]:
-        data = await self._get(f"/albums/{album_id}")
+        album_data = await self._get(f"/albums/{album_id}")
+        album_artists = ", ".join(a["name"] for a in album_data.get("artists", []))
         tracks = []
-        for item in data.get("tracks", {}).get("items", []):
-            artist = ", ".join(a["name"] for a in item.get("artists", data.get("artists", [])))
-            tracks.append(f"{artist} - {item['name']}")
-        total = data.get("tracks", {}).get("total", len(tracks))
-        offset = len(data.get("tracks", {}).get("items", []))
-        while offset < total and len(tracks) < SPOTIFY_PLAYLIST_CAP:
-            paginated = await self._get(f"/albums/{album_id}/tracks?limit=50&offset={offset}")
-            for item in paginated.get("items", []):
-                artist = ", ".join(a["name"] for a in item.get("artists", []))
+        offset = 0
+        while len(tracks) < SPOTIFY_PLAYLIST_CAP:
+            page = await self._get(
+                f"/albums/{album_id}/tracks?limit=50&offset={offset}"
+            )
+            items = page.get("items", [])
+            if not items:
+                break
+            for item in items:
+                artist = ", ".join(a["name"] for a in item.get("artists", [])) or album_artists
                 tracks.append(f"{artist} - {item['name']}")
-            offset += 50
+            if len(items) < 50:
+                break
+            offset += len(items)
+        return tracks[:SPOTIFY_PLAYLIST_CAP]
+
+    async def get_artist_top_tracks(self, artist_id: str, market: str = "US") -> List[str]:
+        data = await self._get(f"/artists/{artist_id}/top-tracks?market={market}")
+        tracks = []
+        for t in data.get("tracks", []):
+            artists = ", ".join(a["name"] for a in t.get("artists", []))
+            tracks.append(f"{artists} - {t['name']}")
         return tracks[:SPOTIFY_PLAYLIST_CAP]
 
     async def get_playlist_tracks(self, playlist_id: str) -> List[str]:
@@ -231,9 +244,9 @@ async def _gen_music_card(
             img_bytes = await resp.read()
     except Exception as e:
         log.warning(f"Artwork fetch failed: {e}, using fallback")
-        img_bytes = Image.new("RGB", (320, 320), (40, 40, 50))
+        fallback = Image.new("RGB", (320, 320), (40, 40, 50))
         buf = io.BytesIO()
-        img_bytes.save(buf, format="PNG")
+        fallback.save(buf, format="PNG")
         img_bytes = buf.getvalue()
     finally:
         if close_session:

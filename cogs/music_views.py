@@ -8,6 +8,8 @@ import discord
 import wavelink
 from discord.ui import Button, Select, View
 
+log = logging.getLogger(__name__)
+
 from cogs.music_helpers import (
     GENRE_MAP,
     Neixocolor,
@@ -15,7 +17,6 @@ from cogs.music_helpers import (
     _fmt_time,
     _ok_embed,
     _spotify,
-    log,
 )
 
 # ─────────────────────────────────────────────────────────────
@@ -264,10 +265,8 @@ class QueueView(View):
         self.total_pages = max(1, (len(self.queue) + self.per_page - 1) // self.per_page)
 
     def _build_buttons(self) -> None:
-        self.clear_items()
-        if self.total_pages > 1:
-            self.add_item(self.prev_btn)
-            self.add_item(self.next_btn)
+        for child in self.children:
+            child.disabled = self.total_pages <= 1
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.gray)
     async def prev_btn(self, interaction: discord.Interaction, button: Button) -> None:
@@ -294,9 +293,9 @@ class QueueView(View):
     def _update_buttons(self) -> None:
         for child in self.children:
             if getattr(child, "label", None) == "◀":
-                child.disabled = self.page == 0
+                child.disabled = self.page == 0 or self.total_pages <= 1
             elif getattr(child, "label", None) == "▶":
-                child.disabled = self.page >= self.total_pages - 1
+                child.disabled = self.page >= self.total_pages - 1 or self.total_pages <= 1
 
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(color=Neixocolor)
@@ -364,13 +363,14 @@ class LyricsPaginationView(View):
         self._update_buttons()
 
     def _update_buttons(self):
-        self.clear_items()
-        if len(self.pages) > 1:
-            self.prev_btn.disabled = self.current_page == 0
-            self.next_btn.disabled = self.current_page >= len(self.pages) - 1
-            self.add_item(self.prev_btn)
-            self.add_item(self.next_btn)
-        self.add_item(self.delete_btn)
+        for child in self.children:
+            label = getattr(child, "label", None)
+            if label == "◀":
+                child.disabled = self.current_page == 0 or len(self.pages) <= 1
+            elif label == "▶":
+                child.disabled = self.current_page >= len(self.pages) - 1 or len(self.pages) <= 1
+            elif label == "🗑️":
+                pass
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.gray)
     async def prev_btn(self, interaction: discord.Interaction, button: Button):
