@@ -8,6 +8,5 @@ Pillow
 curl_cffi
 beautifulsoup4
 aiosqlite
-spotify_scraper
 syncedlyrics
 

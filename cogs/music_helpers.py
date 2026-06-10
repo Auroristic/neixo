@@ -13,8 +13,6 @@ import aiohttp
 import discord
 import wavelink
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-from spotify_scraper import SpotifyClient as SpotifyScraper
-
 from neixoconfig import Neixocolor, Neixoemojis
 from utils import get_embed_color
 
@@ -162,53 +160,53 @@ class SpotifyClient:
 
     async def get_album_tracks(self, album_id: str) -> List[str]:
         data = await self._get(f"/albums/{album_id}")
-        album_artist = ", ".join(a["name"] for a in data["artists"])
         tracks = []
-        for item in data.get("tracks", {}).get("items", [])[:SPOTIFY_PLAYLIST_CAP]:
-            tracks.append(f"{album_artist} - {item['name']}")
-        return tracks
+        for item in data.get("tracks", {}).get("items", []):
+            artist = ", ".join(a["name"] for a in item.get("artists", data.get("artists", [])))
+            tracks.append(f"{artist} - {item['name']}")
+        total = data.get("tracks", {}).get("total", len(tracks))
+        offset = len(data.get("tracks", {}).get("items", []))
+        while offset < total and len(tracks) < SPOTIFY_PLAYLIST_CAP:
+            paginated = await self._get(f"/albums/{album_id}/tracks?limit=50&offset={offset}")
+            for item in paginated.get("items", []):
+                artist = ", ".join(a["name"] for a in item.get("artists", []))
+                tracks.append(f"{artist} - {item['name']}")
+            offset += 50
+        return tracks[:SPOTIFY_PLAYLIST_CAP]
 
     async def get_playlist_tracks(self, playlist_id: str) -> List[str]:
-        data = await self._get(f"/playlists/{playlist_id}?fields=tracks.items(track(name,artists(name)))")
         tracks = []
-        for item in data.get("tracks", {}).get("items", [])[:SPOTIFY_PLAYLIST_CAP]:
-            t = item.get("track")
-            if not t:
-                continue
-            name = t.get("name", "")
-            artists = ", ".join(a["name"] for a in t.get("artists", []))
-            if name and artists:
-                tracks.append(f"{artists} - {name}")
-            elif name:
-                tracks.append(name)
-        return tracks
+        offset = 0
+        limit = 100
+        while len(tracks) < SPOTIFY_PLAYLIST_CAP:
+            data = await self._get(
+                f"/playlists/{playlist_id}/tracks"
+                f"?fields=items(track(name,artists(name)))"
+                f"&limit={limit}&offset={offset}"
+            )
+            items = data.get("items", [])
+            if not items:
+                break
+            for item in items:
+                t = item.get("track")
+                if not t:
+                    continue
+                name = t.get("name", "")
+                artists = ", ".join(a["name"] for a in t.get("artists", []))
+                if name and artists:
+                    tracks.append(f"{artists} - {name}")
+                elif name:
+                    tracks.append(name)
+            if len(items) < limit:
+                break
+            offset += limit
+        return tracks[:SPOTIFY_PLAYLIST_CAP]
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
             await self._session.close()
 
 _spotify = SpotifyClient()
-
-# ── SPOTIFY SCRAPER ──────────────────────────────────────────
-
-async def _scrape_spotify_playlist(url: str) -> List[str]:
-    def sync_scrape():
-        client = SpotifyScraper()
-        try:
-            info = client.get_playlist_info(url)
-            tracks = []
-            for item in info.get("tracks", []):
-                name = item.get("name")
-                artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
-                if name and artists:
-                    tracks.append(f"{artists} - {name}")
-                elif name:
-                    tracks.append(name)
-            return tracks
-        finally:
-            if hasattr(client, "close"):
-                client.close()
-    return await asyncio.get_event_loop().run_in_executor(None, sync_scrape)
 
 # ── MUSIC CARD GENERATOR ─────────────────────────────────────
 
