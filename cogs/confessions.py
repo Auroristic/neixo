@@ -311,7 +311,13 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
 
     @help_meta(
         usage="`.cid latest | number | user <id>`",
-        desc="reveals who sent a confession (DM only).",
+        desc="Reveals who sent a confession (DM only).",
+        examples=[".cid latest", ".cid 42", ".cid user 123456789"],
+        params=[
+            {"name": "target", "type": "str", "required": True, "desc": "`latest`, a confession number, or `user`."},
+            {"name": "user_id", "type": "str", "required": False, "desc": "User ID to look up (only used with `user` mode)."},
+        ],
+        note="Staff only. Must be run in DMs. Uses cached config.",
         staff=True,
     )
     @commands.command(name="cid")

@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 from typing import Any, Dict, Optional
 
-from utils import load_json, get_embed_color, get_config, is_owner_or_creator, CONFIG_FILE
+from utils import load_json, get_embed_color, get_config, is_owner_or_creator, CONFIG_FILE, help_meta
 
 log = logging.getLogger(__name__)
 
@@ -241,10 +241,25 @@ def _build_detail_embed(
 
 # ── cog ───────────────────────────────────────────────────────
 
+COG_META = {
+    "category": "help",
+    "label": "Help",
+    "desc": "Help and command reference system.",
+}
+
 class HelpCog(commands.Cog, name="Help"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    @help_meta(
+        usage="`.help [command]`",
+        desc="Shows the full command catalogue or detailed info for a specific command.",
+        examples=[".help", ".help play", ".help remind"],
+        params=[
+            {"name": "command", "type": "str", "required": false, "desc": "Optional command name to get detailed info about."},
+        ],
+        note="Without arguments, shows a link to the web help site. Use `.help <command>` for detailed info.",
+    )
     @commands.command(name="help", aliases=["h"])
     async def help_command(self, ctx: commands.Context, *, command: str = None):
         config = get_config()

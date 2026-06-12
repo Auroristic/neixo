@@ -524,6 +524,9 @@ def help_meta(
     staff: bool = False,
     owner: bool = False,
     admin: bool = False,
+    examples: list[str] | None = None,
+    params: list[dict] | None = None,
+    note: str | None = None,
 ):
     """Decorator to attach help metadata to a command."""
     def decorator(func):
@@ -534,6 +537,9 @@ def help_meta(
             "staff": staff,
             "owner": owner,
             "admin": admin,
+            "examples": examples or [],
+            "params": params or [],
+            "note": note,
         }
         func.__dict__["help_meta"] = meta
         callback = getattr(func, "callback", None)

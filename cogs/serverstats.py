@@ -700,8 +700,15 @@ class ServerStatsCog(commands.Cog):
 
     @help_meta(
         usage="`.starboard #channel [emoji] [threshold]`\n`.starboard emoji 😭`\n`.starboard threshold 5`",
-        desc="manage the starboard: channel, emoji, and reaction threshold.",
+        desc="Manages the starboard: set channel, emoji, and reaction threshold.",
         staff=True,
+        examples=[".starboard #starboard ⭐ 3", ".starboard emoji 😭", ".starboard threshold 5"],
+        params=[
+            {"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "The channel to use as starboard."},
+            {"name": "emoji", "type": "str", "required": False, "desc": "Reaction emoji to track."},
+            {"name": "threshold", "type": "int", "required": False, "desc": "Number of reactions required to appear on starboard."},
+        ],
+        note="Admin only. Subcommands: `emoji`, `threshold`.",
     )
     @commands.group(name="starboard", invoke_without_command=True)
     @commands.has_permissions(administrator=True)
@@ -723,6 +730,16 @@ class ServerStatsCog(commands.Cog):
             conn.commit()
         await ctx.send(f"\u2b50 Starboard set to {channel.mention} \u00b7 emoji: {final_emoji} \u00b7 threshold: {final_threshold}")
 
+    @help_meta(
+        usage=".starboard emoji <emoji>",
+        desc="Changes the reaction emoji the starboard watches for.",
+        staff=True,
+        examples=[".starboard emoji ⭐", ".starboard emoji 😭"],
+        params=[
+            {"name": "emoji", "type": "str", "required": True, "desc": "The emoji to track for starboard entries."},
+        ],
+        note="Admin only. A starboard channel must be set first.",
+    )
     @starboard.command(name="emoji")
     @commands.has_permissions(administrator=True)
     async def starboard_emoji(self, ctx: commands.Context, emoji: str):
@@ -742,6 +759,16 @@ class ServerStatsCog(commands.Cog):
             conn.commit()
         await ctx.send(f"\u2b50 Starboard emoji changed to {emoji}")
 
+    @help_meta(
+        usage=".starboard threshold <number>",
+        desc="Sets the minimum reactions needed for a message to appear on the starboard.",
+        staff=True,
+        examples=[".starboard threshold 3", ".starboard threshold 5"],
+        params=[
+            {"name": "threshold", "type": "int", "required": True, "desc": "Minimum reaction count (must be at least 1)."},
+        ],
+        note="Admin only. A starboard channel must be set first.",
+    )
     @starboard.command(name="threshold")
     @commands.has_permissions(administrator=True)
     async def starboard_threshold(self, ctx: commands.Context, threshold: int):
@@ -766,7 +793,10 @@ class ServerStatsCog(commands.Cog):
     # ── Commands ───────────────────────────────────────────────────────────
     @help_meta(
         usage="`.seoulities`",
-        desc="server info card with member stats, top emoji, top reactor, top chatter, top VC user.",
+        desc="Shows a server info card with member stats, top emoji, top reactor, top chatter, and top VC user.",
+        examples=[".seoulities"],
+        params=[],
+        note="Cooldown: 15s per channel. Generates an info card image.",
     )
     @commands.command(name="seoulities")
     @commands.cooldown(1, 15, commands.BucketType.channel)
@@ -833,9 +863,12 @@ class ServerStatsCog(commands.Cog):
         await ctx.send(file=file)
 
     @help_meta(
-        usage="`.lb` · `.lb messages` · `.lb vctime`",
-        desc="leaderboards for messages and VC time.",
+        usage="`.lb`  ·  `.lb messages`  ·  `.lb vctime`",
+        desc="Leaderboards for messages and VC time.",
         section="Leaderboards",
+        examples=[".lb", ".lb messages", ".lb vctime"],
+        params=[],
+        note="Subcommands: `messages`, `vctime`.",
     )
     @commands.group(name="leaderboard", aliases=["lb"])
     @commands.cooldown(1, 10, commands.BucketType.channel)
@@ -843,7 +876,14 @@ class ServerStatsCog(commands.Cog):
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
-    @help_meta(usage="`.lb messages`", desc="top 200 message senders in the server.", section="Leaderboards")
+    @help_meta(
+        usage="`.lb messages`",
+        desc="Shows the top 200 message senders in the server.",
+        section="Leaderboards",
+        examples=[".lb messages"],
+        params=[],
+        note="Updates in real-time as messages are sent.",
+    )
     @leaderboard.command(name="messages", aliases=["msgs", "msg", "lbm"])
     async def lb_messages(self, ctx: commands.Context):
         rows = self._get_msg_top(ctx.guild.id, 200)
@@ -859,7 +899,14 @@ class ServerStatsCog(commands.Cog):
         file = await view.render_file()
         view.message = await ctx.send(file=file, view=view)
 
-    @help_meta(usage="`.lb vctime`", desc="top 200 VC time leaders in the server.", section="Leaderboards")
+    @help_meta(
+        usage="`.lb vctime`",
+        desc="Shows the top 200 VC time leaders in the server.",
+        section="Leaderboards",
+        examples=[".lb vctime"],
+        params=[],
+        note="Tracks time spent in voice channels.",
+    )
     @leaderboard.command(name="vctime", aliases=["vc", "voice", "lbv"])
     async def lb_vctime(self, ctx: commands.Context):
         raw = self._get_vc_top(ctx.guild.id, 200)

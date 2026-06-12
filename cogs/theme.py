@@ -192,7 +192,14 @@ class ThemeCog(commands.Cog, name="Theme"):
 
     # ── Root command ──────────────────────────────────────────
 
-    @help_meta(usage="`.theme`", desc="show current theme summary — roles, prefixes, font, and snapshot status.", section="Overview")
+    @help_meta(
+        usage="`.theme`",
+        desc="Shows the current theme summary — roles, prefixes, font, and snapshot status.",
+        section="Overview",
+        examples=[".theme"],
+        params=[],
+        note="This is the entry point. Use `.theme help` to see all subcommands.",
+    )
     @commands.group(name="theme", invoke_without_command=True)
     @_is_theme_admin()
     async def theme(self, ctx: commands.Context):
@@ -243,7 +250,14 @@ class ThemeCog(commands.Cog, name="Theme"):
 
     # ── Help ──────────────────────────────────────────────────
 
-    @help_meta(usage="`.theme help`", desc="show all theme commands organised by section.", section="Setup")
+    @help_meta(
+        usage="`.theme help`",
+        desc="Shows all theme commands organised by section.",
+        section="Setup",
+        examples=[".theme help"],
+        params=[],
+        note="Displays a complete list of theme subcommands grouped by category.",
+    )
     @theme.command(name="help")
     @_is_theme_admin()
     async def theme_help(self, ctx: commands.Context):
@@ -301,7 +315,14 @@ class ThemeCog(commands.Cog, name="Theme"):
     # ROLE MAPPING
     # ══════════════════════════════════════════════════════════
 
-    @help_meta(usage="`.theme setup`", desc="interactive wizard — define custom role slots and map them to server roles via dropdowns.", section="Setup")
+    @help_meta(
+        usage="`.theme setup`",
+        desc="Interactive wizard — define custom role slots and map them to server roles via dropdowns.",
+        section="Setup",
+        examples=[".theme setup"],
+        params=[],
+        note="This is the recommended starting point for new servers. Guides you through the entire configuration.",
+    )
     @theme.command(name="setup")
     @_is_theme_admin()
     async def theme_setup(self, ctx: commands.Context):
@@ -398,7 +419,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await ctx.send(embed=_ok_embed(f"setup complete — `{mapped}` slot(s) mapped. use `.theme setrole <slot> @Role` to adjust anytime."))
 
-    @help_meta(usage="`.theme setrole <slot> @Role`", desc="quickly remap one slot to a different role without going through the full wizard.", section="Setup")
+    @help_meta(
+        usage="`.theme setrole <slot> @Role`",
+        desc="Quickly remaps one slot to a different role without going through the full wizard.",
+        section="Setup",
+        examples=[".theme setrole Owner @God Emperor", ".theme setrole Member @User"],
+        params=[
+            {"name": "slot", "type": "str", "required": true, "desc": "The slot name (e.g. Owner, Admin, Member)."},
+            {"name": "role", "type": "discord.Role", "required": true, "desc": "The discord role to map to this slot."},
+        ],
+        note="Only maps the slot. Use `.theme role` to rename the role itself.",
+    )
     @theme.command(name="setrole")
     @_is_theme_admin()
     async def theme_setrole(self, ctx: commands.Context, slot: str = None, role: discord.Role = None):
@@ -492,7 +523,14 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await ctx.send(embed=_ok_embed(f"done — `{updated}` slot(s) updated"))
 
-    @help_meta(usage="`.theme roles`", desc="list all mapped role slots and their current discord roles.", section="Setup")
+    @help_meta(
+        usage="`.theme roles`",
+        desc="Lists all mapped role slots and their current Discord roles.",
+        section="Setup",
+        examples=[".theme roles"],
+        params=[],
+        note="Shows the current slot-to-role mappings.",
+    )
     @theme.group(name="roles", invoke_without_command=True)
     @_is_theme_admin()
     async def theme_roles(self, ctx: commands.Context):
@@ -516,7 +554,14 @@ class ThemeCog(commands.Cog, name="Theme"):
             e.set_footer(text="⚠️ = bot can't edit this role — move me above it in server settings")
         await ctx.send(embed=e)
 
-    @help_meta(usage="`.theme roles clear`", desc="wipe all slot mappings. role names in discord are not changed. run `.theme roles setup` after to remap.", section="Setup")
+    @help_meta(
+        usage="`.theme roles clear`",
+        desc="Wipes all slot mappings. Role names in Discord are not changed. Run `.theme roles setup` after to remap.",
+        section="Setup",
+        examples=[".theme roles clear"],
+        params=[],
+        note="This only clears the internal mapping, not the actual role names. Run setup again to remap.",
+    )
     @theme_roles.command(name="clear")
     @_is_theme_admin()
     async def roles_clear(self, ctx: commands.Context):
@@ -542,7 +587,14 @@ class ThemeCog(commands.Cog, name="Theme"):
         tm.save_role_map(gid, {})
         await confirm_msg.edit(embed=_ok_embed("slot mappings cleared — run `.theme roles setup` to remap."), view=None)
 
-    @help_meta(usage="`.theme roles setup`", desc="run the role mapping wizard. shows current mapping per slot so you can skip or remap individual ones.", section="Setup")
+    @help_meta(
+        usage="`.theme roles setup`",
+        desc="Runs the role mapping wizard. Shows current mapping per slot so you can skip or remap individual ones.",
+        section="Setup",
+        examples=[".theme roles setup"],
+        params=[],
+        note="Interactive — you will be prompted for each slot.",
+    )
     @theme_roles.command(name="setup")
     @_is_theme_admin()
     async def roles_setup(self, ctx: commands.Context):
@@ -553,7 +605,17 @@ class ThemeCog(commands.Cog, name="Theme"):
     # ROLE EDITING
     # ══════════════════════════════════════════════════════════
 
-    @help_meta(usage="`.theme role <slot> <new name>`", desc="rename the discord role mapped to a slot. e.g. `.theme role Owner God Emperor`", section="Roles")
+    @help_meta(
+        usage="`.theme role <slot> <new name>`",
+        desc="Renames the Discord role mapped to a slot. E.g. `.theme role Owner God Emperor`",
+        section="Roles",
+        examples=[".theme role Owner God Emperor", ".theme role Member Peasant"],
+        params=[
+            {"name": "slot", "type": "str", "required": true, "desc": "The slot whose role to rename."},
+            {"name": "new name", "type": "str", "required": true, "desc": "The new display name for the role."},
+        ],
+        note="This actually changes the role name on Discord. Use `.theme role revert` to undo.",
+    )
     @theme.group(name="role", invoke_without_command=True)
     @_is_theme_admin()
     async def theme_role(self, ctx: commands.Context, slot: str = None, *, new_name: str = None):
@@ -695,7 +757,17 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         await self._report_failures(ctx, failures, "role rename failures")
 
-    @help_meta(usage="`.theme roleicon <slot> [emoji|url|attachment]`", desc="set a role icon via emoji, url, or image attachment. requires boost level 2.", section="Roles")
+    @help_meta(
+        usage="`.theme roleicon <slot> [emoji|url|attachment]`",
+        desc="Sets a role icon via emoji, URL, or image attachment. Requires boost level 2.",
+        section="Roles",
+        examples=[".theme roleicon Owner 👑", ".theme roleicon Admin https://i.imgur.com/icon.png"],
+        params=[
+            {"name": "slot", "type": "str", "required": true, "desc": "The slot to set the icon for."},
+            {"name": "source", "type": "str", "required": false, "desc": "Emoji, image URL, or attachment. Omit to clear."},
+        ],
+        note="Requires server boost level 2 for role icons.",
+    )
     @theme.command(name="roleicon")
     @_is_theme_admin()
     async def theme_roleicon(self, ctx: commands.Context, slot: str = None, *, source: str = None):
@@ -754,7 +826,16 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
-    @help_meta(usage="`.theme role revert <slot>`", desc="revert one role back to its name from before the last theme apply.", section="Roles")
+    @help_meta(
+        usage="`.theme role revert <slot>`",
+        desc="Reverts one role back to its name from before the last theme apply.",
+        section="Roles",
+        examples=[".theme role revert Owner"],
+        params=[
+            {"name": "slot", "type": "str", "required": true, "desc": "The slot to restore the previous name for."},
+        ],
+        note="Only the most recent name change per role is stored.",
+    )
     @theme_role.command(name="revert")
     @_is_theme_admin()
     async def role_revert(self, ctx: commands.Context, slot: str = None):
@@ -785,7 +866,14 @@ class ThemeCog(commands.Cog, name="Theme"):
     # CHANNEL PREFIX
     # ══════════════════════════════════════════════════════════
 
-    @help_meta(usage="`.theme prefix`", desc="manage channel prefixes — run `.theme prefix scan` to get started.", section="Channels")
+    @help_meta(
+        usage="`.theme prefix`",
+        desc="Manages channel prefixes — run `.theme prefix scan` to get started.",
+        section="Channels",
+        examples=[".theme prefix", ".theme prefix scan"],
+        params=[],
+        note="Root command for all prefix subcommands: scan, add, remove, server, replace, undo, list.",
+    )
     @theme.group(name="prefix", invoke_without_command=True)
     @_is_theme_admin()
     async def theme_prefix(self, ctx: commands.Context):
@@ -794,7 +882,16 @@ class ThemeCog(commands.Cog, name="Theme"):
             "-# e.g. `.theme prefix add 🔥 #general-category`"
         )
 
-    @help_meta(usage="`.theme prefix scan <#cat>`", desc="detect existing emoji/symbol prefixes in a category or server-wide.", section="Channels")
+    @help_meta(
+        usage="`.theme prefix scan <#cat>`",
+        desc="Detects existing emoji/symbol prefixes in a category or server-wide.",
+        section="Channels",
+        examples=[".theme prefix scan #general-category", ".theme prefix scan"],
+        params=[
+            {"name": "category", "type": "discord.CategoryChannel", "required": false, "desc": "Category to scan. Omit to scan all channels."},
+        ],
+        note="The scan detects leading emojis/symbols in channel names and reports them.",
+    )
     @theme_prefix.command(name="scan")
     @_is_theme_admin()
     async def prefix_scan(self, ctx: commands.Context, *, args: str = None):
@@ -870,7 +967,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         e.set_footer(text="format: <emoji>-<name> · use .theme prefix add <emoji> to apply")
         await ctx.send(embed=e)
 
-    @help_meta(usage="`.theme prefix add <emoji> <#cat> [...]`", desc="add or replace a prefix emoji on all channels in one or more categories.", section="Channels")
+    @help_meta(
+        usage="`.theme prefix add <emoji> <#cat> [...]`",
+        desc="Adds or replaces a prefix emoji on all channels in one or more categories.",
+        section="Channels",
+        examples=[".theme prefix add ★ #text-channels", ".theme prefix add 🎮 #gaming #general"],
+        params=[
+            {"name": "emoji", "type": "str", "required": true, "desc": "The emoji or symbol to use as prefix."},
+            {"name": "categories", "type": "discord.CategoryChannel", "required": true, "desc": "One or more category channels to apply the prefix to."},
+        ],
+        note="Existing prefixes on channels will be replaced.",
+    )
     @theme_prefix.command(name="add")
     @_is_theme_admin()
     async def prefix_add(self, ctx: commands.Context, emoji: str = None, *categories: discord.CategoryChannel):
@@ -927,7 +1034,16 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=f"-# `{'█' * 10}` done — prefix `{emoji}` applied to {done} channels across {len(categories)} categor(ies)")
         await self._report_failures(ctx, failures, "prefix add failures")
 
-    @help_meta(usage="`.theme prefix remove <#cat>`", desc="strip prefixes from channels in specific categories, or from every channel.", section="Channels")
+    @help_meta(
+        usage="`.theme prefix remove <#cat>`",
+        desc="Strips prefixes from channels in specific categories, or from every channel.",
+        section="Channels",
+        examples=[".theme prefix remove #text-channels", ".theme prefix remove"],
+        params=[
+            {"name": "category", "type": "discord.CategoryChannel", "required": false, "desc": "Category to strip prefixes from. Omit to strip all."},
+        ],
+        note="Only removes leading emojis/symbols that were detected as prefixes.",
+    )
     @theme_prefix.command(name="remove")
     @_is_theme_admin()
     async def prefix_remove(self, ctx: commands.Context, *args):
@@ -1010,7 +1126,16 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=f"-# `{'█' * 10}` done — prefixes removed from {done} channels")
         await self._report_failures(ctx, failures, "prefix remove failures")
 
-    @help_meta(usage="`.theme prefix server <emoji>`", desc="apply a prefix to every channel in the server, or remove all prefixes server-wide.", section="Channels")
+    @help_meta(
+        usage="`.theme prefix server <emoji>`",
+        desc="Applies a prefix to every channel in the server, or removes all prefixes server-wide.",
+        section="Channels",
+        examples=[".theme prefix server ★", ".theme prefix server"],
+        params=[
+            {"name": "emoji", "type": "str", "required": false, "desc": "Emoji to apply server-wide. Omit to remove all prefixes."},
+        ],
+        note="This overrides any existing prefixes on all channels.",
+    )
     @theme_prefix.command(name="server")
     @_is_theme_admin()
     async def prefix_server(self, ctx: commands.Context, emoji: str = None):
@@ -1085,7 +1210,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=result)
         await self._report_failures(ctx, failures, "prefix server failures")
 
-    @help_meta(usage="`.theme prefix replace <n> <new>`", desc="replace a detected prefix with a new one across the server.", section="Channels")
+    @help_meta(
+        usage="`.theme prefix replace <n> <new>`",
+        desc="Replaces a detected prefix with a new one across the server.",
+        section="Channels",
+        examples=[".theme prefix replace 3 ★", ".theme prefix replace 1 🎮"],
+        params=[
+            {"name": "n", "type": "int", "required": true, "desc": "The index of the prefix to replace (from scan results)."},
+            {"name": "new", "type": "str", "required": true, "desc": "The new prefix emoji or symbol."},
+        ],
+        note="Use `.theme prefix scan` first to see detected prefixes and their indices.",
+    )
     @theme_prefix.command(name="replace")
     @_is_theme_admin()
     async def prefix_replace(self, ctx: commands.Context, number: int = None, *, new_prefix: str = None):
@@ -1172,7 +1307,14 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=f"-# `{'█' * 10}` done — replaced `{old_prefix}` → `{new_prefix}` on {len(changes)} channels")
         await self._report_failures(ctx, failures, "prefix replace failures")
 
-    @help_meta(usage="`.theme prefix undo`", desc="undo the last prefix operation (add, remove, or all).", section="Channels")
+    @help_meta(
+        usage="`.theme prefix undo`",
+        desc="Undoes the last prefix operation (add, remove, or all).",
+        section="Channels",
+        examples=[".theme prefix undo"],
+        params=[],
+        note="Only the most recent prefix change can be undone.",
+    )
     @theme_prefix.command(name="undo")
     @_is_theme_admin()
     async def prefix_undo(self, ctx: commands.Context):
@@ -1237,7 +1379,14 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=f"-# `{'█' * 10}` done — {op} undone across {done} channels")
         await self._report_failures(ctx, failures, "prefix undo failures")
 
-    @help_meta(usage="`.theme prefix list`", desc="show all stored channel prefixes for this server.", section="Channels")
+    @help_meta(
+        usage="`.theme prefix list`",
+        desc="Shows all stored channel prefixes for this server.",
+        section="Channels",
+        examples=[".theme prefix list"],
+        params=[],
+        note="Displays each channel and its current prefix.",
+    )
     @theme_prefix.command(name="list")
     @_is_theme_admin()
     async def prefix_list(self, ctx: commands.Context):
@@ -1256,13 +1405,29 @@ class ThemeCog(commands.Cog, name="Theme"):
     # ROLEFIX — strip text from channel names
     # ══════════════════════════════════════════════════════════
 
-    @help_meta(usage="`.theme channel`", desc="manage channel names — subcommands: `strip`.", section="Channels")
+    @help_meta(
+        usage="`.theme channel`",
+        desc="Manages channel names. Subcommand: `strip`.",
+        section="Channels",
+        examples=[".theme channel", ".theme channel strip -"],
+        params=[],
+        note="Root command for channel name subcommands.",
+    )
     @theme.group(name="channel", invoke_without_command=True)
     @_is_theme_admin()
     async def theme_channel(self, ctx: commands.Context):
         await ctx.send("-# channel subcommands: `strip`")
 
-    @help_meta(usage="`.theme channel strip <text>`", desc="strip an exact piece of text from every channel name in the server.", section="Channels")
+    @help_meta(
+        usage="`.theme channel strip <text>`",
+        desc="Strips an exact piece of text from every channel name in the server.",
+        section="Channels",
+        examples=[".theme channel strip -", ".theme channel strip oldtext"],
+        params=[
+            {"name": "text", "type": "str", "required": true, "desc": "The exact text to remove from all channel names."},
+        ],
+        note="Case-sensitive. Only exact matches are removed.",
+    )
     @theme_channel.command(name="strip")
     @_is_theme_admin()
     async def theme_channel_strip(self, ctx: commands.Context, *, text: str = None):
@@ -1320,13 +1485,27 @@ class ThemeCog(commands.Cog, name="Theme"):
     # CHANNEL FONT
     # ══════════════════════════════════════════════════════════
 
-    @help_meta(usage="`.theme font`", desc="manage channel fonts — list, set, reset.", section="Channels")
+    @help_meta(
+        usage="`.theme font`",
+        desc="Manages channel fonts — list, set, reset.",
+        section="Channels",
+        examples=[".theme font", ".theme font list", ".theme font set cursive #general"],
+        params=[],
+        note="Root command for font subcommands: list, set, reset.",
+    )
     @theme.group(name="font", invoke_without_command=True)
     @_is_theme_admin()
     async def theme_font(self, ctx: commands.Context):
         await ctx.send("-# font subcommands: `list`, `set`, `reset`")
 
-    @help_meta(usage="`.theme font list`", desc="show all available unicode font styles with live examples.", section="Channels")
+    @help_meta(
+        usage="`.theme font list`",
+        desc="Shows all available unicode font styles with live examples.",
+        section="Channels",
+        examples=[".theme font list"],
+        params=[],
+        note="Each font style is displayed with a sample of how it transforms text.",
+    )
     @theme_font.command(name="list")
     @_is_theme_admin()
     async def font_list(self, ctx: commands.Context):
@@ -1338,7 +1517,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         e.set_footer(text="usage: .theme font set <key> [all | #cat1 #cat2 ...]")
         await ctx.send(embed=e)
 
-    @help_meta(usage="`.theme font set <font> [all|<#cat> ...]`", desc="apply a unicode font to channel names.", section="Channels")
+    @help_meta(
+        usage="`.theme font set <font> [all|<#cat> ...]`",
+        desc="Applies a unicode font to channel names.",
+        section="Channels",
+        examples=[".theme font set cursive #general", ".theme font set bold all"],
+        params=[
+            {"name": "font", "type": "str", "required": true, "desc": "Font style name (from `.theme font list`)."},
+            {"name": "target", "type": "str", "required": false, "desc": "`all` for server-wide, or one or more category mentions."},
+        ],
+        note="Only visible to Discord clients that support unicode font rendering.",
+    )
     @theme_font.command(name="set")
     @_is_theme_admin()
     async def font_set(self, ctx: commands.Context, font_key: str = None, *args):
@@ -1441,7 +1630,16 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=f"-# `{'█' * 10}` done — `{font_key}` font applied to {done} channels")
         await self._report_failures(ctx, failures, "font set failures")
 
-    @help_meta(usage="`.theme font reset [all|<#cat>]`", desc="strip unicode font styling from channel names.", section="Channels")
+    @help_meta(
+        usage="`.theme font reset [all|<#cat>]`",
+        desc="Strips unicode font styling from channel names.",
+        section="Channels",
+        examples=[".theme font reset all", ".theme font reset #general"],
+        params=[
+            {"name": "target", "type": "str", "required": false, "desc": "`all` for server-wide, or a category mention."},
+        ],
+        note="Restores the original (pre-font) channel names.",
+    )
     @theme_font.command(name="reset")
     @_is_theme_admin()
     async def font_reset(self, ctx: commands.Context, *args):
@@ -1513,7 +1711,16 @@ class ThemeCog(commands.Cog, name="Theme"):
     # PRESETS — save / apply / delete
     # ══════════════════════════════════════════════════════════
 
-    @help_meta(usage="`.theme save <name>`", desc="save the current server role/channel state as a named preset.", section="Presets")
+    @help_meta(
+        usage="`.theme save <name>`",
+        desc="Saves the current server role and channel state as a named preset.",
+        section="Presets",
+        examples=[".theme save mytheme", ".theme save backup1"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name for the preset."},
+        ],
+        note="Presets include role mappings, channel names, prefixes, and fonts.",
+    )
     @theme.command(name="save")
     @_is_theme_admin()
     async def theme_save(self, ctx: commands.Context, *, name: str = None):
@@ -1576,7 +1783,16 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await ctx.send(embed=_ok_embed(f"preset **{name}** saved"))
 
-    @help_meta(usage="`.theme apply <name>`", desc="preview then apply a saved preset to this server.", section="Presets")
+    @help_meta(
+        usage="`.theme apply <name>`",
+        desc="Previews then applies a saved preset to this server.",
+        section="Presets",
+        examples=[".theme apply mytheme"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name of the preset to apply."},
+        ],
+        note="A snapshot is created before applying so you can revert with `.theme reset`.",
+    )
     @theme.command(name="apply")
     @_is_theme_admin()
     async def theme_apply(self, ctx: commands.Context, *, name: str = None):
@@ -1762,7 +1978,14 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=f"-# `{'█' * 10}` done — preset **{name}** applied — {done} changes made")
         await self._report_failures(ctx, failures, f"preset apply failures: {name}")
 
-    @help_meta(usage="`.theme presets`", desc="list all saved presets for this server.", section="Presets")
+    @help_meta(
+        usage="`.theme presets`",
+        desc="Lists all saved presets for this server.",
+        section="Presets",
+        examples=[".theme presets"],
+        params=[],
+        note="Shows preset names and creation dates.",
+    )
     @theme.command(name="presets")
     @_is_theme_admin()
     async def theme_presets(self, ctx: commands.Context):
@@ -1774,7 +1997,16 @@ class ThemeCog(commands.Cog, name="Theme"):
         e.set_footer(text=".theme apply <name> to use one")
         await ctx.send(embed=e)
 
-    @help_meta(usage="`.theme delete <name>`", desc="delete a saved preset.", section="Presets")
+    @help_meta(
+        usage="`.theme delete <name>`",
+        desc="Deletes a saved preset.",
+        section="Presets",
+        examples=[".theme delete oldtheme"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name of the preset to delete."},
+        ],
+        note="This cannot be undone.",
+    )
     @theme.command(name="delete")
     @_is_theme_admin()
     async def theme_delete(self, ctx: commands.Context, *, name: str = None):
@@ -1787,7 +2019,16 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await ctx.send(embed=_ok_embed(f"preset **{name}** deleted"))
 
-    @help_meta(usage="`.theme seticon [url|attachment]`", desc="set and store the server icon in the current theme.", section="Setup")
+    @help_meta(
+        usage="`.theme seticon [url|attachment]`",
+        desc="Sets and stores the server icon in the current theme.",
+        section="Setup",
+        examples=[".theme seticon https://i.imgur.com/icon.png", ".theme seticon"],
+        params=[
+            {"name": "source", "type": "str", "required": false, "desc": "Image URL or attachment. Omit to clear the stored icon."},
+        ],
+        note="The icon is saved as part of the theme and can be restored with `.theme apply`.",
+    )
     @theme.command(name="seticon")
     @_is_theme_admin()
     async def theme_seticon(self, ctx: commands.Context, *, source: str = None):
@@ -1811,7 +2052,16 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await ctx.send(embed=_ok_embed("server icon updated"))
 
-    @help_meta(usage="`.theme setbanner [url|attachment]`", desc="set and store the server banner in the current theme.", section="Setup")
+    @help_meta(
+        usage="`.theme setbanner [url|attachment]`",
+        desc="Sets and stores the server banner in the current theme.",
+        section="Setup",
+        examples=[".theme setbanner https://i.imgur.com/banner.png", ".theme setbanner"],
+        params=[
+            {"name": "source", "type": "str", "required": false, "desc": "Image URL or attachment. Omit to clear the stored banner."},
+        ],
+        note="The banner is saved as part of the theme and can be restored with `.theme apply`.",
+    )
     @theme.command(name="setbanner")
     @_is_theme_admin()
     async def theme_setbanner(self, ctx: commands.Context, *, source: str = None):
@@ -1839,7 +2089,14 @@ class ThemeCog(commands.Cog, name="Theme"):
     # RESET (undo via snapshot)
     # ══════════════════════════════════════════════════════════
 
-    @help_meta(usage="`.theme reset`", desc="undo the last `.theme apply` — restores roles and channels from the snapshot.", section="Presets")
+    @help_meta(
+        usage="`.theme reset`",
+        desc="Undoes the last `.theme apply` — restores roles and channels from the snapshot.",
+        section="Presets",
+        examples=[".theme reset"],
+        params=[],
+        note="Only one snapshot is stored. A new `.theme apply` overwrites it.",
+    )
     @theme.command(name="reset")
     @_is_theme_admin()
     async def theme_reset(self, ctx: commands.Context, mode: str = None):
@@ -1929,14 +2186,28 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=f"-# `{'█' * 10}` done — reset complete — {done} items reverted")
         await self._report_failures(ctx, failures, "reset failures")
 
-    @help_meta(usage="`.theme undo`", desc="alias for `.theme reset` — pops a single snapshot to undo the last change.", section="Presets")
+    @help_meta(
+        usage="`.theme undo`",
+        desc="Alias for `.theme reset` — pops a single snapshot to undo the last change.",
+        section="Presets",
+        examples=[".theme undo"],
+        params=[],
+        note="Same as `.theme reset`.",
+    )
     @theme.command(name="undo")
     @_is_theme_admin()
     async def theme_undo(self, ctx: commands.Context):
         """Alias for `.theme reset` that pops a single snapshot (undo last change)."""
         await ctx.invoke(self.theme_reset)
 
-    @help_meta(usage="`.theme snapshot`", desc="show what's currently saved in the undo snapshot.", section="Presets")
+    @help_meta(
+        usage="`.theme snapshot`",
+        desc="Shows what's currently saved in the undo snapshot.",
+        section="Presets",
+        examples=[".theme snapshot"],
+        params=[],
+        note="Displays the pre-apply state that would be restored by `.theme reset`.",
+    )
     @theme.command(name="snapshot")
     @_is_theme_admin()
     async def theme_snapshot(self, ctx: commands.Context):
@@ -1966,7 +2237,14 @@ class ThemeCog(commands.Cog, name="Theme"):
     # PREFIX GROUPS — named persistent prefix sets
     # ══════════════════════════════════════════════════════════
 
-    @help_meta(usage="`.theme group` / `.tg`", desc="manage named prefix groups — run `.theme group setup` to get started.", section="Channels")
+    @help_meta(
+        usage="`.theme group` / `.tg`",
+        desc="Manages named prefix groups — run `.theme group setup` to get started.",
+        section="Channels",
+        examples=[".theme group", ".theme group setup", ".tg"],
+        params=[],
+        note="Root command. Subcommands: setup, list, create, delete, set, add, remove, apply. `.tg` is a shorthand alias.",
+    )
     @theme.group(name="group", invoke_without_command=True)
     @_is_theme_admin()
     async def theme_group(self, ctx: commands.Context):
@@ -1975,7 +2253,14 @@ class ThemeCog(commands.Cog, name="Theme"):
             "-# run `.theme group setup` to auto-create groups from detected prefixes"
         )
 
-    @help_meta(usage="`.tg`", desc="shorthand alias for `.theme group` — accepts all the same subcommands.", section="Channels")
+    @help_meta(
+        usage="`.tg`",
+        desc="Shorthand alias for `.theme group` — accepts all the same subcommands.",
+        section="Channels",
+        examples=[".tg", ".tg list", ".tg setup"],
+        params=[],
+        note="Same as `.theme group` but shorter to type.",
+    )
     @commands.command()
     @_is_theme_admin()
     async def tg(self, ctx: commands.Context, *args):
@@ -1994,7 +2279,14 @@ class ThemeCog(commands.Cog, name="Theme"):
         # fallback: show group help
         await ctx.invoke(self.theme_group)
 
-    @help_meta(usage="`.theme group setup`", desc="scan the entire server for prefixes and interactively create named prefix groups.", section="Channels")
+    @help_meta(
+        usage="`.theme group setup`",
+        desc="Scans the entire server for prefixes and interactively creates named prefix groups.",
+        section="Channels",
+        examples=[".theme group setup"],
+        params=[],
+        note="Interactive wizard. Detects existing prefixes and lets you assign them to named groups.",
+    )
     @theme_group.command(name="setup")
     @_is_theme_admin()
     async def group_setup(self, ctx: commands.Context):
@@ -2095,7 +2387,14 @@ class ThemeCog(commands.Cog, name="Theme"):
             f"setup complete — `{created}` group(s) created. use `.theme group list` to see them."
         ))
 
-    @help_meta(usage="`.theme group list`", desc="show all prefix groups — name, prefix, categories, and channel count.", section="Channels")
+    @help_meta(
+        usage="`.theme group list`",
+        desc="Shows all prefix groups — name, prefix, categories, and channel count.",
+        section="Channels",
+        examples=[".theme group list"],
+        params=[],
+        note="Displays a summary of all configured prefix groups.",
+    )
     @theme_group.command(name="list")
     @_is_theme_admin()
     async def group_list(self, ctx: commands.Context):
@@ -2120,7 +2419,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         e.set_footer(text=".theme group set <name> <new prefix> to change · .theme group add <name> #cat to add a category")
         await ctx.send(embed=e)
 
-    @help_meta(usage="`.theme group create <name> <prefix>`", desc="manually create a prefix group.", section="Channels")
+    @help_meta(
+        usage="`.theme group create <name> <prefix>`",
+        desc="Manually creates a named prefix group.",
+        section="Channels",
+        examples=[".theme group create gaming 🎮", ".theme group create info ℹ️"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name for the new prefix group."},
+            {"name": "prefix", "type": "str", "required": true, "desc": "The prefix emoji or symbol for channels in this group."},
+        ],
+        note="The prefix is not applied to any channels yet. Use `.theme group add` to assign categories.",
+    )
     @theme_group.command(name="create")
     @_is_theme_admin()
     async def group_create(self, ctx: commands.Context, name: str = None, prefix: str = None):
@@ -2138,7 +2447,16 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await ctx.send(embed=_ok_embed(f"group **{name}** created with prefix `{prefix}` — use `.theme group add {name} #cat` to add categories"))
 
-    @help_meta(usage="`.theme group delete <name>`", desc="delete a prefix group record. does not rename any channels.", section="Channels")
+    @help_meta(
+        usage="`.theme group delete <name>`",
+        desc="Deletes a prefix group record. Does not rename any channels.",
+        section="Channels",
+        examples=[".theme group delete gaming"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name of the group to delete."},
+        ],
+        note="Channel names are NOT changed when a group is deleted.",
+    )
     @theme_group.command(name="delete")
     @_is_theme_admin()
     async def group_delete(self, ctx: commands.Context, name: str = None):
@@ -2164,7 +2482,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await confirm_msg.edit(embed=_ok_embed(f"group **{name}** deleted."), view=None)
 
-    @help_meta(usage="`.theme group set <name> <new prefix>`", desc="change a group's prefix and rename all channels in that group.", section="Channels")
+    @help_meta(
+        usage="`.theme group set <name> <new prefix>`",
+        desc="Changes a group's prefix and renames all channels in that group.",
+        section="Channels",
+        examples=[".theme group set gaming 🕹️", ".theme group set info 📋"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name of the group to update."},
+            {"name": "new prefix", "type": "str", "required": true, "desc": "The new prefix emoji or symbol."},
+        ],
+        note="All channels in the group are immediately renamed with the new prefix.",
+    )
     @theme_group.command(name="set")
     @_is_theme_admin()
     async def group_set(self, ctx: commands.Context, name: str = None, *, new_prefix: str = None):
@@ -2248,7 +2576,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         await prog.edit(content=f"-# `{'█' * 10}` done — group **{name}** prefix updated, {len(changes)} channels renamed")
         await self._report_failures(ctx, failures, "group set failures")
 
-    @help_meta(usage="`.theme group add <name> #category`", desc="add a category to a group and apply the group's prefix to all its channels.", section="Channels")
+    @help_meta(
+        usage="`.theme group add <name> #category`",
+        desc="Adds a category to a group and applies the group's prefix to all its channels.",
+        section="Channels",
+        examples=[".theme group add gaming #game-chat", ".theme group add info #information"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name of the target group."},
+            {"name": "category", "type": "discord.CategoryChannel", "required": true, "desc": "The category to add to the group."},
+        ],
+        note="All channels in the category will be prefixed with the group's prefix.",
+    )
     @theme_group.command(name="add")
     @_is_theme_admin()
     async def group_add(self, ctx: commands.Context, name: str = None, *, args: str = None):
@@ -2327,7 +2665,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await ctx.send(embed=_ok_embed(f"**{cat.name}** added to group **{name}** — use `.theme group remove {name} #cat` to undo"))
 
-    @help_meta(usage="`.theme group remove <name> #category`", desc="remove a category from a group. channel names are not changed.", section="Channels")
+    @help_meta(
+        usage="`.theme group remove <name> #category`",
+        desc="Removes a category from a group. Channel names are not changed.",
+        section="Channels",
+        examples=[".theme group remove gaming #game-chat"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name of the group."},
+            {"name": "category", "type": "discord.CategoryChannel", "required": true, "desc": "The category to remove from the group."},
+        ],
+        note="Channel names retain their current prefix. Use `.theme prefix remove` to strip prefixes.",
+    )
     @theme_group.command(name="remove")
     @_is_theme_admin()
     async def group_remove(self, ctx: commands.Context, name: str = None, *, args: str = None):
@@ -2362,7 +2710,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         await ctx.send(embed=_ok_embed(f"**{cat.name}** removed from group **{name}** — channel names unchanged — use `.theme prefix undo` if you want to strip the prefix too"))
 
-    @help_meta(usage="`.theme group apply <name> #channel`", desc="stamp a group's prefix onto one specific channel without adding it to the group.", section="Channels")
+    @help_meta(
+        usage="`.theme group apply <name> #channel`",
+        desc="Stamps a group's prefix onto one specific channel without adding it to the group.",
+        section="Channels",
+        examples=[".theme group apply gaming #random"],
+        params=[
+            {"name": "name", "type": "str", "required": true, "desc": "Name of the group whose prefix to use."},
+            {"name": "channel", "type": "discord.TextChannel", "required": true, "desc": "The channel to stamp the prefix on."},
+        ],
+        note="The channel's name is prefixed but it is NOT added to the group's category list.",
+    )
     @theme_group.command(name="apply")
     @_is_theme_admin()
     async def group_apply(self, ctx: commands.Context, name: str = None, channel: discord.TextChannel = None):

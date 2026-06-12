@@ -226,7 +226,15 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .gif — convert image to GIF
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.gif [name]`", desc="converts an image to a GIF. reply to any image.")
+    @help_meta(
+        usage="`.gif [name]`",
+        desc="Converts an image to a GIF. Reply to any image to use it.",
+        examples=[".gif", ".gif myanimation"],
+        params=[
+            {"name": "name", "type": "str", "required": False, "desc": "Optional filename for the output GIF."},
+        ],
+        note="Reply to an image message. Supports PNG, JPG, WEBP input.",
+    )
     @commands.command(name='gif')
     async def gif_cmd(self, ctx, name: str = "You_Should_Read_Grand_Blue_Dreaming"):
         if await self._cooldown(ctx):
@@ -267,7 +275,16 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .fadegif — fade-in animation from background color
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.fadegif [color] [name]`", desc="creates a fade-in animation from a solid color.")
+    @help_meta(
+        usage="`.fadegif [color] [name]`",
+        desc="Creates a fade-in animation from a solid colour to the image.",
+        examples=[".fadegif", ".fadegif #FF0000", ".fadegif black myfade"],
+        params=[
+            {"name": "color", "type": "str", "required": False, "desc": "Starting colour (hex or name). Defaults to black."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+        ],
+        note="Reply to an image. The animation transitions from the solid colour to the full image.",
+    )
     @commands.command(name='fadegif')
     async def fadegif_cmd(self, ctx, color: str = "black", name: str = "You_Should_Read_Grand_Blue_Dreaming"):
         if await self._cooldown(ctx):
@@ -320,7 +337,15 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .spingif — rotation animation
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.spingif [name]`", desc="makes the image spin (45° steps).")
+    @help_meta(
+        usage="`.spingif [name]`",
+        desc="Creates a spinning animation from an image (45-degree steps).",
+        examples=[".spingif", ".spingif myspin"],
+        params=[
+            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+        ],
+        note="Reply to an image. The image rotates in 45-degree increments.",
+    )
     @commands.command(name='spingif')
     async def spingif_cmd(self, ctx, name: str = "spin"):
         if await self._cooldown(ctx):
@@ -357,7 +382,18 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .zoomgif — smooth zoom in/out
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.zoomgif [in/out] [fade] [color] [name]`", desc="creates a smooth zoom animation.")
+    @help_meta(
+        usage="`.zoomgif [in/out] [fade] [color] [name]`",
+        desc="Creates a smooth zoom-in or zoom-out animation.",
+        examples=[".zoomgif", ".zoomgif out", ".zoomgif in fade #000"],
+        params=[
+            {"name": "direction", "type": "str", "required": False, "desc": "`in` or `out`. Defaults to `in`."},
+            {"name": "fade", "type": "str", "required": False, "desc": "Include `fade` to enable fade effect."},
+            {"name": "color", "type": "str", "required": False, "desc": "Background colour (hex or name)."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+        ],
+        note="Reply to an image. Supports various combinations of direction, fade, and colour.",
+    )
     @commands.command(name='zoomgif')
     async def zoomgif_cmd(self, ctx, type: str = "in", fade: str = "none",
                           fcolor: str = "black", gif_name: str = None):
@@ -428,7 +464,15 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .bouncegif — bounce with easing
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.bouncegif [name]`", desc="makes the image bounce with easing.")
+    @help_meta(
+        usage="`.bouncegif [name]`",
+        desc="Creates a bouncing animation with easing.",
+        examples=[".bouncegif", ".bouncegif mybounce"],
+        params=[
+            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+        ],
+        note="Reply to an image. Uses easing for smooth bouncing motion.",
+    )
     @commands.command(name='bouncegif')
     async def bouncegif_cmd(self, ctx, name: str = "bounce"):
         if await self._cooldown(ctx):
@@ -471,7 +515,15 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .textgif — typing text animation
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.textgif <text>`", desc="creates a typing animation GIF (max 30 chars).")
+    @help_meta(
+        usage="`.textgif <text>`",
+        desc="Creates a typing animation GIF (max 30 characters).",
+        examples=[".textgif Hello!"],
+        params=[
+            {"name": "text", "type": "str", "required": True, "desc": "Text to animate (max 30 chars)."},
+        ],
+        note="Generates an animated GIF that simulates typing the text character by character.",
+    )
     @commands.command(name='textgif')
     async def textgif_cmd(self, ctx, *, text: str):
         if await self._cooldown(ctx):
@@ -510,7 +562,16 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .upscale — upscale image by factor
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.upscale [factor] [name]`", desc="upscales an image by a given factor (1x-6x).")
+    @help_meta(
+        usage="`.upscale [factor] [name]`",
+        desc="Upscales an image by a given factor (1x to 6x).",
+        examples=[".upscale", ".upscale 2", ".upscale 4 hq"],
+        params=[
+            {"name": "factor", "type": "int", "required": False, "desc": "Upscale factor (1-6, default 2)."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+        ],
+        note="Reply to an image. Higher factors produce larger file sizes.",
+    )
     @commands.command(name='upscale')
     async def upscale_cmd(self, ctx, factor: str = "2x", gif_name: str = None):
         if await self._cooldown(ctx):
@@ -546,7 +607,16 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .downscale — shrink image by factor
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.downscale [factor] [name]`", desc="shrinks an image by a given factor.")
+    @help_meta(
+        usage="`.downscale [factor] [name]`",
+        desc="Shrinks an image by a given factor.",
+        examples=[".downscale", ".downscale 2", ".downscale 3 small"],
+        params=[
+            {"name": "factor", "type": "int", "required": False, "desc": "Downscale divisor (default 2)."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+        ],
+        note="Reply to an image.",
+    )
     @commands.command(name='downscale')
     async def downscale_cmd(self, ctx, factor: str = "2x", gif_name: str = None):
         if await self._cooldown(ctx):
@@ -579,7 +649,16 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .lowquality — crunch quality (pixelated cursed look)
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.lowquality [factor] [name]`", desc="crunches image quality (cursed pixelated look).")
+    @help_meta(
+        usage="`.lowquality [factor] [name]`",
+        desc="Drastically reduces image quality for a cursed pixelated look.",
+        examples=[".lowquality", ".lowquality 10", ".lowquality 5 crunchy"],
+        params=[
+            {"name": "factor", "type": "int", "required": False, "desc": "Quality reduction factor (default 10). Higher = worse quality."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+        ],
+        note="Reply to an image. Makes the image look extremely compressed/pixelated.",
+    )
     @commands.command(name='lowquality')
     async def lowquality_cmd(self, ctx, factor: str = "4x", gif_name: str = None):
         if await self._cooldown(ctx):
@@ -613,7 +692,18 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .bar — add colored bar/border to image
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.bar [type] [color] [size] [name]`", desc="adds a coloured bar/border to an image.")
+    @help_meta(
+        usage="`.bar [type] [color] [size] [name]`",
+        desc="Adds a coloured bar or border to an image.",
+        examples=[".bar", ".bar top red", ".bar bottom #FF0000 50"],
+        params=[
+            {"name": "type", "type": "str", "required": False, "desc": "Bar position: `top`, `bottom`, `left`, `right`. Defaults to all sides (border)."},
+            {"name": "color", "type": "str", "required": False, "desc": "Colour (hex or name). Defaults to black."},
+            {"name": "size", "type": "int", "required": False, "desc": "Bar thickness in pixels."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+        ],
+        note="Reply to an image.",
+    )
     @commands.command(name='bar')
     async def bar_cmd(self, ctx, type: str = "horizontal", color: str = "black",
                       bar_size: int = 40, gif_name: str = None):
@@ -679,7 +769,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     # .thisu — POV overlay effect
     # ─────────────────────────────────────────────────────────
-    @help_meta(usage="`.thisu`", desc="applies a POV overlay effect to an image or GIF.")
+    @help_meta(
+        usage="`.thisu`",
+        desc="Applies a POV overlay effect to an image or GIF.",
+        examples=[".thisu"],
+        params=[],
+        note="Reply to an image or GIF. Creates a first-person POV border effect.",
+    )
     @commands.command(name='thisu')
     async def thisu_cmd(self, ctx):
         if await self._cooldown(ctx):

@@ -494,7 +494,13 @@ class ReactionsCog(commands.Cog, name="Reactions"):
 
     @help_meta(
         usage="`.rc [@user] [emoji]`",
-        desc="shows reaction count for a user. optionally filter by emoji.",
+        desc="Shows reaction count for a user, optionally filtered by emoji.",
+        examples=[".rc", ".rc @user", ".rc @user 😂"],
+        params=[
+            {"name": "user", "type": "discord.Member", "required": False, "desc": "The member to check. Defaults to yourself."},
+            {"name": "emoji", "type": "str", "required": False, "desc": "Optional emoji filter."},
+        ],
+        note="Shows total reaction count, server rank, and per-emoji breakdown.",
     )
     @commands.command(name="rc", aliases=["reactioncount"])
     @commands.cooldown(2, 6, commands.BucketType.user)
@@ -559,7 +565,10 @@ class ReactionsCog(commands.Cog, name="Reactions"):
 
     @help_meta(
         usage="`.rtop`",
-        desc="reaction leaderboard for the whole server.",
+        desc="Shows the reaction leaderboard for the whole server.",
+        examples=[".rtop"],
+        params=[],
+        note="Displays the top users ranked by total reactions received.",
     )
     @commands.command(name="rtop", aliases=["reactiontop"])
     @commands.cooldown(1, 10, commands.BucketType.channel)
@@ -585,7 +594,12 @@ class ReactionsCog(commands.Cog, name="Reactions"):
 
     @help_meta(
         usage="`.rctop <emoji>`",
-        desc="leaderboard filtered to one specific emoji.",
+        desc="Shows the leaderboard filtered to one specific emoji.",
+        examples=[".rctop 😂", ".rctop :sob:", ".rctop fire"],
+        params=[
+            {"name": "emoji", "type": "str", "required": True, "desc": "The emoji to filter by (actual emoji, emoji name, or `:name:` format)."},
+        ],
+        note="Supports emoji names like `sob`, `joy`, `fire`, etc.",
     )
     @commands.command(name="rctop", aliases=["reactiontopemoji"])
     @commands.cooldown(1, 10, commands.BucketType.channel)
@@ -643,8 +657,13 @@ class ReactionsCog(commands.Cog, name="Reactions"):
 
     @help_meta(
         usage="`.rur @user`",
-        desc="resets all reaction data for a specific user.",
+        desc="Resets all reaction data for a specific user.",
         owner=True,
+        examples=[".rur @user"],
+        params=[
+            {"name": "user", "type": "discord.Member", "required": True, "desc": "The member whose reaction data to wipe."},
+        ],
+        note="Owner only. This cannot be undone.",
     )
     @commands.command(name="rur", aliases=["resetusereaction"])
     async def reset_user_reactions(self, ctx, member: discord.Member):
@@ -658,8 +677,11 @@ class ReactionsCog(commands.Cog, name="Reactions"):
 
     @help_meta(
         usage="`.rsr`",
-        desc="resets ALL reaction data for this server.",
+        desc="Resets ALL reaction data for this server.",
         owner=True,
+        examples=[".rsr"],
+        params=[],
+        note="Owner only. Requires confirmation via `yes` before executing.",
     )
     @commands.command(name="rsr", aliases=["resetservereactions"])
     async def reset_server_reactions(self, ctx):

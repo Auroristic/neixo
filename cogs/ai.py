@@ -1848,7 +1848,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
     # ═══════════════════════════════════════════════════════════
 
     @commands.command(name="aiadd")
-    @help_meta(usage=".aiadd [#channel]", desc="enables AI chat in a channel.", owner=True)
+    @help_meta(
+        usage=".aiadd [#channel]",
+        desc="Enables AI chat responses in a channel.",
+        owner=True,
+        examples=[".aiadd", ".aiadd #general"],
+        params=[
+            {"name": "channel", "type": "discord.TextChannel", "required": false, "desc": "The channel to enable AI in. Defaults to current channel."},
+        ],
+        note="Owner only.",
+    )
     async def ai_add(self, ctx, channel: discord.TextChannel = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -1868,7 +1877,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
             await ctx.send("already enabled")
 
     @commands.command(name="airemove")
-    @help_meta(usage=".airemove [#channel]", desc="disables AI chat in a channel.", owner=True)
+    @help_meta(
+        usage=".airemove [#channel]",
+        desc="Disables AI chat responses in a channel.",
+        owner=True,
+        examples=[".airemove", ".airemove #general"],
+        params=[
+            {"name": "channel", "type": "discord.TextChannel", "required": false, "desc": "The channel to disable AI in. Defaults to current channel."},
+        ],
+        note="Owner only.",
+    )
     async def ai_remove(self, ctx, channel: discord.TextChannel = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -1885,7 +1903,14 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
             await ctx.send("wasn't enabled anyway")
 
     @commands.command(name="ailist")
-    @help_meta(usage=".ailist", desc="shows all AI-enabled channels and DM whitelist.", owner=True)
+    @help_meta(
+        usage=".ailist",
+        desc="Shows all AI-enabled channels and DM whitelisted users.",
+        owner=True,
+        examples=[".ailist"],
+        params=[],
+        note="Owner only.",
+    )
     async def ai_list(self, ctx):
         config       = load_json(CONFIG_FILE)
         guild_cfg    = config.get(str(ctx.guild.id), {})
@@ -1941,7 +1966,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         await ctx.send(embed=pages[0], view=PageView())
 
     @commands.command(name="dmadd")
-    @help_meta(usage=".dmadd @user", desc="enables DM AI responses for a user.", owner=True)
+    @help_meta(
+        usage=".dmadd @user",
+        desc="Enables DM AI responses for a user.",
+        owner=True,
+        examples=[".dmadd @user"],
+        params=[
+            {"name": "user", "type": "discord.User", "required": true, "desc": "The user to enable DM AI for."},
+        ],
+        note="Owner only.",
+    )
     async def dm_add(self, ctx, user: discord.User = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -1957,7 +1991,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
             await ctx.send("already enabled")
 
     @commands.command(name="dmremove")
-    @help_meta(usage=".dmremove @user", desc="disables DM AI responses for a user.", owner=True)
+    @help_meta(
+        usage=".dmremove @user",
+        desc="Disables DM AI responses for a user.",
+        owner=True,
+        examples=[".dmremove @user"],
+        params=[
+            {"name": "user", "type": "discord.User", "required": true, "desc": "The user to disable DM AI for."},
+        ],
+        note="Owner only.",
+    )
     async def dm_remove(self, ctx, user: discord.User = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -1973,7 +2016,14 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
             await ctx.send("wasn't enabled")
 
     @commands.command(name="dmreset")
-    @help_meta(usage=".dmreset", desc="resets your DM conversation memory.", owner=True)
+    @help_meta(
+        usage=".dmreset",
+        desc="Resets your DM conversation memory.",
+        owner=True,
+        examples=[".dmreset"],
+        params=[],
+        note="Owner only. Clears the conversation history.",
+    )
     async def dm_memory_reset(self, ctx):
         creator_id   = CREATOR_ID
         dm_whitelist = load_json(DM_WHITELIST_FILE)
@@ -1993,7 +2043,14 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         await ctx.send("done, ur dm memory wiped <33")
 
     @commands.command(name="dmrefresh")
-    @help_meta(usage=".dmrefresh", desc="refreshes your DM conversation from scratch.", owner=True)
+    @help_meta(
+        usage=".dmrefresh",
+        desc="Refreshes your DM conversation from scratch.",
+        owner=True,
+        examples=[".dmrefresh"],
+        params=[],
+        note="Owner only. Wipes and re-reads recent messages.",
+    )
     async def dm_refresh(self, ctx):
         creator_id   = CREATOR_ID
         dm_whitelist = load_json(DM_WHITELIST_FILE)
@@ -2006,7 +2063,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         await ctx.send("dm convo refreshed <33")
 
     @commands.command(name="creset")
-    @help_meta(usage=".creset [@user] or .creset all", desc="resets conversation memory for a user or everyone.", owner=True)
+    @help_meta(
+        usage=".creset [@user] or .creset all",
+        desc="Resets conversation memory for a user or everyone.",
+        owner=True,
+        examples=[".creset", ".creset @user", ".creset all"],
+        params=[
+            {"name": "target", "type": "str", "required": false, "desc": "A user mention or `all` to reset everyone."},
+        ],
+        note="Owner only. Clears the AI's memory of past conversations.",
+    )
     async def convo_reset(self, ctx, subcommand: str = None, user: discord.Member = None):
         is_owner = is_owner_or_creator(ctx)
 
@@ -2080,7 +2146,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @commands.command(name="crefresh")
-    @help_meta(usage=".crefresh or .crefresh all", desc="wipes and re-reads the last 60 messages.", owner=True)
+    @help_meta(
+        usage=".crefresh or .crefresh all",
+        desc="Wipes conversation memory and re-reads the last 60 messages.",
+        owner=True,
+        examples=[".crefresh", ".crefresh all"],
+        params=[
+            {"name": "target", "type": "str", "required": false, "desc": "Set to `all` to refresh conversations for all users."},
+        ],
+        note="Owner only.",
+    )
     async def convo_refresh(self, ctx, subcommand: str = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -2140,7 +2215,14 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @commands.command(name="crestore")
-    @help_meta(usage=".crestore", desc="restores conversation memory from the last backup.", owner=True)
+    @help_meta(
+        usage=".crestore",
+        desc="Restores conversation memory from the last backup.",
+        owner=True,
+        examples=[".crestore"],
+        params=[],
+        note="Owner only. Restores from the auto-backup file.",
+    )
     async def convo_restore(self, ctx):
         if not is_owner_or_creator(ctx):
             return await ctx.send("perms issue")
@@ -2151,7 +2233,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @commands.command(name="mreset")
-    @help_meta(usage=".mreset [@user]", desc="clears bot memory notes for a user.", owner=True)
+    @help_meta(
+        usage=".mreset [@user]",
+        desc="Clears the bot's memory notes for a user.",
+        owner=True,
+        examples=[".mreset", ".mreset @user"],
+        params=[
+            {"name": "user", "type": "discord.User", "required": false, "desc": "The user to clear memory for. Omit for self."},
+        ],
+        note="Owner only. Memory notes are stored separately from conversation history.",
+    )
     async def memory_reset(self, ctx, user: discord.Member = None):
         is_owner = is_owner_or_creator(ctx)
         target   = user if (user and is_owner) else ctx.author
@@ -2168,7 +2259,14 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @commands.command(name="mrestore")
-    @help_meta(usage=".mrestore", desc="restores bot memory from the last backup.", owner=True)
+    @help_meta(
+        usage=".mrestore",
+        desc="Restores bot memory from the last backup.",
+        owner=True,
+        examples=[".mrestore"],
+        params=[],
+        note="Owner only. Restores memory notes from the auto-backup.",
+    )
     async def memory_restore(self, ctx):
         if not is_owner_or_creator(ctx):
             return await ctx.send("maybe get perms first")
@@ -2180,7 +2278,17 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
 
     # ── model ─────────────────────────────────────────────────
     @commands.command(name="model")
-    @help_meta(usage=".model | .model add <model> | .model remove <number>", desc="manages AI models used for response racing.", owner=True)
+    @help_meta(
+        usage=".model | .model add <model> | .model remove <number>",
+        desc="Lists, adds, or removes AI models used for response racing.",
+        owner=True,
+        examples=[".model", ".model add gpt-4", ".model remove 2"],
+        params=[
+            {"name": "action", "type": "str", "required": false, "desc": "`add` or `remove`."},
+            {"name": "value", "type": "str/int", "required": false, "desc": "Model name (for add) or index number (for remove)."},
+        ],
+        note="Owner only. Multiple models race to respond; the fastest reply wins.",
+    )
     async def model_cmd(self, ctx, action: str = None, *, value: str = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -2276,7 +2384,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
 
     # ── ai toggle ─────────────────────────────────────────────
     @commands.command(name="aitoggle")
-    @help_meta(usage=".aitoggle nvidia | .aitoggle zen", desc="switches AI provider between nvidia and zen.", owner=True)
+    @help_meta(
+        usage=".aitoggle nvidia | .aitoggle zen",
+        desc="Switches the active AI provider between NVIDIA and Zen.",
+        owner=True,
+        examples=[".aitoggle nvidia", ".aitoggle zen"],
+        params=[
+            {"name": "provider", "type": "str", "required": true, "desc": "`nvidia` or `zen` — the AI backend to use."},
+        ],
+        note="Owner only.",
+    )
     async def ai_toggle(self, ctx, provider: str = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")

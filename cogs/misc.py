@@ -67,7 +67,13 @@ class MiscCog(commands.Cog, name="Misc"):
             await self.session.close()
 
     # ── ping ────────────────────────────────────────────────
-    @help_meta(usage="`.ping`", desc="shows the bot's current latency.")
+    @help_meta(
+        usage="`.ping`",
+        desc="Shows the bot's current WebSocket and round-trip latency.",
+        examples=[".ping"],
+        params=[],
+        note="Displays both heartbeat latency and message edit RTT. The ping target is purely flavour text.",
+    )
     @commands.command(name="ping")
     async def ping_prefix(self, ctx):
         # `ws_ms` = websocket heartbeat to Discord (bot.latency).
@@ -91,7 +97,13 @@ class MiscCog(commands.Cog, name="Misc"):
             pass
 
     # ── link ────────────────────────────────────────────────
-    @help_meta(usage="`.link`", desc="sends the Seoulities website link.")
+    @help_meta(
+        usage="`.link`",
+        desc="Sends the Seoulities website link with an info embed.",
+        examples=[".link"],
+        params=[],
+        note="The image is loaded from local assets.",
+    )
     @commands.command(name="link")
     async def link(self, ctx):
         embed = discord.Embed(
@@ -121,7 +133,13 @@ class MiscCog(commands.Cog, name="Misc"):
             await ctx.send(embed=embed)
 
     # ── status ───────────────────────────────────────────────
-    @help_meta(usage="`.status`", desc="shows uptime, latency, memory, and Lavalink status.")
+    @help_meta(
+        usage="`.status`",
+        desc="Shows uptime, latency, memory usage, and Lavalink status.",
+        examples=[".status"],
+        params=[],
+        note="Memory is read from /proc/self/status (Linux only). Lavalink RAM uses the /v4/stats endpoint.",
+    )
     @commands.command(name="status")
     async def status(self, ctx):
         bot = self.bot
@@ -231,7 +249,13 @@ class MiscCog(commands.Cog, name="Misc"):
         await ctx.send(embed=embed)
 
     # ── random ───────────────────────────────────────────────
-    @help_meta(usage="`.random`", desc="picks a random non-bot member and mentions them.")
+    @help_meta(
+        usage="`.random`",
+        desc="Picks a random non-bot member in the server and mentions them.",
+        examples=[".random"],
+        params=[],
+        note="Has a GIF cooldown per user.",
+    )
     @commands.command(name='random')
     async def random_member(self, ctx):
         cooldown = check_gif_cooldown(ctx.author.id)
@@ -247,7 +271,17 @@ class MiscCog(commands.Cog, name="Misc"):
         await ctx.send(f"{member.mention}")
 
     # ── dm ─────────────────────────────────────────────────
-    @help_meta(usage="`.dm @user <message>`", desc="sends a DM to a user as the bot.", staff=True)
+    @help_meta(
+        usage="`.dm @user <message>`",
+        desc="Sends a DM to a user as the bot.",
+        examples=[".dm @fw_u hello!"],
+        params=[
+            {"name": "user", "type": "discord.User", "required": True, "desc": "The user to DM."},
+            {"name": "message", "type": "str", "required": True, "desc": "The message content to send."},
+        ],
+        note="Staff only. Requires whitelist.",
+        staff=True,
+    )
     @commands.command(name='dm')
     async def dm_user(self, ctx, user: discord.User, *, message: str):
         if ctx.guild:
@@ -273,7 +307,16 @@ class MiscCog(commands.Cog, name="Misc"):
             await ctx.send(f"dude : {str(e)}")
 
     # ── dmcheck ──────────────────────────────────────────────
-    @help_meta(usage="`.dmcheck @user`", desc="exports DM history with a user as a text file.", staff=True)
+    @help_meta(
+        usage="`.dmcheck @user`",
+        desc="Exports DM history with a user as a .txt file.",
+        examples=[".dmcheck @fw_u"],
+        params=[
+            {"name": "user", "type": "discord.User", "required": True, "desc": "The user whose DM history to export."},
+        ],
+        note="Staff only. Fetches up to 100 most recent messages.",
+        staff=True,
+    )
     @commands.command(name='dmcheck')
     async def dm_check(self, ctx, user: discord.User):
         if ctx.guild:
@@ -370,7 +413,14 @@ class EchoCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @help_meta(usage="`.echo <message>`", desc="repeats your message as the bot.", admin=True)
+    @help_meta(
+        usage="`.echo <message>`",
+        desc="Opens a modal to send a message as the bot.",
+        examples=[".echo"],
+        params=[],
+        note="Admin only. Opens an interactive modal for message input.",
+        admin=True,
+    )
     @commands.command(name="echo")
     async def echo_prefix(self, ctx):
         if not ctx.guild:

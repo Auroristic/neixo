@@ -37,7 +37,17 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── whitelist ──────────────────────────────────────────────
     @commands.command(name="whitelist")
-    @help_meta(usage=".whitelist @user", desc="toggles a user on/off the staff whitelist.", section="Server Management", owner=True)
+    @help_meta(
+        usage=".whitelist @user",
+        desc="Toggles a user on or off the staff whitelist.",
+        section="Server Management",
+        owner=True,
+        examples=[".whitelist", ".whitelist @user"],
+        params=[
+            {"name": "user", "type": "discord.Member", "required": false, "desc": "The member to toggle. Omit to see usage."},
+        ],
+        note="Only the bot owner/creator can manage the whitelist.",
+    )
     async def whitelist(self, ctx, user: discord.Member = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -68,7 +78,15 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── whitelistshow ──────────────────────────────────────────
     @commands.command(name="whitelistshow")
-    @help_meta(usage=".whitelistshow", desc="shows all whitelisted users.", section="Server Management", owner=True)
+    @help_meta(
+        usage=".whitelistshow",
+        desc="Shows all users currently on the staff whitelist.",
+        section="Server Management",
+        owner=True,
+        examples=[".whitelistshow"],
+        params=[],
+        note="Only the bot owner/creator can view this.",
+    )
     async def whitelist_show(self, ctx):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -91,7 +109,17 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── setcolor ───────────────────────────────────────────────
     @commands.command(name='setcolor')
-    @help_meta(usage=".setcolor #HEX", desc="changes the embed accent colour for this server.", section="Server Management", owner=True)
+    @help_meta(
+        usage=".setcolor #HEX",
+        desc="Changes the embed accent colour for this server.",
+        section="Server Management",
+        owner=True,
+        examples=[".setcolor #FF0000", ".setcolor FF0000"],
+        params=[
+            {"name": "color", "type": "str", "required": true, "desc": "Hex colour code with or without #."},
+        ],
+        note="Only the bot owner/creator can change the colour.",
+    )
     async def setcolor(self, ctx, color: str):
         if not is_owner_or_creator(ctx):
             return await ctx.send("no perms")
@@ -114,7 +142,17 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── ignore ─────────────────────────────────────────────────
     @commands.command(name="ignore")
-    @help_meta(usage=".ignore @user", desc="toggles ignoring a user — bot won't respond to them in AI channels.", section="Server Management", staff=True)
+    @help_meta(
+        usage=".ignore @user",
+        desc="Toggles ignoring a user — the bot won't respond to them in AI channels.",
+        section="Server Management",
+        staff=True,
+        examples=[".ignore @user"],
+        params=[
+            {"name": "user", "type": "discord.Member", "required": true, "desc": "The member to ignore or unignore."},
+        ],
+        note="Staff only (whitelisted users).",
+    )
     async def ignore_user(self, ctx, user: discord.Member = None):
         config = get_config()
         guild_config = config.get(str(ctx.guild.id), {})
@@ -138,7 +176,15 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── ignorelist ────────────────────────────────────────────
     @commands.command(name="ignorelist")
-    @help_meta(usage=".ignorelist", desc="shows all users currently ignored by the bot in AI channels.", section="Server Management", staff=True)
+    @help_meta(
+        usage=".ignorelist",
+        desc="Shows all users currently ignored by the bot in AI channels.",
+        section="Server Management",
+        staff=True,
+        examples=[".ignorelist"],
+        params=[],
+        note="Staff only (whitelisted users).",
+    )
     async def ignore_list(self, ctx):
         config = get_config()
         guild_config = config.get(str(ctx.guild.id), {})
@@ -159,7 +205,18 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── confess set ────────────────────────────────────────────
     @commands.command(name="confess")
-    @help_meta(usage=".confess set #channel", desc="sets the confession channel.", section="Server Management", admin=True)
+    @help_meta(
+        usage=".confess set #channel",
+        desc="Sets the confession channel for the server.",
+        section="Server Management",
+        admin=True,
+        examples=[".confess set #confessions"],
+        params=[
+            {"name": "action", "type": "str", "required": false, "desc": "Currently only `set` is supported."},
+            {"name": "channel", "type": "discord.TextChannel", "required": false, "desc": "The channel to send confessions to."},
+        ],
+        note="Admin only.",
+    )
     async def confess_prefix(self, ctx, action: str = None, channel: discord.TextChannel = None):
         if action == "set":
             if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
@@ -184,7 +241,19 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── alias ──────────────────────────────────────────────────
     @commands.command(name="alias")
-    @help_meta(usage=".alias · .alias <new> <existing> · .alias remove <name>", desc="list / add / remove custom command aliases.", section="Server Management", admin=True)
+    @help_meta(
+        usage=".alias .alias <new> <existing> .alias remove <name>",
+        desc="Lists, adds, or removes custom command aliases.",
+        section="Server Management",
+        admin=True,
+        examples=[".alias", ".alias bb .bday", ".alias remove bb"],
+        params=[
+            {"name": "new", "type": "str", "required": false, "desc": "The new alias name."},
+            {"name": "existing", "type": "str", "required": false, "desc": "The existing command to alias."},
+            {"name": "action", "type": "str", "required": false, "desc": "Use `remove` to delete an alias."},
+        ],
+        note="Anyone can view the alias list. Adding/removing requires admin. Built-in aliases are shown automatically.",
+    )
     async def alias(self, ctx, *args: str):
         """List, add, or remove custom command aliases."""
         # ── show list (anyone) ────────────────────────────────
@@ -274,12 +343,26 @@ class AdminCog(commands.Cog, name="Admin"):
 
     # ── purge ─────────────────────────────────────────────────
     @commands.group(name="purge", invoke_without_command=True)
-    @help_meta(usage=".purge · .purge bots [limit]", desc="root — shows subcommands. .purge bots bulk-deletes bot and prefix messages.", section="Moderation")
+    @help_meta(
+        usage=".purge .purge bots [limit]",
+        desc="Root command — shows subcommands. .purge bots bulk-deletes bot and prefix messages.",
+        section="Moderation",
+        examples=[".purge", ".purge bots 100"],
+        params=[],
+        note="Subcommand: `bots`.",
+    )
     async def purge_group(self, ctx):
         await ctx.send("-# subcommands: `bots` — `.purge bots`")
 
     # ── cmd channel rules ──────────────────────────────────────────
-    @help_meta(usage=".cmd <allow|deny|clear|show>", desc="manage command channel rules — restrict or block commands in specific channels.", section="Command Channels")
+    @help_meta(
+        usage=".cmd <allow|deny|clear|show>",
+        desc="Manages command channel rules — restrict or allow commands in specific channels.",
+        section="Command Channels",
+        examples=[".cmd allow #mod purge", ".cmd deny #general .ping", ".cmd clear .ping", ".cmd show"],
+        params=[],
+        note="Admin only. Subcommands: allow, deny, clear, show.",
+    )
     @commands.group(name="cmd", invoke_without_command=True)
     async def cmd_group(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -311,7 +394,17 @@ class AdminCog(commands.Cog, name="Admin"):
         return ids
 
     @cmd_group.command(name="allow")
-    @help_meta(usage=".cmd allow <#channel>... <category|command>", desc="restrict a category/command to specific channels.", section="Command Channels")
+    @help_meta(
+        usage=".cmd allow <#channel>... <category|command>",
+        desc="Restricts a category or command to only the specified channels.",
+        section="Command Channels",
+        examples=[".cmd allow #mod #staff purge", ".cmd allow #mod .ping"],
+        params=[
+            {"name": "channels", "type": "discord.TextChannel", "required": true, "desc": "One or more channel mentions."},
+            {"name": "target", "type": "str", "required": true, "desc": "A command name (e.g. `.ping`) or category name."},
+        ],
+        note="Admin only. Overrides any existing rule for the target.",
+    )
     async def cmd_allow(self, ctx: commands.Context, *args: str):
         if ctx.guild is None:
             return await ctx.send("-# this command is guild-only.")
@@ -332,7 +425,17 @@ class AdminCog(commands.Cog, name="Admin"):
         await ctx.send(f"-# allowed `{target}` only in {len(channel_ids)} channel(s).")
 
     @cmd_group.command(name="deny")
-    @help_meta(usage=".cmd deny <#channel>... <category|command>", desc="block a category/command in specific channels.", section="Command Channels")
+    @help_meta(
+        usage=".cmd deny <#channel>... <category|command>",
+        desc="Blocks a category or command in the specified channels.",
+        section="Command Channels",
+        examples=[".cmd deny #general .play", ".cmd deny #chat music"],
+        params=[
+            {"name": "channels", "type": "discord.TextChannel", "required": true, "desc": "One or more channel mentions."},
+            {"name": "target", "type": "str", "required": true, "desc": "A command name (e.g. `.play`) or category name."},
+        ],
+        note="Admin only.",
+    )
     async def cmd_deny(self, ctx: commands.Context, *args: str):
         if ctx.guild is None:
             return await ctx.send("-# this command is guild-only.")
@@ -353,7 +456,16 @@ class AdminCog(commands.Cog, name="Admin"):
         await ctx.send(f"-# denied `{target}` in {len(channel_ids)} channel(s).")
 
     @cmd_group.command(name="clear")
-    @help_meta(usage=".cmd clear <category|command>", desc="remove rule for a category/command (works everywhere).", section="Command Channels")
+    @help_meta(
+        usage=".cmd clear <category|command>",
+        desc="Removes the channel rule for a category or command so it works everywhere again.",
+        section="Command Channels",
+        examples=[".cmd clear .ping", ".cmd clear music"],
+        params=[
+            {"name": "target", "type": "str", "required": true, "desc": "The command or category to clear the rule for."},
+        ],
+        note="Admin only. The command/category will work in all channels after clearing.",
+    )
     async def cmd_clear(self, ctx: commands.Context, *args: str):
         if ctx.guild is None:
             return await ctx.send("-# this command is guild-only.")
@@ -369,7 +481,16 @@ class AdminCog(commands.Cog, name="Admin"):
         await ctx.send(f"-# cleared rule for `{target}`.")
 
     @cmd_group.command(name="show")
-    @help_meta(usage=".cmd show [category|command]", desc="show active rule(s) for this server.", section="Command Channels")
+    @help_meta(
+        usage=".cmd show [category|command]",
+        desc="Shows active channel rules for this server, or for a specific target.",
+        section="Command Channels",
+        examples=[".cmd show", ".cmd show .ping"],
+        params=[
+            {"name": "target", "type": "str", "required": false, "desc": "Optional command or category to check."},
+        ],
+        note="Admin only. Run without arguments to see all rules.",
+    )
     async def cmd_show(self, ctx: commands.Context, *args: str):
         if ctx.guild is None:
             return await ctx.send("-# this command is guild-only.")
@@ -396,7 +517,16 @@ class AdminCog(commands.Cog, name="Admin"):
         await ctx.send("-# active rules:\n" + "\n".join(lines))
 
     @purge_group.command(name="bots")
-    @help_meta(usage=".purge bots [limit]", desc="bulk-deletes bot messages and messages starting with `.` in this channel.", section="Moderation")
+    @help_meta(
+        usage=".purge bots [limit]",
+        desc="Bulk-deletes bot messages and prefix (`.`) messages in this channel.",
+        section="Moderation",
+        examples=[".purge bots", ".purge bots 100"],
+        params=[
+            {"name": "limit", "type": "int", "required": false, "desc": "Number of messages to scan (max 200, default 50)."},
+        ],
+        note="Requires manage_messages permission. Only deletes bot messages and messages starting with `.`.",
+    )
     async def purge_bots(self, ctx, limit: int = 50):
         if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.manage_messages:
             return await ctx.send("-# need `manage_messages` perm")

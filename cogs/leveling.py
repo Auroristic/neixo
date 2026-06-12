@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 COG_META = {
     "category": "leveling",
-    "commands": ["rank", "levelleaderboard", "levelrole", "levelnotify", "givexp"]
+    "label": "Leveling",
+    "desc": "XP, levels, and leaderboard system.",
 }
 
 
@@ -127,7 +128,16 @@ class Leveling(commands.Cog):
             await message.channel.send(embed=embed, delete_after=5)
 
     @commands.command(aliases=["lvl"])
-    @help_meta(section="Leveling", usage=".rank [@user]", desc="Check your or another user's rank")
+    @help_meta(
+        section="Leveling",
+        usage=".rank [@user]",
+        desc="Checks your or another user's XP rank and level.",
+        examples=[".rank", ".rank @user"],
+        params=[
+            {"name": "user", "type": "discord.Member", "required": False, "desc": "The member to check. Defaults to yourself."},
+        ],
+        note="Shows current level, XP progress, and server rank.",
+    )
     async def rank(self, ctx, member: discord.Member = None):
         """Check your or another user's rank and XP."""
         member = member or ctx.author
@@ -177,7 +187,14 @@ class Leveling(commands.Cog):
         
         await ctx.send(embed=embed)
 
-    @help_meta(section="Leveling", usage=".llb", desc="Show server XP leaderboard")
+    @help_meta(
+        section="Leveling",
+        usage=".llb",
+        desc="Shows the server XP leaderboard.",
+        examples=[".llb"],
+        params=[],
+        note="Displays the top XP earners in the server.",
+    )
     @commands.command(name="levelleaderboard", aliases=["llb", "xpleaderboard"])
     async def levelleaderboard(self, ctx, top: int = 10):
         """Show the server's top users by XP."""
@@ -201,7 +218,18 @@ class Leveling(commands.Cog):
             view.message = await ctx.send(file=file, view=view)
 
     @commands.group(invoke_without_command=True)
-    @help_meta(section="Leveling", usage=".levelrole <level> <@role>", desc="Manage level roles", admin=True)
+    @help_meta(
+        section="Leveling",
+        usage=".levelrole <level> <@role>",
+        desc="Assigns a role to be awarded at a specific level.",
+        examples=[".levelrole 5 @Bronze", ".levelrole 10 @Silver"],
+        params=[
+            {"name": "level", "type": "int", "required": True, "desc": "The level at which to award the role."},
+            {"name": "role", "type": "discord.Role", "required": True, "desc": "The role to assign."},
+        ],
+        note="Admin only. The role is automatically assigned when a member reaches the specified level.",
+        admin=True,
+    )
     async def levelrole(self, ctx, level: int = None, role: discord.Role = None):
         """Manage level-up roles. Use `.levelrole 5 @Role` to set a role for level 5."""
         if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
@@ -232,7 +260,17 @@ class Leveling(commands.Cog):
             await ctx.send("Usage: `.levelrole 5 @Role` to set, `.levelrole remove 5` to remove")
 
     @levelrole.command()
-    @help_meta(section="Leveling", usage=".levelrole remove <level>", desc="Remove a level role")
+    @help_meta(
+        section="Leveling",
+        usage=".levelrole remove <level>",
+        desc="Removes a level role configuration.",
+        examples=[".levelrole remove 5"],
+        params=[
+            {"name": "level", "type": "int", "required": True, "desc": "The level to remove the role reward from."},
+        ],
+        note="Admin only.",
+        admin=True,
+    )
     async def remove(self, ctx, level: int):
         """Remove a level role."""
         from utils import _db
@@ -247,7 +285,16 @@ class Leveling(commands.Cog):
                 await ctx.send(f"No role configured for level {level}")
 
     @commands.group(invoke_without_command=True)
-    @help_meta(section="Leveling", usage=".levelnotify [enable|disable]", desc="Toggle level-up notifications")
+    @help_meta(
+        section="Leveling",
+        usage=".levelnotify [enable|disable]",
+        desc="Toggles or checks level-up notification status for this server.",
+        examples=[".levelnotify", ".levelnotify enable", ".levelnotify disable"],
+        params=[
+            {"name": "action", "type": "str", "required": False, "desc": "`enable` or `disable`. Omit to check current status."},
+        ],
+        note="Users still gain XP and roles even when notifications are disabled.",
+    )
     async def levelnotify(self, ctx, action: str = None):
         """Toggle level-up notifications for this server.
         
@@ -300,7 +347,14 @@ class Leveling(commands.Cog):
             await ctx.send("Invalid action. Use `.levelnotify enable` or `.levelnotify disable`.")
     
     @levelnotify.command()
-    @help_meta(section="Leveling", usage=".levelnotify disable", desc="Disable level-up notifications")
+    @help_meta(
+        section="Leveling",
+        usage=".levelnotify disable",
+        desc="Disables level-up notifications for this server.",
+        examples=[".levelnotify disable"],
+        params=[],
+        note="Users will still gain XP and roles, but no level-up messages are sent.",
+    )
     async def disable(self, ctx):
         """Disable level-up notifications."""
         from utils import _db
@@ -313,7 +367,14 @@ class Leveling(commands.Cog):
         await ctx.send("❌ Level-up notifications **disabled**!")
     
     @levelnotify.command()
-    @help_meta(section="Leveling", usage=".levelnotify enable", desc="Enable level-up notifications")
+    @help_meta(
+        section="Leveling",
+        usage=".levelnotify enable",
+        desc="Enables level-up notifications for this server.",
+        examples=[".levelnotify enable"],
+        params=[],
+        note="Users will receive a DM when they level up.",
+    )
     async def enable(self, ctx):
         """Enable level-up notifications."""
         from utils import _db
@@ -326,7 +387,18 @@ class Leveling(commands.Cog):
         await ctx.send("✅ Level-up notifications **enabled**!")
 
     @commands.command(hidden=True)
-    @help_meta(section="Leveling", usage=".givexp <amount> [@user]", desc="Give XP to a user (admin only)")
+    @help_meta(
+        section="Leveling",
+        usage=".givexp <amount> [@user]",
+        desc="Manually gives XP to a user (admin only).",
+        examples=[".givexp 100", ".givexp 500 @user"],
+        params=[
+            {"name": "amount", "type": "int", "required": True, "desc": "Amount of XP to give."},
+            {"name": "user", "type": "discord.Member", "required": False, "desc": "The target member. Defaults to yourself."},
+        ],
+        note="Admin only. Hidden from help.",
+        admin=True,
+    )
     async def givexp(self, ctx, xp: int, user: discord.Member = None):
         """Admin command to give XP (hidden)."""
         if not (ctx.author.id == ctx.guild.owner_id or ctx.author.id == 887382911924441139):

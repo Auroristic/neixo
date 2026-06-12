@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 COG_META = {
     "category": "profile",
-    "commands": ["setavatar", "removeavatar", "profile", "viewavatar"]
+    "label": "Profile",
+    "desc": "Per-guild custom avatars and profiles.",
 }
 
 
@@ -28,7 +29,16 @@ class GuildAvatars(commands.Cog):
         return True
 
     @commands.command()
-    @help_meta(section="Profile", usage=".setavatar <image_url>", desc="Set a custom avatar for this server only")
+    @help_meta(
+        section="Profile",
+        usage=".setavatar <image_url>",
+        desc="Sets a custom avatar for this server only.",
+        examples=[".setavatar https://i.imgur.com/abc.png"],
+        params=[
+            {"name": "image_url", "type": "str", "required": True, "desc": "Direct URL to the image to use as avatar."},
+        ],
+        note="The avatar only shows in this server. Other servers will still see your global Discord avatar.",
+    )
     async def setavatar(self, ctx, *, image_url: str = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -62,7 +72,14 @@ class GuildAvatars(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(aliases=["clearavatar"])
-    @help_meta(section="Profile", usage=".removeavatar", desc="Remove your custom server avatar")
+    @help_meta(
+        section="Profile",
+        usage=".removeavatar",
+        desc="Removes your custom server avatar.",
+        examples=[".removeavatar"],
+        params=[],
+        note="Your global Discord avatar will be shown again.",
+    )
     async def removeavatar(self, ctx):
         """Remove your custom avatar for this server and revert to global avatar."""
         removed = remove_guild_avatar(ctx.guild.id, ctx.author.id)
@@ -83,7 +100,14 @@ class GuildAvatars(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(aliases=["pfps"])
-    @help_meta(section="Profile", usage=".serveravatars", desc="Show all custom avatars in this server")
+    @help_meta(
+        section="Profile",
+        usage=".serveravatars",
+        desc="Shows all custom avatars set in this server.",
+        examples=[".serveravatars"],
+        params=[],
+        note="Displays a paginated list of all users with custom server avatars.",
+    )
     async def serveravatars(self, ctx):
         """Show all members who have custom avatars in this server."""
         from utils import _db
@@ -116,7 +140,16 @@ class GuildAvatars(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    @help_meta(section="Profile", usage=".profile [@user]", desc="View your or another user's profile")
+    @help_meta(
+        section="Profile",
+        usage=".profile [@user]",
+        desc="Views your or another user's profile with server avatar.",
+        examples=[".profile", ".profile @user"],
+        params=[
+            {"name": "user", "type": "discord.Member", "required": False, "desc": "The member to view. Defaults to yourself."},
+        ],
+        note="Shows the server-specific profile including custom avatar.",
+    )
     async def profile(self, ctx, member: discord.Member = None):
         """View a user's profile with their custom server avatar if set."""
         member = member or ctx.author
@@ -148,7 +181,16 @@ class GuildAvatars(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(hidden=True)
-    @help_meta(section="Guild Avatars", usage=".viewavatar [@user]", desc="View a user's custom server avatar")
+    @help_meta(
+        section="Guild Avatars",
+        usage=".viewavatar [@user]",
+        desc="Views a user's custom server avatar in full size.",
+        examples=[".viewavatar", ".viewavatar @user"],
+        params=[
+            {"name": "user", "type": "discord.Member", "required": False, "desc": "The member to view. Defaults to yourself."},
+        ],
+        note="Shows the full-resolution custom server avatar.",
+    )
     async def viewavatar(self, ctx, member: discord.Member = None):
         """Quick view someone's custom avatar in this server."""
         member = member or ctx.author

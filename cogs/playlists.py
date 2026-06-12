@@ -28,7 +28,16 @@ class Playlists(commands.Cog):
         return True
 
     @commands.group(invoke_without_command=True)
-    @help_meta(section="Music", usage=".playlist <name>", desc="Play a saved playlist")
+    @help_meta(
+        section="Music",
+        usage=".playlist <name>",
+        desc="Plays a saved playlist by name.",
+        examples=[".playlist chill", ".playlist workout"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "The name of the playlist to play."},
+        ],
+        note="Playlists are per-user. See `.playlist list` for your saved playlists.",
+    )
     async def playlist(self, ctx, *, name: str = None):
         """Play a saved playlist or manage playlists.
         
@@ -103,7 +112,16 @@ class Playlists(commands.Cog):
                         logger.warning("failed to start playlist: %s", e)
 
     @playlist.command()
-    @help_meta(section="Music", usage=".playlist save <name>", desc="Save current queue as playlist")
+    @help_meta(
+        section="Music",
+        usage=".playlist save <name>",
+        desc="Saves the current music queue as a named playlist.",
+        examples=[".playlist save chill", ".playlist save workout"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "Name for the new playlist."},
+        ],
+        note="Saves the current queue. Max playlists per user is capped.",
+    )
     async def save(self, ctx, *, name: str):
         """Save the current queue as a playlist."""
         # Get music cog and player
@@ -151,7 +169,16 @@ class Playlists(commands.Cog):
         await ctx.send(embed=embed)
 
     @playlist.command()
-    @help_meta(section="Music", usage=".playlist load <name>", desc="Load a playlist to queue")
+    @help_meta(
+        section="Music",
+        usage=".playlist load <name>",
+        desc="Loads a saved playlist into the queue.",
+        examples=[".playlist load chill"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the playlist to load."},
+        ],
+        note="Appends the playlist tracks to the current queue.",
+    )
     async def load(self, ctx, *, name: str):
         tracks = load_playlist(ctx.author.id, name)
         if not tracks:
@@ -203,7 +230,16 @@ class Playlists(commands.Cog):
                     logger.warning("failed to start loaded playlist: %s", e)
 
     @playlist.command(aliases=["del"])
-    @help_meta(section="Music", usage=".playlist delete <name>", desc="Delete a playlist")
+    @help_meta(
+        section="Music",
+        usage=".playlist delete <name>",
+        desc="Deletes a saved playlist.",
+        examples=[".playlist delete chill"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the playlist to delete."},
+        ],
+        note="This cannot be undone.",
+    )
     async def delete(self, ctx, *, name: str):
         """Delete a saved playlist."""
         deleted = delete_playlist(ctx.author.id, name)
@@ -213,7 +249,14 @@ class Playlists(commands.Cog):
             await ctx.send(f"Playlist `{name}` not found!")
 
     @playlist.command(aliases=["ls"])
-    @help_meta(section="Music", usage=".playlist list", desc="List all your playlists")
+    @help_meta(
+        section="Music",
+        usage=".playlist list",
+        desc="Lists all your saved playlists.",
+        examples=[".playlist list"],
+        params=[],
+        note="Shows playlist names and track counts.",
+    )
     async def list(self, ctx):
         """Show all your saved playlists."""
         playlists = list_playlists(ctx.author.id)
@@ -230,7 +273,16 @@ class Playlists(commands.Cog):
         await ctx.send(embed=embed)
 
     @playlist.command()
-    @help_meta(section="Music", usage=".playlist info <name>", desc="Show playlist details")
+    @help_meta(
+        section="Music",
+        usage=".playlist info <name>",
+        desc="Shows detailed information about a saved playlist.",
+        examples=[".playlist info chill"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the playlist to inspect."},
+        ],
+        note="Shows track list, total duration, and creation date.",
+    )
     async def info(self, ctx, *, name: str):
         """Show details about a specific playlist."""
         tracks = load_playlist(ctx.author.id, name)

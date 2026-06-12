@@ -231,7 +231,13 @@ class FunCog(commands.Cog, name="Fun"):
 
     @help_meta(
         usage="`.uwulock @user [#channel]`",
-        desc="toggles uwulock — all their messages become uwufied.",
+        desc="Toggles uwulock on a user — all their messages become uwufied.",
+        examples=[".uwulock @user", ".uwulock @user #general"],
+        params=[
+            {"name": "member", "type": "discord.Member", "required": False, "desc": "The member to uwulock."},
+            {"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "Specific channel to restrict it to (optional — omit for all channels)."},
+        ],
+        note="Staff only. Uses webhooks to rewrite messages. If no channel is given, toggles all-channel lock.",
         section="Moderation",
         staff=True,
     )
@@ -292,7 +298,10 @@ class FunCog(commands.Cog, name="Fun"):
 
     @help_meta(
         usage="`.uwulist`",
-        desc="shows who is currently uwulocked.",
+        desc="Shows who is currently uwulocked.",
+        examples=[".uwulist"],
+        params=[],
+        note="Staff only.",
         section="Moderation",
         staff=True,
     )

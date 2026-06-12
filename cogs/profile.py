@@ -318,8 +318,13 @@ class ProfileCog(commands.Cog, name="Profile"):
 
     @help_meta(
         usage="`.presence <online|idle|dnd|invisible>`",
-        desc="sets the bot's online status.",
+        desc="Sets the bot's online status.",
         owner=True,
+        examples=[".presence online", ".presence dnd", ".presence idle"],
+        params=[
+            {"name": "status", "type": "str", "required": True, "desc": "One of: online, idle, dnd, invisible."},
+        ],
+        note="Owner only. Your current presence preference is saved and restored on restart.",
     )
     @commands.command(name="presence")
     @_creator_only()
@@ -334,9 +339,15 @@ class ProfileCog(commands.Cog, name="Profile"):
         await ctx.message.add_reaction("<:7079verifiedblacksimplified:1255031445806780467>")
 
     @help_meta(
-        usage="`.activity <playing|listening|watching|competing> <text>` · `.activity none`",
-        desc="sets the bot's activity, or clears it.",
+        usage="`.activity <playing|listening|watching|competing> <text>`  ·  `.activity none`",
+        desc="Sets or clears the bot's activity status.",
         owner=True,
+        examples=[".activity playing with fire", ".activity listening to music", ".activity none"],
+        params=[
+            {"name": "type", "type": "str", "required": True, "desc": "Activity type: playing, listening, watching, competing, or none (to clear)."},
+            {"name": "text", "type": "str", "required": False, "desc": "The activity text to display."},
+        ],
+        note="Owner only. Use `.activity none` to clear the current activity.",
     )
     @commands.command(name="activity")
     @_creator_only()
@@ -364,8 +375,13 @@ class ProfileCog(commands.Cog, name="Profile"):
 
     @help_meta(
         usage="`.pfp [url|attachment|reset]`",
-        desc="changes the bot's avatar.",
+        desc="Changes the bot's avatar.",
         owner=True,
+        examples=[".pfp https://i.imgur.com/abc.png", ".pfp reset"],
+        params=[
+            {"name": "source", "type": "str", "required": False, "desc": "Image URL, attachment, or `reset` to clear."},
+        ],
+        note="Owner only. Discord rate-limits avatar changes to ~2 per 10 minutes.",
     )
     @commands.command(name="pfp", aliases=["avatar"])
     @_creator_only()
@@ -394,8 +410,13 @@ class ProfileCog(commands.Cog, name="Profile"):
 
     @help_meta(
         usage="`.banner [url|attachment|reset]`",
-        desc="changes the bot's banner.",
+        desc="Changes the bot's banner.",
         owner=True,
+        examples=[".banner https://i.imgur.com/abc.png", ".banner reset"],
+        params=[
+            {"name": "source", "type": "str", "required": False, "desc": "Image URL, attachment, or `reset` to clear."},
+        ],
+        note="Owner only. Same rate-limit as avatar: ~2 per 10 minutes.",
     )
     @commands.command(name="banner")
     @_creator_only()
@@ -422,8 +443,13 @@ class ProfileCog(commands.Cog, name="Profile"):
 
     @help_meta(
         usage="`.username <name>`",
-        desc="changes the bot's username (rate-limited by Discord, ~2 per 2 hours).",
+        desc="Changes the bot's username.",
         owner=True,
+        examples=[".username MyBot"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "New username (2-32 characters)."},
+        ],
+        note="Owner only. Discord rate-limits username changes to ~2 per 2 hours.",
     )
     @commands.command(name="username", aliases=["botname"])
     @_creator_only()
@@ -444,9 +470,18 @@ class ProfileCog(commands.Cog, name="Profile"):
 
     # ── status rotation (.rpc) ───────────────────────────────
     @help_meta(
-        usage="`.rpc` · `.rpc add [emoji] <text>` · `.rpc remove <n>` · `.rpc clear` · `.rpc interval <secs>`",
-        desc="auto-managed status rotation. 1 entry = static, 2+ = cycles. max 5, min 5s interval.",
+        usage="`.rpc`  ·  `.rpc add [emoji] <text>`  ·  `.rpc remove <n>`  ·  `.rpc clear`  ·  `.rpc interval <secs>`",
+        desc="Auto-managed status rotation. 1 entry = static, 2+ = cycles. Max 5 entries, min 5s interval.",
         owner=True,
+        examples=[".rpc", ".rpc add 🌟 playing with fire", ".rpc remove 2", ".rpc interval 30", ".rpc clear"],
+        params=[
+            {"name": "action", "type": "str", "required": False, "desc": "add, remove, clear, interval, or omit to show current rotation."},
+            {"name": "emoji", "type": "str", "required": False, "desc": "Optional emoji (for add action)."},
+            {"name": "text", "type": "str", "required": False, "desc": "Status text (for add action)."},
+            {"name": "n", "type": "int", "required": False, "desc": "Index number (for remove action)."},
+            {"name": "seconds", "type": "int", "required": False, "desc": "Interval in seconds (for interval action, min 5)."},
+        ],
+        note="Owner only. Statuses cycle in order. Max 5 entries, minimum 5s interval.",
     )
     @commands.group(name="rpc", invoke_without_command=True)
     @_creator_only()
@@ -480,7 +515,18 @@ class ProfileCog(commands.Cog, name="Profile"):
         embed.set_footer(text=f"{state} · {len(entries)}/{RPC_MAX_ENTRIES} entries")
         await ctx.send(embed=embed)
 
-    @help_meta(usage=".rpc add [emoji] <text>", desc="add a custom-status entry for rotation.", section="RPC", owner=True)
+    @help_meta(
+        usage=".rpc add [emoji] <text>",
+        desc="Adds a custom-status entry for rotation.",
+        section="RPC",
+        owner=True,
+        examples=[".rpc add 🌟 playing with fire", ".rpc add listening to music"],
+        params=[
+            {"name": "emoji", "type": "str", "required": False, "desc": "Optional emoji prefix."},
+            {"name": "text", "type": "str", "required": True, "desc": "Status text."},
+        ],
+        note="Owner only. Max 5 entries.",
+    )
     @rpc_group.command(name="add")
     @_creator_only()
     async def rpc_add(self, ctx, *, text: str = ""):
@@ -512,7 +558,17 @@ class ProfileCog(commands.Cog, name="Profile"):
             )
         await ctx.send(f"-# added entry `{n}` ({n}/{RPC_MAX_ENTRIES})")
 
-    @help_meta(usage=".rpc remove <n>", desc="remove a custom-status entry by index.", section="RPC", owner=True)
+    @help_meta(
+        usage=".rpc remove <n>",
+        desc="Removes a custom-status entry by its index number.",
+        section="RPC",
+        owner=True,
+        examples=[".rpc remove 2"],
+        params=[
+            {"name": "index", "type": "int", "required": True, "desc": "Index number of the entry to remove."},
+        ],
+        note="Owner only. Use `.rpc` without arguments to see the list with indices.",
+    )
     @rpc_group.command(name="remove", aliases=["rm", "del", "delete"])
     @_creator_only()
     async def rpc_remove(self, ctx, index: int = None):
@@ -523,14 +579,32 @@ class ProfileCog(commands.Cog, name="Profile"):
             return await ctx.send(f"-# no entry at index `{index}`")
         await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
 
-    @help_meta(usage=".rpc clear", desc="remove all RPC entries.", section="RPC", owner=True)
+    @help_meta(
+        usage=".rpc clear",
+        desc="Removes all RPC entries and stops rotation.",
+        section="RPC",
+        owner=True,
+        examples=[".rpc clear"],
+        params=[],
+        note="Owner only. This cannot be undone.",
+    )
     @rpc_group.command(name="clear")
     @_creator_only()
     async def rpc_clear(self, ctx):
         n = rpc.clear_entries()
         await ctx.send(f"-# cleared {n} entries · status reset")
 
-    @help_meta(usage=".rpc interval [seconds]", desc="set rotation interval for status cycling.", section="RPC", owner=True)
+    @help_meta(
+        usage=".rpc interval [seconds]",
+        desc="Sets or checks the interval for status rotation cycling.",
+        section="RPC",
+        owner=True,
+        examples=[".rpc interval 30", ".rpc interval 120"],
+        params=[
+            {"name": "seconds", "type": "int", "required": False, "desc": "Interval in seconds (min 5). Omit to check current interval."},
+        ],
+        note="Owner only.",
+    )
     @rpc_group.command(name="interval")
     @_creator_only()
     async def rpc_interval(self, ctx, seconds: int = None):
