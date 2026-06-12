@@ -98,6 +98,7 @@ class ThemeCog(commands.Cog, name="Theme"):
     async def _rate_limit_for_channel(self, ch: discord.abc.GuildChannel):
         """Per-channel rate limiting: allow ~2 edits per 10s per channel.
         Only sleeps when the min interval hasn't elapsed — no unnecessary delay."""
+        self._evict_edit_cache()
         key = f"ch:{ch.id}"
         last = self._last_edit.get(key, 0)
         now = time.monotonic()
@@ -145,18 +146,19 @@ class ThemeCog(commands.Cog, name="Theme"):
                     )
                 except (discord.HTTPException, asyncio.TimeoutError) as exc:
                     self._collect_failure(failures, "channel", ch.id, ch.name, exc)
+                if rate_limit_kind == "guild":
+                    await self._rate_limit_for_guild(ctx.guild)
+                else:
+                    await self._rate_limit_for_channel(ch)
 
             done += 1
             await _edit_progress(prog, done, progress_total, ch.name)
-            if rate_limit_kind == "guild":
-                await self._rate_limit_for_guild(ctx.guild)
-            else:
-                await self._rate_limit_for_channel(ch)
         return done
 
     async def _rate_limit_for_guild(self, guild: discord.Guild):
         """Per-guild rate limiting for role/guild edits to avoid bursts.
         Only sleeps when the min interval hasn't elapsed — no unnecessary delay."""
+        self._evict_edit_cache()
         key = f"guild:{guild.id}"
         last = self._last_edit.get(key, 0)
         now = time.monotonic()
@@ -165,6 +167,13 @@ class ThemeCog(commands.Cog, name="Theme"):
         if elapsed < min_interval:
             await asyncio.sleep(min_interval - elapsed)
         self._last_edit[key] = time.monotonic()
+
+    def _evict_edit_cache(self):
+        now = time.monotonic()
+        stale_before = now - 300
+        to_del = [k for k, v in self._last_edit.items() if v < stale_before]
+        for k in to_del:
+            del self._last_edit[k]
 
     def _collect_failure(self, failures: list, kind: str, id_: int | str, name: str, exc: Exception):
         failures.append((kind, id_, name, str(exc)))
@@ -908,7 +917,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             reason=f"NeixO theme prefix: {ctx.author}",
             prog=prog,
             failures=failures,
-            progress_total=len(changes),
+            progress_total=len(channels_to_edit),
             rate_limit_kind="channel",
         )
 
@@ -985,9 +994,9 @@ class ThemeCog(commands.Cog, name="Theme"):
                     )
                 except (discord.HTTPException, asyncio.TimeoutError) as exc:
                     self._collect_failure(failures, "channel", ch.id, ch.name, exc)
+                await self._rate_limit_for_channel(ch)
             done += 1
             await _edit_progress(prog, done, len(channels_to_edit), ch.name)
-            await self._rate_limit_for_channel(ch)
 
         if use_all:
             gtheme["channel_prefix"] = {}
@@ -1411,12 +1420,15 @@ class ThemeCog(commands.Cog, name="Theme"):
             new_name = tm.convert_font(plain_name, font_key)
             if new_name != ch.name:
                 try:
-                    await ch.edit(name=new_name, reason=f"NeixO theme font: {ctx.author}")
-                except discord.HTTPException as exc:
+                    await asyncio.wait_for(
+                        ch.edit(name=new_name, reason=f"NeixO theme font: {ctx.author}"),
+                        timeout=10.0,
+                    )
+                except (discord.HTTPException, asyncio.TimeoutError) as exc:
                     self._collect_failure(failures, "channel", ch.id, ch.name, exc)
+                await self._rate_limit_for_channel(ch)
             done += 1
             await _edit_progress(prog, done, len(channels_to_edit), ch.name)
-            await self._rate_limit_for_channel(ch)
 
         # save to theme
         gtheme = tm.get_guild_theme(ctx.guild.id) or tm.build_empty_theme()
@@ -1480,12 +1492,15 @@ class ThemeCog(commands.Cog, name="Theme"):
             new_name = tm.strip_font(ch.name)
             if new_name != ch.name:
                 try:
-                    await ch.edit(name=new_name, reason=f"NeixO theme font reset: {ctx.author}")
-                except discord.HTTPException as exc:
+                    await asyncio.wait_for(
+                        ch.edit(name=new_name, reason=f"NeixO theme font reset: {ctx.author}"),
+                        timeout=10.0,
+                    )
+                except (discord.HTTPException, asyncio.TimeoutError) as exc:
                     self._collect_failure(failures, "channel", ch.id, ch.name, exc)
+                await self._rate_limit_for_channel(ch)
             done += 1
             await _edit_progress(prog, done, len(channels_to_edit), ch.name)
-            await self._rate_limit_for_channel(ch)
 
         gtheme = tm.get_guild_theme(ctx.guild.id) or {}
         gtheme.pop("channel_style", None)
@@ -1665,7 +1680,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             if data.get("icon"):
                 try:
                     raw = base64.b64decode(data.get("icon"))
-                    kwargs["icon"] = raw
+                    kwargs["display_icon"] = raw
                 except Exception:
                     pass
 
@@ -1974,8 +1989,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         if cmd:
             try:
                 return await ctx.invoke(cmd, *args[1:])
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(f"tg command failed: {exc}")
         # fallback: show group help
         await ctx.invoke(self.theme_group)
 
@@ -2221,9 +2236,9 @@ class ThemeCog(commands.Cog, name="Theme"):
                     )
                 except (discord.HTTPException, asyncio.TimeoutError) as exc:
                     self._collect_failure(failures, "channel", ch.id, ch.name, exc)
+                await self._rate_limit_for_channel(ch)
             done += 1
             await _edit_progress(prog, done, len(channels_to_edit), ch.name)
-            await self._rate_limit_for_channel(ch)
 
         groups[name]["prefix"] = new_prefix
         tm.save_prefix_groups(ctx.guild.id, groups)
@@ -2289,6 +2304,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             history_snap = {str(ch.id): ch.name for ch in cat.channels}
             prog = await ctx.send(f"-# applying prefix `{prefix}` to {len(changes)} channels in **{cat.name}**...")
             done = 0
+            failures: list = []
             for ch in cat.channels:
                 new_name = tm.apply_prefix(ch.name, prefix)
                 if new_name != ch.name:
@@ -2299,9 +2315,9 @@ class ThemeCog(commands.Cog, name="Theme"):
                         )
                     except (discord.HTTPException, asyncio.TimeoutError) as exc:
                         self._collect_failure(failures, "channel", ch.id, ch.name, exc)
-                done += 1
-                await _edit_progress(prog, done, len(cat.channels), ch.name)
                 await self._rate_limit_for_channel(ch)
+            done += 1
+            await _edit_progress(prog, done, len(cat.channels), ch.name)
             tm.save_prefix_history(ctx.guild.id, {"op": f"group_add:{name}", "channels": history_snap})
             await prog.edit(content=f"-# `{'█' * 10}` done — prefix applied")
             await self._report_failures(ctx, failures, "group add failures")
@@ -2372,8 +2388,9 @@ class ThemeCog(commands.Cog, name="Theme"):
         if not view.confirmed:
             return await preview_msg.edit(embed=_err_embed("cancelled."), view=None)
 
+        old_name = channel.name
         await self._ensure_snapshot(ctx.guild)
-        history_snap = {str(channel.id): channel.name}
+        history_snap = {str(channel.id): old_name}
         try:
             await asyncio.wait_for(
                 channel.edit(name=new_name, reason=f"NeixO group apply: {ctx.author}"),
@@ -2384,7 +2401,7 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         tm.save_prefix_history(ctx.guild.id, {"op": f"group_apply:{name}", "channels": history_snap})
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
-        await ctx.send(embed=_ok_embed(f"**{channel.name}** renamed to **{new_name}**"))
+        await ctx.send(embed=_ok_embed(f"**{old_name}** renamed to **{new_name}**"))
 
     # ── Auto-apply on channel create ──────────────────────────
 
@@ -2423,11 +2440,19 @@ class ThemeCog(commands.Cog, name="Theme"):
                 self_v.result = None
 
             async def interaction_check(self_v, interaction: discord.Interaction) -> bool:
-                if creator and interaction.user.id != creator.id:
-                    await interaction.response.send_message(
-                        "-# only the channel creator can respond to this", ephemeral=True
-                    )
-                    return False
+                if creator:
+                    if interaction.user.id != creator.id:
+                        await interaction.response.send_message(
+                            "-# only the channel creator can respond to this", ephemeral=True
+                        )
+                        return False
+                elif interaction.user.id != channel.guild.owner_id:
+                    perms = channel.permissions_for(interaction.user)
+                    if not perms.manage_channels:
+                        await interaction.response.send_message(
+                            "-# only the channel creator or a user with manage_channel permission can respond", ephemeral=True
+                        )
+                        return False
                 return True
 
             @discord.ui.button(emoji="<:7079verifiedblacksimplified:1255031445806780467>", style=discord.ButtonStyle.gray)

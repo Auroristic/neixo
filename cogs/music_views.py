@@ -25,11 +25,12 @@ from cogs.music_helpers import (
 
 class NowPlayingView(View):
     def __init__(self, cog: "Music", player: wavelink.Player) -> None:
-        super().__init__(timeout=None)
+        super().__init__(timeout=120)
         self.cog = cog
         self.player = player
         self.message: Optional[discord.Message] = None
         self._paused = False
+        self._skip_in_progress = False
         self._lyrics_data: Optional[Tuple[str, str, str]] = None
         self._synced_lines: Optional[List[Tuple[int, str]]] = None
         self._lyrics_cooldowns: dict[int, float] = {}
@@ -38,25 +39,31 @@ class NowPlayingView(View):
     @discord.ui.button(label="⏮", style=discord.ButtonStyle.gray)
     async def prev_btn(self, interaction: discord.Interaction, button: Button) -> None:
         await interaction.response.defer()
-        player = self.player
-        if not player or not player.current:
+        if self._skip_in_progress:
             return
-        position_s = player.position // 1000
-        history = self.cog._history.get(player.guild.id)
+        self._skip_in_progress = True
+        try:
+            player = self.player
+            if not player or not player.current:
+                return
+            position_s = player.position // 1000
+            history = self.cog._history.get(player.guild.id)
 
-        if position_s >= 10 or not history:
-            await player.seek(0)
-            return
+            if position_s >= 10 or not history:
+                await player.seek(0)
+                return
 
-        prev_track = history[-1]
-        history.pop()
+            prev_track = history[-1]
+            history.pop()
 
-        self.cog._prev_pressed.add(player.guild.id)
+            self.cog._prev_pressed.add(player.guild.id)
 
-        if player.current:
-            player.queue.put_at(0, player.current)
+            if player.current:
+                player.queue.put_at(0, player.current)
 
-        await player.play(prev_track, replace=True)
+            await player.play(prev_track, replace=True)
+        finally:
+            self._skip_in_progress = False
 
     @discord.ui.button(label="⏸", style=discord.ButtonStyle.gray)
     async def pause_btn(self, interaction: discord.Interaction, button: Button) -> None:
@@ -89,6 +96,10 @@ class NowPlayingView(View):
     @discord.ui.button(emoji="<a:butterfly:1413057472213680148>", style=discord.ButtonStyle.gray, disabled=True)
     async def lyrics_btn(self, interaction: discord.Interaction, button: Button) -> None:
         now = time.monotonic()
+        # prune stale cooldown entries older than 60s
+        stale = [uid for uid, ts in self._lyrics_cooldowns.items() if now - ts > 60]
+        for uid in stale:
+            del self._lyrics_cooldowns[uid]
         user_id = interaction.user.id
         last = self._lyrics_cooldowns.get(user_id, 0)
         if now - last < 10:
@@ -273,6 +284,7 @@ class QueueView(View):
         try:
             if interaction.user != self.ctx.author:
                 return await interaction.response.send_message("Not your command.", ephemeral=True)
+            self._sync_queue()
             self.page = max(0, self.page - 1)
             self._update_buttons()
             await interaction.response.edit_message(embed=self.build_embed(), view=self)
@@ -284,6 +296,7 @@ class QueueView(View):
         try:
             if interaction.user != self.ctx.author:
                 return await interaction.response.send_message("Not your command.", ephemeral=True)
+            self._sync_queue()
             self.page = min(self.total_pages - 1, self.page + 1)
             self._update_buttons()
             await interaction.response.edit_message(embed=self.build_embed(), view=self)

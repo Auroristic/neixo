@@ -57,6 +57,14 @@ _PING_TARGETS = [
 class MiscCog(commands.Cog, name="Misc"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.session: aiohttp.ClientSession | None = None
+
+    async def cog_load(self):
+        self.session = aiohttp.ClientSession()
+
+    async def cog_unload(self):
+        if self.session:
+            await self.session.close()
 
     # ── ping ────────────────────────────────────────────────
     @help_meta(usage="`.ping`", desc="shows the bot's current latency.")
@@ -174,16 +182,15 @@ class MiscCog(commands.Cog, name="Misc"):
                     pass
                 # RAM via /v4/stats (the wavelink node already speaks this)
                 try:
-                    async with aiohttp.ClientSession() as s:
-                        async with s.get(
-                            f"{ll_uri.rstrip('/')}/v4/stats",
-                            headers={"Authorization": ll_pass},
-                            timeout=aiohttp.ClientTimeout(total=2),
-                        ) as r:
-                            if r.status == 200:
-                                data = await r.json()
-                                used = (data.get("memory") or {}).get("used", 0)
-                                ll_ram = used / (1024 * 1024)
+                    async with self.session.get(
+                        f"{ll_uri.rstrip('/')}/v4/stats",
+                        headers={"Authorization": ll_pass},
+                        timeout=aiohttp.ClientTimeout(total=2),
+                    ) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            used = (data.get("memory") or {}).get("used", 0)
+                            ll_ram = used / (1024 * 1024)
                 except Exception:
                     pass
             ll_str = ll_state
@@ -308,9 +315,11 @@ class MiscCog(commands.Cog, name="Misc"):
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
                 f.write(content)
                 tmppath = f.name
-            
-            await ctx.send(file=discord.File(tmppath, filename=f"dm_{user.name}.txt"))
-            os.remove(tmppath)
+
+            try:
+                await ctx.send(file=discord.File(tmppath, filename=f"dm_{user.name}.txt"))
+            finally:
+                os.remove(tmppath)
             
         except Exception as e:
             await ctx.send(f"error: {str(e)}")

@@ -19,6 +19,34 @@ from spotify_scraper import SpotifyClient as SpotifyScraper
 
 log = logging.getLogger(__name__)
 
+# ── Font paths (Ubuntu 22 compatible, JetBrains Mono preferred) ─────
+_FONT_REG_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSans-Regular.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+]
+_FONT_BOLD_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Bold.ttf",
+    "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSans-Bold.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+]
+
+def _load_font(size: int, bold: bool = False):
+    for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
 # ── CONSTANTS ─────────────────────────────────────────────────
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
@@ -124,6 +152,7 @@ class SpotifyClient:
         self._token: Optional[str] = None
         self._expires: float = 0.0
         self._session: Optional[aiohttp.ClientSession] = None
+        self._lock = asyncio.Lock()
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -131,18 +160,19 @@ class SpotifyClient:
         return self._session
 
     async def _ensure_token(self) -> None:
-        session = await self._get_session()
-        if self._token and time.monotonic() < self._expires:
-            return
-        creds = base64.b64encode(f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()).decode()
-        headers = {"Authorization": f"Basic {creds}"}
-        data = {"grant_type": "client_credentials"}
-        async with session.post(SPOTIFY_TOKEN_URL, headers=headers, data=data) as r:
-            if r.status != 200:
-                raise RuntimeError(f"Spotify token fetch failed: {r.status}")
-            body = await r.json()
-            self._token = body["access_token"]
-            self._expires = time.monotonic() + body["expires_in"] - 30
+        async with self._lock:
+            if self._token and time.monotonic() < self._expires:
+                return
+            session = await self._get_session()
+            creds = base64.b64encode(f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()).decode()
+            headers = {"Authorization": f"Basic {creds}"}
+            data = {"grant_type": "client_credentials"}
+            async with session.post(SPOTIFY_TOKEN_URL, headers=headers, data=data) as r:
+                if r.status != 200:
+                    raise RuntimeError(f"Spotify token fetch failed: {r.status}")
+                body = await r.json()
+                self._token = body["access_token"]
+                self._expires = time.monotonic() + body["expires_in"] - 30
 
     async def _get(self, path: str) -> dict:
         await self._ensure_token()
@@ -195,25 +225,37 @@ class SpotifyClient:
                     f"&limit={limit}&offset={offset}"
                 )
             except RuntimeError:
-                # /tracks endpoint restricted (Development Mode) — try playlist object
-                data = await self._get(f"/playlists/{playlist_id}")
-                items = (data.get("tracks") or data.get("items") or {}).get("items", [])
-                if not items:
-                    log.warning(
-                        "Spotify playlist tracks unavailable — app is in Development Mode "
-                        "and is not the playlist owner/collaborator. Upgrade to Extended "
-                        "Quota Mode at developer.spotify.com to restore playlist support."
+                # /tracks endpoint restricted (Development Mode) — try playlist object with pagination
+                fb_offset = 0
+                while len(tracks) < SPOTIFY_PLAYLIST_CAP:
+                    data = await self._get(
+                        f"/playlists/{playlist_id}"
+                        f"?fields=tracks.items(track(name,artists(name)))"
+                        f"&limit={limit}&offset={fb_offset}"
                     )
-                for item in items[:SPOTIFY_PLAYLIST_CAP]:
-                    t = item.get("track") or item.get("item")
-                    if not t:
-                        continue
-                    name = t.get("name", "")
-                    artists = ", ".join(a["name"] for a in t.get("artists", []))
-                    if name and artists:
-                        tracks.append(f"{artists} - {name}")
-                    elif name:
-                        tracks.append(name)
+                    tracks_obj = data.get("tracks") or {}
+                    items = tracks_obj.get("items", [])
+                    if not items:
+                        if fb_offset == 0:
+                            log.warning(
+                                "Spotify playlist tracks unavailable — app is in Development Mode "
+                                "and is not the playlist owner/collaborator. Upgrade to Extended "
+                                "Quota Mode at developer.spotify.com to restore playlist support."
+                            )
+                        break
+                    for item in items:
+                        t = item.get("track") or item.get("item")
+                        if not t:
+                            continue
+                        name = t.get("name", "")
+                        artists = ", ".join(a["name"] for a in t.get("artists", []))
+                        if name and artists:
+                            tracks.append(f"{artists} - {name}")
+                        elif name:
+                            tracks.append(name)
+                    if len(items) < limit:
+                        break
+                    fb_offset += limit
                 break
 
             items = data.get("items", [])
@@ -259,7 +301,7 @@ async def _scrape_spotify_playlist(url: str) -> List[str]:
         finally:
             if hasattr(client, "close"):
                 client.close()
-    return await asyncio.get_event_loop().run_in_executor(None, sync_scrape)
+    return await asyncio.to_thread(sync_scrape)
 
 # ── MUSIC CARD GENERATOR ─────────────────────────────────────
 
@@ -295,9 +337,9 @@ async def _gen_music_card(
     def _process_image(img_bytes: bytes) -> io.BytesIO:
         W, H = 1280, 400
 
-        title_font = ImageFont.truetype("arialbd.ttf", 44)
-        subtitle_font = ImageFont.truetype("arial.ttf", 28)
-        dur_font = ImageFont.truetype("arial.ttf", 24)
+        title_font = _load_font(44, bold=True)
+        subtitle_font = _load_font(28)
+        dur_font = _load_font(24)
 
         art_orig = Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
@@ -352,7 +394,7 @@ async def _gen_music_card(
         draw.ellipse([dx - dr, dy - dr, dx + dr, dy + dr], fill=(255, 255, 255, 255))
 
         buf = io.BytesIO()
-        bg.convert("RGB").save(buf, format="PNG", quality=95)
+        bg.convert("RGB").save(buf, format="PNG")
         buf.seek(0)
         return buf
 

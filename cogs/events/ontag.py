@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from neixoconfig import Neixoname, Neixocolor, Neixoemojis
+from neixoconfig import Neixocolor, Neixoemojis
 from utils import get_embed_color
 
 
@@ -11,6 +11,8 @@ class OnTag(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
+            return
+        if not message.guild:
             return
         if message.content == f"<@{self.bot.user.id}>":
             embed = discord.Embed(

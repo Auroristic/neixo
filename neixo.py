@@ -8,6 +8,8 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
+load_dotenv()
+
 import wavelink
 
 from utils import (
@@ -15,8 +17,6 @@ from utils import (
     get_aliases,
     CREATOR_ID, CONFIG_FILE, DM_WHITELIST_FILE
 )
-
-load_dotenv()
 
 
 # ── Constants ───────────────────────────────────────────────────
@@ -249,12 +249,15 @@ class Neixo(commands.Bot):
             self.persistent_views_added = True
             logging.info("Persistent views registered")
 
-        # ── Sync slash commands ───────────────────────────────
+        # ── Sync slash commands (rate-limited by Discord, handle 429 gracefully) ──
         try:
             synced = await self.tree.sync()
             logging.info(f"Synced {len(synced)} slash commands globally")
-        except Exception as e:
-            logging.error(f"Failed to sync commands: {e}")
+        except discord.HTTPException as e:
+            if e.status == 429:
+                logging.warning("Slash command sync rate-limited, will sync on next ready")
+            else:
+                logging.error(f"Failed to sync commands: {e}")
 
     async def on_ready(self) -> None:
         logging.info(f"Logged in: {self.user} | {self.user.id}")
@@ -304,8 +307,9 @@ class Neixo(commands.Bot):
         # ── Guild AI handling ─────────────────────────────────
 
         # If this is a real command we already handled it via process_commands,
-        # so skip the AI flow.
-        ctx = await self.get_context(message)
+        # so skip the AI flow.  We use the cached context that process_commands
+        # already attached to the message (discord.py sets message.ctx internally).
+        ctx = getattr(message, "_ctx", None) or await self.get_context(message)
         if ctx.valid:
             return
 
@@ -351,13 +355,11 @@ class Neixo(commands.Bot):
             return
         # only re-run within ~60s of the original send
         try:
-            age = (discord.utils.utcnow() - after.created_at).total_seconds()
+            age = (discord.utils.utcnow() - before.created_at).total_seconds()
         except Exception:
             age = 0
         if age > 60:
             return
-        # mirror the alias rewrite from on_message so typo→alias edits work too
-        self._rewrite_alias(before)
         self._rewrite_alias(after)
         old_ctx = await self.get_context(before)
         new_ctx = await self.get_context(after)
@@ -375,7 +377,14 @@ bot = Neixo()
 
 # ── Dev / debug commands ────────────────────────────────────────
 
+def _is_creator():
+    async def predicate(ctx):
+        return ctx.author.id == CREATOR_ID
+    return commands.check(predicate)
+
+
 @bot.command(name="debughelp")
+@_is_creator()
 async def debug_help(ctx):
     from cogs.help import _collect
     cats, cmd_index = _collect(bot, True, True, True)
@@ -386,12 +395,6 @@ async def debug_help(ctx):
         for sec, cmds in cat["sections"].items():
             lines.append(f"{cat_id} > {sec}: {len(cmds)} cmds")
     await ctx.send("\n".join(lines) if lines else "nothing found")
-
-
-def _is_creator():
-    async def predicate(ctx):
-        return ctx.author.id == CREATOR_ID
-    return commands.check(predicate)
 
 
 @bot.command(name="reload", aliases=["rl"])
@@ -533,12 +536,14 @@ async def play_slash(interaction: discord.Interaction, query: str):
     if bot_vc and bot_vc.channel != user_vc:
         return await _music_err(interaction, f"you need to be in {bot_vc.channel.mention} to use this.")
     await interaction.response.defer()
-    # Delegate via the prefix command by temporarily creating a message
     temp = await interaction.channel.send(f".play {query}")
     ctx = await bot.get_context(temp)
     ctx.author = interaction.user
     await bot.invoke(ctx)
-    await temp.delete()
+    try:
+        await temp.delete()
+    except discord.HTTPException:
+        pass
 
 
 @bot.tree.command(name="skip", description="Skip the current track")
@@ -585,8 +590,8 @@ async def resume_slash(interaction: discord.Interaction):
     if not interaction.guild:
         return await _music_err(interaction, "This command only works in a server.")
     player = interaction.guild.voice_client
-    if not player or not player.playing:
-        return await _music_err(interaction, "nothing is playing rn.")
+    if not player:
+        return await _music_err(interaction, "not connected to voice.")
     if not player.paused:
         return await _music_err(interaction, "not paused.")
     user_vc = interaction.user.voice.channel if interaction.user.voice else None
@@ -594,7 +599,8 @@ async def resume_slash(interaction: discord.Interaction):
         return await _music_err(interaction, f"you need to be in {player.channel.mention} to use this.")
     await player.pause(False)
     await interaction.response.send_message(embed=discord.Embed(description="-# resumed.", color=0x121516))
-    await cog._update_vc_status(player.channel.id, f"{player.current.title} | Neixo")
+    if player.current:
+        await cog._update_vc_status(player.channel.id, f"{player.current.title} | Neixo")
 
 
 @bot.tree.command(name="queue", description="Show the music queue")
@@ -612,7 +618,10 @@ async def queue_slash(interaction: discord.Interaction):
     ctx = await bot.get_context(temp)
     ctx.author = interaction.user
     await bot.invoke(ctx)
-    await temp.delete()
+    try:
+        await temp.delete()
+    except discord.HTTPException:
+        pass
 
 
 @bot.tree.command(name="nowplaying", description="Show the currently playing track")
@@ -630,7 +639,10 @@ async def nowplaying_slash(interaction: discord.Interaction):
     ctx = await bot.get_context(temp)
     ctx.author = interaction.user
     await bot.invoke(ctx)
-    await temp.delete()
+    try:
+        await temp.delete()
+    except discord.HTTPException:
+        pass
 
 
 @bot.tree.command(name="help", description="Browse all commands or get help with a specific one")
@@ -641,7 +653,10 @@ async def help_slash(interaction: discord.Interaction, command: str = None):
     ctx = await bot.get_context(temp)
     ctx.author = interaction.user
     await bot.invoke(ctx)
-    await temp.delete()
+    try:
+        await temp.delete()
+    except discord.HTTPException:
+        pass
 
 
 # ── Cog loader ──────────────────────────────────────────────────

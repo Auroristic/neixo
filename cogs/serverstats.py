@@ -53,6 +53,7 @@ def _load_font(size: int, bold: bool = False):
 # ── Database ────────────────────────────────────────────────────────
 _stats_conn: _sql.Connection | None = None
 _react_conn_ro: _sql.Connection | None = None
+_stats_write_lock = asyncio.Lock()
 
 def _get_conn() -> _sql.Connection:
     global _stats_conn
@@ -520,6 +521,10 @@ class ServerStatsCog(commands.Cog):
         self.bot = bot
         self._vc_join_times: dict[int, dict[int, float]] = {}
 
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: discord.Guild):
+        self._vc_join_times.pop(guild.id, None)
+
     async def cog_load(self):
         _get_conn()
         for guild in self.bot.guilds:
@@ -533,13 +538,14 @@ class ServerStatsCog(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.bot or message.guild is None:
             return
-        conn = _get_conn()
-        conn.execute(
-            "INSERT INTO message_counts (guild_id, user_id, count) VALUES (?, ?, 1) "
-            "ON CONFLICT(guild_id, user_id) DO UPDATE SET count = count + 1",
-            (message.guild.id, message.author.id),
-        )
-        conn.commit()
+        async with _stats_write_lock:
+            conn = _get_conn()
+            conn.execute(
+                "INSERT INTO message_counts (guild_id, user_id, count) VALUES (?, ?, 1) "
+                "ON CONFLICT(guild_id, user_id) DO UPDATE SET count = count + 1",
+                (message.guild.id, message.author.id),
+            )
+            conn.commit()
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -555,13 +561,14 @@ class ServerStatsCog(commands.Cog):
             if user_id in joins:
                 elapsed = int(time.time() - joins.pop(user_id))
                 if elapsed > 0:
-                    conn = _get_conn()
-                    conn.execute(
-                        "INSERT INTO vc_time (guild_id, user_id, total_seconds) VALUES (?, ?, ?) "
-                        "ON CONFLICT(guild_id, user_id) DO UPDATE SET total_seconds = total_seconds + ?",
-                        (guild_id, user_id, elapsed, elapsed),
-                    )
-                    conn.commit()
+                    async with _stats_write_lock:
+                        conn = _get_conn()
+                        conn.execute(
+                            "INSERT INTO vc_time (guild_id, user_id, total_seconds) VALUES (?, ?, ?) "
+                            "ON CONFLICT(guild_id, user_id) DO UPDATE SET total_seconds = total_seconds + ?",
+                            (guild_id, user_id, elapsed, elapsed),
+                        )
+                        conn.commit()
             if after.channel is not None:
                 self._vc_join_times.setdefault(guild_id, {})[user_id] = time.time()
 
@@ -635,14 +642,6 @@ class ServerStatsCog(commands.Cog):
         if str(payload.emoji) != star_emoji and payload.emoji.name != star_emoji:
             return
 
-        # Skip if already starboarded
-        already = conn.execute(
-            "SELECT 1 FROM starboard_entries WHERE guild_id = ? AND message_id = ?",
-            (payload.guild_id, payload.message_id),
-        ).fetchone()
-        if already:
-            return
-
         guild = self.bot.get_guild(payload.guild_id)
         if guild is None:
             return
@@ -657,16 +656,21 @@ class ServerStatsCog(commands.Cog):
 
         star_count = sum(
             1 for r in msg.reactions
-            if str(r.emoji) == star_emoji
+            if str(r.emoji) == star_emoji or getattr(r.emoji, 'name', None) == star_emoji
         )
         if star_count < threshold:
             return
 
-        conn.execute(
-            "INSERT OR IGNORE INTO starboard_entries (guild_id, message_id) VALUES (?, ?)",
-            (payload.guild_id, payload.message_id),
-        )
-        conn.commit()
+        # Atomically claim this message for starboarding (prevents duplicates)
+        async with _stats_write_lock:
+            before = conn.total_changes
+            conn.execute(
+                "INSERT OR IGNORE INTO starboard_entries (guild_id, message_id) VALUES (?, ?)",
+                (payload.guild_id, payload.message_id),
+            )
+            conn.commit()
+            if conn.total_changes == before:
+                return  # Another reaction already handled this message
 
         star_channel = guild.get_channel(channel_id)
         if star_channel is None:
@@ -711,11 +715,12 @@ class ServerStatsCog(commands.Cog):
         ).fetchone()
         final_emoji = emoji or (existing[0] if existing else "\u2b50")
         final_threshold = threshold if threshold is not None else (existing[1] if existing else 1)
-        conn.execute(
-            "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
-            (ctx.guild.id, channel.id, final_emoji, final_threshold),
-        )
-        conn.commit()
+        async with _stats_write_lock:
+            conn.execute(
+                "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
+                (ctx.guild.id, channel.id, final_emoji, final_threshold),
+            )
+            conn.commit()
         await ctx.send(f"\u2b50 Starboard set to {channel.mention} \u00b7 emoji: {final_emoji} \u00b7 threshold: {final_threshold}")
 
     @starboard.command(name="emoji")
@@ -729,11 +734,12 @@ class ServerStatsCog(commands.Cog):
         if not existing:
             return await ctx.send("set a channel first with `.starboard #channel`")
         channel_id, threshold = existing
-        conn.execute(
-            "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
-            (ctx.guild.id, channel_id, emoji, threshold),
-        )
-        conn.commit()
+        async with _stats_write_lock:
+            conn.execute(
+                "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
+                (ctx.guild.id, channel_id, emoji, threshold),
+            )
+            conn.commit()
         await ctx.send(f"\u2b50 Starboard emoji changed to {emoji}")
 
     @starboard.command(name="threshold")
@@ -749,11 +755,12 @@ class ServerStatsCog(commands.Cog):
         if not existing:
             return await ctx.send("set a channel first with `.starboard #channel`")
         channel_id, emoji = existing
-        conn.execute(
-            "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
-            (ctx.guild.id, channel_id, emoji, threshold),
-        )
-        conn.commit()
+        async with _stats_write_lock:
+            conn.execute(
+                "INSERT OR REPLACE INTO starboard_config (guild_id, channel_id, emoji, threshold) VALUES (?, ?, ?, ?)",
+                (ctx.guild.id, channel_id, emoji, threshold),
+            )
+            conn.commit()
         await ctx.send(f"\u2b50 Starboard threshold set to {threshold}")
 
     # ── Commands ───────────────────────────────────────────────────────────

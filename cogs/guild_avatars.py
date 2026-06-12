@@ -43,7 +43,12 @@ class GuildAvatars(commands.Cog):
         if not any(image_url.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
             await ctx.send("That doesn't look like a valid image URL!")
             return
-        
+
+        # Only accept Discord CDN URLs
+        if not image_url.startswith(("https://cdn.discordapp.com/", "https://media.discordapp.net/")):
+            await ctx.send("Only Discord CDN URLs are allowed!")
+            return
+
         # Save to database
         set_guild_avatar(ctx.guild.id, ctx.author.id, image_url)
         

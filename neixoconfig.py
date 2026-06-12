@@ -3,8 +3,9 @@ import tomllib
 try:
     with open("neixoset.toml", "rb") as f:
         _config = tomllib.load(f)
-    Neixoname          = _config["neixoname"]
-    Neixocolor         = int(_config["embedcolor"], 16)
+    Neixoname = _config["neixoname"]
+    _embedcolor_raw = _config["embedcolor"]
+    Neixocolor = _embedcolor_raw if isinstance(_embedcolor_raw, int) else int(str(_embedcolor_raw), 16)
     Neixoemojis        = _config["neixoemojis"]
     Neixogifs          = _config.get("gifs", {})
     SeoulitiesServerID = _config.get("seoulities_server_id", 1252213834370777171)

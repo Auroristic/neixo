@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import os
 import json
 import base64
@@ -9,6 +10,8 @@ from discord.ext import commands
 import aiohttp
 
 from utils import help_meta, check_imagine_cooldown, imagine_cooldown_msg
+
+log = logging.getLogger(__name__)
 
 
 COG_META = {
@@ -44,16 +47,6 @@ class ImagineCog(commands.Cog, name="Imagine"):
             return
         await ctx.typing()
 
-        key = None
-        for k_name in ("NVIDIA_API_KEY_1", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3"):
-            k = os.getenv(k_name)
-            if k:
-                key = k
-                break
-
-        if not key:
-            return await ctx.send("-# no API key configured")
-
         url = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b"
         payload = {
             "prompt": prompt,
@@ -61,40 +54,51 @@ class ImagineCog(commands.Cog, name="Imagine"):
             "seed": 0,
             "steps": 4,
         }
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        }
 
-        try:
-            async with self.session.post(
-                url, json=payload, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=120)
-            ) as resp:
-                raw = await resp.read()
-                if resp.status != 200:
-                    return await ctx.send("-# image generation failed")
+        for k_name in ("NVIDIA_API_KEY_1", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3"):
+            key = os.getenv(k_name)
+            if not key:
+                continue
 
-                data = json.loads(raw)
-                artifacts = data.get("artifacts", [])
-                if artifacts:
-                    b64_img = artifacts[0].get("base64", "")
-                    if b64_img:
-                        img_bytes = base64.b64decode(b64_img)
-                        file = discord.File(io.BytesIO(img_bytes), filename="output.png")
-                        await ctx.send(file=file)
+            headers = {
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            }
+
+            try:
+                async with self.session.post(
+                    url, json=payload, headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=120)
+                ) as resp:
+                    raw = await resp.read()
+                    if resp.status != 200:
+                        log.warning(f"{k_name} returned status {resp.status}, trying next key")
+                        continue
+
+                    data = json.loads(raw)
+                    artifacts = data.get("artifacts", [])
+                    if artifacts:
+                        b64_img = artifacts[0].get("base64", "")
+                        if b64_img:
+                            img_bytes = base64.b64decode(b64_img)
+                            file = discord.File(io.BytesIO(img_bytes), filename="output.png")
+                            await ctx.send(file=file)
+                            return
+
+                    img_url = data.get("data", [{}])[0].get("url") or data.get("image", "")
+                    if img_url:
+                        e = discord.Embed()
+                        e.set_image(url=img_url)
+                        await ctx.send(embed=e)
                         return
 
-                img_url = data.get("data", [{}])[0].get("url") or data.get("image", "")
-                if img_url:
-                    e = discord.Embed()
-                    e.set_image(url=img_url)
-                    await ctx.send(embed=e)
+                    await ctx.send("-# image generation returned no data")
                     return
+            except Exception as e:
+                log.warning(f"{k_name} request failed: {e}")
+                continue
 
-                await ctx.send("-# image generation returned no data")
-        except Exception:
-            await ctx.send("-# image generation error")
+        await ctx.send("-# image generation failed")
 
 
 async def setup(bot: commands.Bot):

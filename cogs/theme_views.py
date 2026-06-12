@@ -34,7 +34,7 @@ class RolePickerView(View):
             discord.SelectOption(label=r.name[:100], value=str(r.id))
             for r in reversed(guild.roles)
             if r.name != "@everyone"
-        ][:25]
+        ][:25]  # Discord max is 25 select options
 
         self.select = Select(
             placeholder=f"Pick the role for slot: {slot_name}",
@@ -97,7 +97,6 @@ class PreviewView(View):
         self.changes    = changes
         self.warn       = warn
         self.confirmed  = False
-        self.message    = None
 
         if len(changes) > 3:
             show_more = Button(label="show more", style=discord.ButtonStyle.gray)

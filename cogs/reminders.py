@@ -28,12 +28,12 @@ _REL_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
 # absolute datetime formats for `.remind`
 _DT_FMTS = [
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y",
     "%Y/%m/%d %H:%M",
     "%Y-%m-%d %H:%M",
     "%Y/%m/%d",
     "%Y-%m-%d",
-    "%d/%m/%Y %H:%M",
-    "%d/%m/%Y",
 ]
 # birthday formats for `.bday` — date only, year optional
 _BDAY_FMTS = ["%Y/%m/%d", "%Y-%m-%d", "%m/%d", "%m-%d"]
@@ -156,13 +156,17 @@ class RemindersCog(commands.Cog, name="Reminders"):
     async def _scheduler(self):
         try:
             await self.bot.wait_until_ready()
+        except Exception as e:
+            log.warning("reminder scheduler wait_until_ready failed: %s", e)
+            return
+        try:
             INTERVAL = 30
             while not self.bot.is_closed():
                 tick_start = _now_utc()
                 try:
                     await self._tick()
                 except Exception as e:
-                    log.warning(f"reminder scheduler tick error: {e}")
+                    log.warning("reminder scheduler tick error: %s", e)
                 elapsed = (_now_utc() - tick_start).total_seconds()
                 await asyncio.sleep(max(0, INTERVAL - elapsed))
         except asyncio.CancelledError:
@@ -179,15 +183,15 @@ class RemindersCog(commands.Cog, name="Reminders"):
             except Exception:
                 continue
             (due if trig <= now else kept).append(it)
+        failed = []
         if due:
-            state["items"] = kept
-            _save_reminders(state)
             for it in due:
                 u = self.bot.get_user(it["user_id"])
                 if u is None:
                     try:
                         u = await self.bot.fetch_user(it["user_id"])
                     except Exception:
+                        failed.append(it)
                         continue
                 try:
                     await u.send(
@@ -198,7 +202,9 @@ class RemindersCog(commands.Cog, name="Reminders"):
                         )
                     )
                 except discord.HTTPException:
-                    pass
+                    failed.append(it)
+            state["items"] = kept + failed
+            _save_reminders(state)
 
         # ── birthdays ────
         bs = _load_birthdays()
@@ -374,6 +380,7 @@ class RemindersCog(commands.Cog, name="Reminders"):
             "target_name": target_name,
             "month_day": md,
             "last_notified_year": 0,
+            "last_pre_notified_year": 0,
         })
         _save_birthdays(bs)
         await ctx.send(

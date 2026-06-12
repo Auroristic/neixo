@@ -50,6 +50,7 @@ _DEFAULT = {
 }
 
 _EMOJI_RE = re.compile(r"<(a?):(\w+):(\d+)>")
+_UNSET = object()  # sentinel for "don't touch"
 
 
 def _build_activity(act: dict | None) -> discord.BaseActivity | None:
@@ -99,16 +100,16 @@ async def _apply_presence(
     bot: commands.Bot,
     *,
     status: discord.Status | None = None,
-    activity: discord.BaseActivity | None | type(...) = ...,
+    activity: discord.BaseActivity | None | _UNSET = _UNSET,
 ) -> None:
     """Apply a presence change preserving the half not being touched.
-    `activity=...` (default) means leave activity alone; `activity=None`
+    `activity=_UNSET` (default) means leave activity alone; `activity=None`
     explicitly clears it."""
     global _current_status, _current_activity
     async with _presence_lock:
         if status is not None:
             _current_status = status
-        if activity is not ...:
+        if activity is not _UNSET:
             _current_activity = activity
         await bot.change_presence(status=_current_status, activity=_current_activity)
 
@@ -251,12 +252,12 @@ class _RPCManager:
 rpc = _RPCManager()
 
 
-def _save_presence(status: str | None = None, activity: dict | None | type(...) = ...) -> dict:
+def _save_presence(status: str | None = None, activity: dict | None | _UNSET = _UNSET) -> dict:
     """Merge-save the presence file. Pass `activity=None` to clear it."""
     cur = load_json(PRESENCE_FILE) or dict(_DEFAULT)
     if status is not None:
         cur["status"] = status
-    if activity is not ...:  # ... means "don't touch"
+    if activity is not _UNSET:
         cur["activity"] = activity
     save_json(PRESENCE_FILE, cur)
     return cur
@@ -264,21 +265,24 @@ def _save_presence(status: str | None = None, activity: dict | None | type(...) 
 
 # ── helpers for image inputs ────────────────────────────────────
 
+_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+
 async def _resolve_image_bytes(ctx: commands.Context, source: str | None) -> bytes | None:
     """Get image bytes from an attachment, a URL string, or None if neither."""
-    # attachment first (most common path)
     if ctx.message.attachments:
-        att = ctx.message.attachments[0]
-        return await att.read()
-    if not source:
+        return await ctx.message.attachments[0].read()
+    if not source or not source.startswith("https://"):
         return None
-    if not source.startswith(("http://", "https://")):
+    if len(source) > 2000:
         return None
     async with aiohttp.ClientSession() as s:
         async with s.get(source, timeout=aiohttp.ClientTimeout(total=15)) as r:
             if r.status != 200:
                 raise RuntimeError(f"download failed: HTTP {r.status}")
-            return await r.read()
+            data = await r.read()
+            if len(data) > _IMAGE_MAX_BYTES:
+                raise RuntimeError(f"file too large ({len(data)} bytes)")
+            return data
 
 
 def _creator_only():

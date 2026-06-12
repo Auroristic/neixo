@@ -48,14 +48,13 @@ def _rc_upsert(guild_id, user_id, emoji_str, delta):
     conn = _get_react_conn()
     cx = conn.cursor()
     cx.execute("""
-        UPDATE reaction_stats SET count = count + ?
+        INSERT OR IGNORE INTO reaction_stats (guild_id, user_id, emoji, count)
+        VALUES (?, ?, ?, 0)
+    """, (guild_id, user_id, emoji_str))
+    cx.execute("""
+        UPDATE reaction_stats SET count = MAX(0, count + ?)
         WHERE guild_id = ? AND user_id = ? AND emoji = ?
     """, (delta, guild_id, user_id, emoji_str))
-    if cx.rowcount == 0 and delta > 0:
-        cx.execute("""
-            INSERT INTO reaction_stats (guild_id, user_id, emoji, count)
-            VALUES (?, ?, ?, ?)
-        """, (guild_id, user_id, emoji_str, delta))
     conn.commit()
 
 def _emoji_str(emoji):
@@ -371,6 +370,9 @@ class RCImageView(discord.ui.View):
         else:
             await interaction.response.defer()
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.ctx.author.id
+
     async def on_timeout(self):
         for child in self.children:
             child.disabled = True
@@ -456,6 +458,11 @@ class RCPageView(discord.ui.View):
                 text=f"page {self.page + 1}/{self.total} · {len(self.rows)} ranked",
             )
         return embed
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if self.author_id is not None:
+            return interaction.user.id == self.author_id
+        return True
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.grey)
     async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):

@@ -5,7 +5,6 @@ import sqlite3
 import threading
 from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
-from functools import lru_cache
 import time
 
 DATA_DIR = "data"
@@ -121,8 +120,15 @@ def _ensure_db():
 
 # ── List-file detection (same logic as before) ───────────────────
 
+_LIST_FILES = frozenset({
+    IGNORE_LIST_FILE,
+    DM_WHITELIST_FILE,
+    CONFESSIONS_FILE,
+    AUDIT_FILE,
+})
+
 def _is_list_file(filepath: str) -> bool:
-    return 'list' in os.path.basename(filepath)
+    return filepath in _LIST_FILES
 
 # ── Core load / save (drop-in replacements) ──────────────────────
 
@@ -297,12 +303,21 @@ def get_embed_color(guild_id):
 
 
 def get_next_confession_id(guild_id):
-    confessions = load_json(CONFESSIONS_FILE)
-    guild_confessions = [
-        c for c in confessions.values()
-        if c.get("guild_id") == str(guild_id)
-    ]
-    return len(guild_confessions) + 1
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT data FROM kv WHERE filepath = ?", (CONFESSIONS_FILE,)
+        ).fetchone()
+        confessions = json.loads(row[0]) if row else {}
+        max_id = 0
+        for c in confessions.values():
+            if c.get("guild_id") == str(guild_id):
+                try:
+                    cid = int(c.get("id", 0))
+                except (TypeError, ValueError):
+                    cid = 0
+                if cid > max_id:
+                    max_id = cid
+        return max_id + 1
 
 
 def get_next_reply_id():
@@ -311,15 +326,19 @@ def get_next_reply_id():
     return reply_count + 1
 
 
+_AUDIT_MAX_ENTRIES = 5000
+
 def log_audit(action, guild_id, user_id, details):
     audits = load_json(AUDIT_FILE)
     audits.append({
-        "action":    action,
-        "guild_id":  str(guild_id),
-        "user_id":   str(user_id),
-        "details":   details,
+        "action": action,
+        "guild_id": str(guild_id),
+        "user_id": str(user_id),
+        "details": details,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
+    if len(audits) > _AUDIT_MAX_ENTRIES:
+        audits = audits[-_AUDIT_MAX_ENTRIES:]
     save_json(AUDIT_FILE, audits)
 
 
@@ -333,27 +352,29 @@ def get_current_date_line() -> str:
 
 # ── GIF cooldown helpers (shared by misc & gif_editor cogs) ──────
 
-from datetime import datetime as _dt, timedelta, timezone
+
 import random as _random
 
 GIF_COOLDOWN_SECONDS = 10
 _gif_cooldowns: dict = {}
+_gif_cooldowns_lock = threading.Lock()
 
 def check_gif_cooldown(user_id: int):
-    now = _dt.now(timezone.utc)
-    for k in [k for k, v in _gif_cooldowns.items() if isinstance(v, _dt) and v < now]:
-        _gif_cooldowns.pop(k, None)
-        _gif_cooldowns.pop(f"{k}_warned", None)
-    if user_id in _gif_cooldowns:
-        time_left = (_gif_cooldowns[user_id] - now).total_seconds()
-        if time_left > 0:
-            if _gif_cooldowns.get(f"{user_id}_warned"):
-                return "silent"
-            _gif_cooldowns[f"{user_id}_warned"] = True
-            return time_left
-    _gif_cooldowns[user_id] = now + timedelta(seconds=GIF_COOLDOWN_SECONDS)
-    _gif_cooldowns.pop(f"{user_id}_warned", None)
-    return None
+    with _gif_cooldowns_lock:
+        now = datetime.now(timezone.utc)
+        for k in [k for k, v in _gif_cooldowns.items() if isinstance(v, datetime) and v < now]:
+            _gif_cooldowns.pop(k, None)
+            _gif_cooldowns.pop(f"{k}_warned", None)
+        if user_id in _gif_cooldowns:
+            time_left = (_gif_cooldowns[user_id] - now).total_seconds()
+            if time_left > 0:
+                if _gif_cooldowns.get(f"{user_id}_warned"):
+                    return "silent"
+                _gif_cooldowns[f"{user_id}_warned"] = True
+                return time_left
+        _gif_cooldowns[user_id] = now + timedelta(seconds=GIF_COOLDOWN_SECONDS)
+        _gif_cooldowns.pop(f"{user_id}_warned", None)
+        return None
 
 def gif_cooldown_msg(seconds):
     msgs = [
@@ -373,22 +394,24 @@ def gif_cooldown_msg(seconds):
 # ── Imagine cooldown ──────────────────────────────────────────
 IMAGINE_COOLDOWN_SECONDS = 25
 _imagine_cooldowns: dict = {}
+_imagine_cooldowns_lock = threading.Lock()
 
 def check_imagine_cooldown(user_id: int):
-    now = _dt.now(timezone.utc)
-    for k in [k for k, v in _imagine_cooldowns.items() if isinstance(v, _dt) and v < now]:
-        _imagine_cooldowns.pop(k, None)
-        _imagine_cooldowns.pop(f"{k}_warned", None)
-    if user_id in _imagine_cooldowns:
-        time_left = (_imagine_cooldowns[user_id] - now).total_seconds()
-        if time_left > 0:
-            if _imagine_cooldowns.get(f"{user_id}_warned"):
-                return "silent"
-            _imagine_cooldowns[f"{user_id}_warned"] = True
-            return time_left
-    _imagine_cooldowns[user_id] = now + timedelta(seconds=IMAGINE_COOLDOWN_SECONDS)
-    _imagine_cooldowns.pop(f"{user_id}_warned", None)
-    return None
+    with _imagine_cooldowns_lock:
+        now = datetime.now(timezone.utc)
+        for k in [k for k, v in _imagine_cooldowns.items() if isinstance(v, datetime) and v < now]:
+            _imagine_cooldowns.pop(k, None)
+            _imagine_cooldowns.pop(f"{k}_warned", None)
+        if user_id in _imagine_cooldowns:
+            time_left = (_imagine_cooldowns[user_id] - now).total_seconds()
+            if time_left > 0:
+                if _imagine_cooldowns.get(f"{user_id}_warned"):
+                    return "silent"
+                _imagine_cooldowns[f"{user_id}_warned"] = True
+                return time_left
+        _imagine_cooldowns[user_id] = now + timedelta(seconds=IMAGINE_COOLDOWN_SECONDS)
+        _imagine_cooldowns.pop(f"{user_id}_warned", None)
+        return None
 
 def imagine_cooldown_msg(seconds):
     msgs = [
@@ -603,57 +626,59 @@ def list_playlists(user_id: int | str) -> list[str]:
 
 # ── NEW: XP & Leveling Helpers ──────────────────────────────────────
 
-def add_xp(user_id: int | str, guild_id: int | str, xp_amount: int = 10, messages: int = 1) -> dict:
+def add_xp(user_id: int | str, guild_id: int | str, xp_amount: int = 10, messages: int = 1, voice_minutes: int = 0) -> dict:
     """
     Add XP to a user. Returns dict with level info if leveled up.
     Default: 10 XP per message.
     """
+    if xp_amount < 0:
+        xp_amount = 0
+
     level_up_info = {"leveled_up": False}
-    
+
     with _db() as conn:
-        # Get current XP
         row = conn.execute(
-            "SELECT xp, level, messages FROM user_xp WHERE user_id = ? AND guild_id = ?",
+            "SELECT xp, level, messages, voice_minutes FROM user_xp WHERE user_id = ? AND guild_id = ?",
             (str(user_id), str(guild_id))
         ).fetchone()
-        
+
         if row:
-            current_xp, current_level, current_messages = row
+            current_xp, current_level, current_messages, current_voice = row
             new_xp = current_xp + xp_amount
             new_messages = current_messages + messages
+            new_voice = current_voice + voice_minutes
         else:
             new_xp = xp_amount
             current_level = 0
             new_messages = messages
-        
-        # Calculate new level (formula: level = sqrt(xp / 100))
+            new_voice = voice_minutes
+
         import math
         new_level = int(math.sqrt(new_xp / 100))
-        
-        # Check for level up
+
         if new_level > current_level:
             level_up_info["leveled_up"] = True
             level_up_info["old_level"] = current_level
             level_up_info["new_level"] = new_level
-        
-        # Upsert
+
         conn.execute(
-            "INSERT INTO user_xp (user_id, guild_id, xp, level, messages) VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO user_xp (user_id, guild_id, xp, level, messages, voice_minutes) VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_id, guild_id) DO UPDATE SET "
-            "xp = excluded.xp, level = excluded.level, messages = excluded.messages",
-            (str(user_id), str(guild_id), new_xp, new_level, new_messages)
+            "xp = excluded.xp, level = excluded.level, messages = excluded.messages, voice_minutes = excluded.voice_minutes",
+            (str(user_id), str(guild_id), new_xp, new_level, new_messages, new_voice)
         )
-        
+
         level_up_info["xp"] = new_xp
         level_up_info["level"] = new_level
         level_up_info["messages"] = new_messages
+        level_up_info["voice_minutes"] = new_voice
     
     return level_up_info
 
 
 def add_voice_xp(user_id: int | str, guild_id: int | str, minutes: int = 1) -> dict:
     """Add voice time XP (5 XP per minute). Returns level info if leveled up."""
-    return add_xp(user_id, guild_id, xp_amount=minutes * 5, messages=0)
+    return add_xp(user_id, guild_id, xp_amount=minutes * 5, messages=0, voice_minutes=minutes)
 
 
 def get_user_xp(user_id: int | str, guild_id: int | str) -> dict | None:

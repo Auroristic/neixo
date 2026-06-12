@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import ipaddress
 import logging
 import time
 
@@ -12,6 +12,37 @@ from neixoconfig import Neixocolor, Neixoemojis
 from utils import get_embed_color, is_owner_or_creator
 
 log = logging.getLogger(__name__)
+
+_MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_safe_url(url: str) -> bool:
+    from urllib.parse import urlparse
+    import socket
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        addr_infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+        for family, _, _, _, sockaddr in addr_infos:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if any(ip in net for net in _BLOCKED_NETWORKS):
+                return False
+    except Exception:
+        return False
+    return True
 
 # ── Shared aiohttp session ───────────────────────────────────────
 
@@ -67,11 +98,16 @@ async def _resolve_icon_bytes(ctx: commands.Context, source: str | None) -> byte
     if ctx.message.attachments:
         return await ctx.message.attachments[0].read()
     if source and source.startswith(("http://", "https://")):
+        if not _is_safe_url(source):
+            raise RuntimeError("blocked: URL resolves to a private/reserved network")
         s = await _get_http_session()
         async with s.get(source, timeout=aiohttp.ClientTimeout(total=15)) as r:
             if r.status != 200:
                 raise RuntimeError(f"download failed: HTTP {r.status}")
-            return await r.read()
+            data = await r.read()
+            if len(data) > _MAX_DOWNLOAD_BYTES:
+                raise RuntimeError(f"file too large ({len(data)} bytes, max {_MAX_DOWNLOAD_BYTES})")
+            return data
     return None
 
 # ── Progress helpers ─────────────────────────────────────────────

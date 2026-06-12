@@ -4,10 +4,13 @@ import itertools
 import os
 import re
 import json
+import ipaddress
 import time as _time
 import importlib
 from datetime import datetime, timezone
+from collections import OrderedDict
 from typing import Optional
+from urllib.parse import urlparse
 
 
 def _now_iso() -> str:
@@ -53,11 +56,18 @@ COG_META = {
 # ── Conversation locks ────────────────────────────────────────
 
 _conversation_locks: dict = {}
+_conversation_locks_last_access: dict = {}
 
 def get_conversation_lock(key: str) -> asyncio.Lock:
-    if key not in _conversation_locks:
-        _conversation_locks[key] = asyncio.Lock()
-    return _conversation_locks[key]
+    lock = _conversation_locks.setdefault(key, asyncio.Lock())
+    _conversation_locks_last_access[key] = _time.time()
+    if len(_conversation_locks) > 1000:
+        cutoff = _time.time() - 3600
+        stale = [k for k, t in _conversation_locks_last_access.items() if t < cutoff]
+        for k in stale:
+            _conversation_locks.pop(k, None)
+            _conversation_locks_last_access.pop(k, None)
+    return lock
 
 MAIN_MODEL   = "mistralai/mistral-medium-3.5-128b"
 VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"
@@ -218,10 +228,10 @@ class AICog(commands.Cog, name="AI"):
         self.bot = bot
         # Track message IDs that the AI has sent, so on_message can distinguish
         # AI responses from command output when checking is_reply_to_bot.
-        self._ai_message_ids: set[int] = set()
+        self._ai_message_ids: OrderedDict = OrderedDict()
         # Stricter set: only IDs from actual AI conversation replies, NOT
         # status messages or anything else the bot sends.
-        self._ai_chat_ids: set[int] = set()
+        self._ai_chat_ids: OrderedDict = OrderedDict()
 
         # ── Keys — load both, use based on active provider ────
         zen_key = os.getenv("OPENCODE_ZEN_API_KEY")
@@ -308,12 +318,7 @@ class AICog(commands.Cog, name="AI"):
         if model:
             last_error: Optional[Exception] = None
             for attempt in range(len(self._keys_list)):
-                client = AsyncOpenAI(
-                    base_url="https://integrate.api.nvidia.com/v1",
-                    api_key=next(self.key_cycle),
-                    timeout=REQUEST_TIMEOUT,
-                    max_retries=0,
-                )
+                client = self._get_client(next(self.key_cycle))
                 kwargs = dict(
                     model=model,
                     messages=messages_payload,
@@ -571,6 +576,18 @@ class AICog(commands.Cog, name="AI"):
         """Fetch a URL and return its readable text content."""
         if not url or not url.startswith(("http://", "https://")):
             return "invalid url"
+        # SSRF protection: reject private/reserved IPs
+        try:
+            hostname = urlparse(url).hostname
+            if hostname:
+                loop = asyncio.get_event_loop()
+                addrs = await loop.getaddrinfo(hostname, None)
+                for _, _, _, _, sa in addrs:
+                    ip = ipaddress.ip_address(sa[0])
+                    if ip.is_private or ip.is_loopback or ip.is_link_local:
+                        return "blocked: this url points to an internal or private address"
+        except Exception:
+            pass
         try:
             async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:
@@ -661,20 +678,29 @@ class AICog(commands.Cog, name="AI"):
 
     def _track_ai_message(self, msg_id: int, is_chat: bool = True):
         """Register an AI-sent message ID and trim the set when it grows too large."""
-        self._ai_message_ids.add(msg_id)
+        self._ai_message_ids[msg_id] = None
         if is_chat:
-            self._ai_chat_ids.add(msg_id)
+            self._ai_chat_ids[msg_id] = None
         if len(self._ai_message_ids) > 5000:
-            self._ai_message_ids = set(list(self._ai_message_ids)[-2500:])
-            self._ai_chat_ids = set(list(self._ai_chat_ids)[-2500:])
+            for _ in range(2500):
+                oldest, _ = self._ai_message_ids.popitem(last=False)
+                self._ai_chat_ids.pop(oldest, None)
 
     async def _send_response(self, message: discord.Message, text: str):
         if not text:
             return
         if len(text) > 2000:
-            for chunk in [text[i:i+2000] for i in range(0, len(text), 2000)]:
-                sent = await message.reply(chunk)
+            while text:
+                if len(text) <= 2000:
+                    sent = await message.reply(text)
+                    self._track_ai_message(sent.id)
+                    break
+                split_at = text.rfind(" ", 0, 2000)
+                if split_at == -1:
+                    split_at = 2000
+                sent = await message.reply(text[:split_at])
                 self._track_ai_message(sent.id)
+                text = text[split_at:].lstrip()
         else:
             sent = await message.reply(text)
             self._track_ai_message(sent.id)
@@ -898,6 +924,8 @@ class AICog(commands.Cog, name="AI"):
             # ── Optimization: skip follow-up call when only gif_search ran ──
             # The model already chose the gif; we don't need it to write text.
             # Saves a full NVIDIA round-trip (~1-3s).
+            if not tool_calls:
+                break
             only_gif = all(tc.function.name == "gif_search" for tc in tool_calls)
             if only_gif and gifs:
                 text = (msg.content or "").strip()  # whatever (if any) text the model wrote inline
@@ -1114,14 +1142,15 @@ class AICog(commands.Cog, name="AI"):
 
             results = await asyncio.gather(*[_exec_one(t) for t in xml_tools], return_exceptions=True)
 
-            for (name, params), res in zip(xml_tools, results):
+            for i, ((name, params), res) in enumerate(zip(xml_tools, results)):
                 if isinstance(res, Exception):
                     content_str, urls = f"tool error: {res}", []
                 else:
                     content_str, urls = res
                 messages_payload.append({
-                    "role": "user",
-                    "content": f"[tool {name}]: {content_str}",
+                    "role": "tool",
+                    "tool_call_id": f"xml_call_{round_num}_{i}",
+                    "content": content_str,
                 })
                 if urls:
                     if name in ("image_search", "generate_image"):

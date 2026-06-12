@@ -23,10 +23,10 @@ class Leveling(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.xp_cooldowns = {}  # Simple cooldown tracking
-        self.level_up_notifications = {}  # Guild-specific toggle (default: True)
+
 
     async def cog_load(self):
-        """Initialize level-up notification settings from DB."""
+        """Initialize level-up notification settings and backfill level roles."""
         from utils import _db
         with _db() as conn:
             conn.execute("""
@@ -35,6 +35,25 @@ class Leveling(commands.Cog):
                     notifications_enabled INTEGER DEFAULT 1
                 )
             """)
+        # Backfill level roles for users who leveled up while bot was offline
+        for guild in self.bot.guilds:
+            level_roles = get_all_level_roles(guild.id)
+            if not level_roles:
+                continue
+            for member in guild.members:
+                if member.bot:
+                    continue
+                data = get_user_xp(member.id, guild.id)
+                if data:
+                    current_level = data["level"]
+                    for level, role_id in sorted(level_roles.items()):
+                        if current_level >= int(level):
+                            try:
+                                role = guild.get_role(int(role_id))
+                                if role and role not in member.roles:
+                                    await member.add_roles(role, reason=f"Level role backfill (level {level})")
+                            except Exception as e:
+                                logger.warning(f"Failed to backfill level role: {e}")
 
     async def cog_check(self, ctx):
         if ctx.guild is None:
@@ -58,6 +77,13 @@ class Leveling(commands.Cog):
                 return
         
         self.xp_cooldowns[user_key] = now
+        
+        # Periodic cleanup of stale cooldown entries
+        if len(self.xp_cooldowns) > 5000:
+            cutoff = now - 3600
+            stale = [k for k, t in self.xp_cooldowns.items() if t < cutoff]
+            for k in stale:
+                del self.xp_cooldowns[k]
         
         # Add XP
         result = add_xp(message.author.id, message.guild.id, xp_amount=10, messages=1)
@@ -175,16 +201,16 @@ class Leveling(commands.Cog):
             view.message = await ctx.send(file=file, view=view)
 
     @commands.group(invoke_without_command=True)
-    @help_meta(section="Leveling", usage=".levelrole [level] [@role]", desc="Manage level roles", admin=True)
+    @help_meta(section="Leveling", usage=".levelrole <level> <@role>", desc="Manage level roles", admin=True)
     async def levelrole(self, ctx, level: int = None, role: discord.Role = None):
         """Manage level-up roles. Use `.levelrole 5 @Role` to set a role for level 5."""
         if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
             return await ctx.send("admin only")
-        if level is None or role is None:
+        if level is None:
             # Show all level roles
             roles = get_all_level_roles(ctx.guild.id)
             if not roles:
-                await ctx.send("No level roles configured. Use `.levelrole <level> <@role>` to add one.")
+                await ctx.send("No level roles configured. Use `.levelrole 5 @Role` to add one.")
                 return
             
             embed = discord.Embed(
@@ -198,10 +224,12 @@ class Leveling(commands.Cog):
                 embed.add_field(name=f"Level {lvl}", value=role_name, inline=True)
             
             await ctx.send(embed=embed)
-        else:
+        elif role is not None:
             # Set level role
             set_level_role(ctx.guild.id, level, role.id)
             await ctx.send(f"✅ Role {role.mention} will be given at level {level}!")
+        else:
+            await ctx.send("Usage: `.levelrole 5 @Role` to set, `.levelrole remove 5` to remove")
 
     @levelrole.command()
     @help_meta(section="Leveling", usage=".levelrole remove <level>", desc="Remove a level role")
@@ -305,6 +333,7 @@ class Leveling(commands.Cog):
             return
         
         user = user or ctx.author
+        xp = max(xp, 0)
         result = add_xp(user.id, ctx.guild.id, xp_amount=xp, messages=0)
         
         if result["leveled_up"]:

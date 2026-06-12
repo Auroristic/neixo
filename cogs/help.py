@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 from typing import Any, Dict, Optional
 
-from utils import load_json, get_embed_color, is_owner_or_creator, CONFIG_FILE
+from utils import load_json, get_embed_color, get_config, is_owner_or_creator, CONFIG_FILE
 
 log = logging.getLogger(__name__)
 
@@ -247,13 +247,16 @@ class HelpCog(commands.Cog, name="Help"):
 
     @commands.command(name="help", aliases=["h"])
     async def help_command(self, ctx: commands.Context, *, command: str = None):
-        config = load_json(CONFIG_FILE)
+        config = get_config()
         guild_id = ctx.guild.id if ctx.guild else 0
         guild_config = config.get(str(guild_id), {})
         whitelist = guild_config.get("whitelist", [])
         is_owner = is_owner_or_creator(ctx)
         is_wl = str(ctx.author.id) in whitelist
         has_admin = ctx.author.guild_permissions.administrator if ctx.guild else False
+        if not ctx.guild:
+            is_wl = False
+            has_admin = False
         color = get_embed_color(guild_id)
 
         if command:

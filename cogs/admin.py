@@ -1,3 +1,5 @@
+import asyncio
+
 import discord
 from discord.ext import commands
 
@@ -29,6 +31,9 @@ COG_META = {
 class AdminCog(commands.Cog, name="Admin"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._config_lock = asyncio.Lock()
+        self._aliases_lock = asyncio.Lock()
+        self._ignore_lock = asyncio.Lock()
 
     # ── whitelist ──────────────────────────────────────────────
     @commands.command(name="whitelist")
@@ -37,27 +42,29 @@ class AdminCog(commands.Cog, name="Admin"):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
         
-        config = load_json(CONFIG_FILE)
-        if str(ctx.guild.id) not in config:
-            config[str(ctx.guild.id)] = {}
-        if 'whitelist' not in config[str(ctx.guild.id)]:
-            config[str(ctx.guild.id)]['whitelist'] = []
-        
-        whitelist_ids = config[str(ctx.guild.id)]['whitelist']
-        
-        if not user:
-            return await ctx.send("`.whitelist @user` to toggle them")
-        
-        if str(user.id) in whitelist_ids:
-            whitelist_ids.remove(str(user.id))
-            save_json(CONFIG_FILE, config)
-            invalidate_config()
-            await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
-        else:
-            whitelist_ids.append(str(user.id))
-            save_json(CONFIG_FILE, config)
-            invalidate_config()
-            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        async with self._config_lock:
+            config = load_json(CONFIG_FILE)
+            if str(ctx.guild.id) not in config:
+                config[str(ctx.guild.id)] = {}
+            if 'whitelist' not in config[str(ctx.guild.id)]:
+                config[str(ctx.guild.id)]['whitelist'] = []
+            
+            whitelist_ids = config[str(ctx.guild.id)]['whitelist']
+            
+            if not user:
+                return await ctx.send("`.whitelist @user` to toggle them")
+            
+            uid = user.id
+            if uid in whitelist_ids:
+                whitelist_ids.remove(uid)
+                save_json(CONFIG_FILE, config)
+                invalidate_config()
+                await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
+            else:
+                whitelist_ids.append(uid)
+                save_json(CONFIG_FILE, config)
+                invalidate_config()
+                await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     # ── whitelistshow ──────────────────────────────────────────
     @commands.command(name="whitelistshow")
@@ -66,8 +73,9 @@ class AdminCog(commands.Cog, name="Admin"):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
         
-        config = load_json(CONFIG_FILE)
-        whitelist_ids = config.get(str(ctx.guild.id), {}).get('whitelist', [])
+        async with self._config_lock:
+            config = load_json(CONFIG_FILE)
+            whitelist_ids = config.get(str(ctx.guild.id), {}).get('whitelist', [])
         
         if not whitelist_ids:
             embed = discord.Embed(description="no one whitelisted yet", color=get_embed_color(ctx.guild.id))
@@ -90,16 +98,17 @@ class AdminCog(commands.Cog, name="Admin"):
         
         color = color.strip('#')
         try:
-            color_int = int(color, 16)
+            color_int = int(color, 16) & 0xFFFFFF
         except ValueError:
             return await ctx.send("invalid color, use hex like `#FF0000` or `FF0000`")
         
-        config = load_json(CONFIG_FILE)
-        if str(ctx.guild.id) not in config:
-            config[str(ctx.guild.id)] = {}
-        config[str(ctx.guild.id)]['embed_color'] = color_int
-        save_json(CONFIG_FILE, config)
-        invalidate_config()
+        async with self._config_lock:
+            config = load_json(CONFIG_FILE)
+            if str(ctx.guild.id) not in config:
+                config[str(ctx.guild.id)] = {}
+            config[str(ctx.guild.id)]['embed_color'] = color_int
+            save_json(CONFIG_FILE, config)
+            invalidate_config()
         embed = discord.Embed(description=f"nya?", color=color_int)
         await ctx.send(embed=embed)
 
@@ -114,17 +123,18 @@ class AdminCog(commands.Cog, name="Admin"):
             return await ctx.send("no perms")
         if not user:
             return await ctx.send(".ignore @user")
-        ignore_list = load_json(IGNORE_LIST_FILE)
-        if user.id not in ignore_list:
-            ignore_list.append(user.id)
-            save_json(IGNORE_LIST_FILE, ignore_list)
-            invalidate_ignore()
-            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
-        else:
-            ignore_list.remove(user.id)
-            save_json(IGNORE_LIST_FILE, ignore_list)
-            invalidate_ignore()
-            await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
+        async with self._ignore_lock:
+            ignore_list = load_json(IGNORE_LIST_FILE)
+            if user.id not in ignore_list:
+                ignore_list.append(user.id)
+                save_json(IGNORE_LIST_FILE, ignore_list)
+                invalidate_ignore()
+                await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+            else:
+                ignore_list.remove(user.id)
+                save_json(IGNORE_LIST_FILE, ignore_list)
+                invalidate_ignore()
+                await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
 
     # ── ignorelist ────────────────────────────────────────────
     @commands.command(name="ignorelist")
@@ -160,13 +170,14 @@ class AdminCog(commands.Cog, name="Admin"):
                 await ctx.send("mention a channel. `.confess set #channel`")
                 return
             
-            config = load_json(CONFIG_FILE)
-            if str(ctx.guild.id) not in config:
-                config[str(ctx.guild.id)] = {}
-            
-            config[str(ctx.guild.id)]['confession_channel'] = str(channel.id)
-            save_json(CONFIG_FILE, config)
-            invalidate_config()
+            async with self._config_lock:
+                config = load_json(CONFIG_FILE)
+                if str(ctx.guild.id) not in config:
+                    config[str(ctx.guild.id)] = {}
+                
+                config[str(ctx.guild.id)]['confession_channel'] = str(channel.id)
+                save_json(CONFIG_FILE, config)
+                invalidate_config()
             await ctx.send(f"drama on {channel.mention} now on.")
         else:
             await ctx.send("Usage: `.confess set #channel`")
@@ -191,12 +202,13 @@ class AdminCog(commands.Cog, name="Admin"):
             if len(args) < 2:
                 return await ctx.send("-# `.alias remove <name>`")
             name = args[1].lower().lstrip(".")
-            data = load_json(ALIASES_FILE) or {}
-            if name not in data:
-                return await ctx.send(f"-# `{name}` isn't a custom alias")
-            del data[name]
-            save_json(ALIASES_FILE, data)
-            invalidate_aliases()
+            async with self._aliases_lock:
+                data = load_json(ALIASES_FILE) or {}
+                if name not in data:
+                    return await ctx.send(f"-# `{name}` isn't a custom alias")
+                del data[name]
+                save_json(ALIASES_FILE, data)
+                invalidate_aliases()
             return await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
 
         # add — accepts both `.alias add <new> <target>` and `.alias <new> <target>`
@@ -221,10 +233,11 @@ class AdminCog(commands.Cog, name="Admin"):
                 f"-# `{new_name}` is already a command (or built-in alias)"
             )
 
-        data = load_json(ALIASES_FILE) or {}
-        data[new_name] = target
-        save_json(ALIASES_FILE, data)
-        invalidate_aliases()
+        async with self._aliases_lock:
+            data = load_json(ALIASES_FILE) or {}
+            data[new_name] = target
+            save_json(ALIASES_FILE, data)
+            invalidate_aliases()
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     async def _show_alias_list(self, ctx):

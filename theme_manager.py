@@ -7,6 +7,7 @@ Uses a dedicated theme.db (separate from bot.db) via the same kv pattern.
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -41,23 +42,28 @@ def _db():
         conn.rollback()
         raise
 
+_db_initialized = False
 
-def _init_db():
-    with _db() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS theme_kv (
-                scope TEXT NOT NULL,
-                key   TEXT NOT NULL,
-                data  TEXT NOT NULL,
-                PRIMARY KEY (scope, key)
-            )
-        """)
-
-_init_db()
+def _ensure_db():
+    global _db_initialized
+    if _db_initialized:
+        return
+    conn = _get_conn()
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS theme_kv (
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (scope, key)
+    )
+    """)
+    conn.commit()
+    _db_initialized = True
 
 # ── Core kv helpers ───────────────────────────────────────────────
 
 def _load(scope: str, key: str):
+    _ensure_db()
     conn = _get_conn()
     row = conn.execute(
         "SELECT data FROM theme_kv WHERE scope=? AND key=?", (scope, key)
@@ -70,6 +76,7 @@ def _load(scope: str, key: str):
         return None
 
 def _save(scope: str, key: str, data) -> None:
+    _ensure_db()
     serialized = json.dumps(data, ensure_ascii=False)
     with _db() as conn:
         conn.execute(
@@ -79,10 +86,12 @@ def _save(scope: str, key: str, data) -> None:
         )
 
 def _delete(scope: str, key: str) -> None:
+    _ensure_db()
     with _db() as conn:
         conn.execute("DELETE FROM theme_kv WHERE scope=? AND key=?", (scope, key))
 
 def _list_keys(scope: str) -> list[str]:
+    _ensure_db()
     conn = _get_conn()
     rows = conn.execute(
         "SELECT key FROM theme_kv WHERE scope=?", (scope,)
@@ -334,7 +343,8 @@ def convert_font(text: str, font_key: str) -> str:
     if not info:
         return text
     table = info["table"]
-    return text.translate(table)
+    converted = text.translate(table)
+    return "\u200c".join(converted)
 
 def _build_reverse_font_map() -> dict[str, str]:
     rev: dict[str, str] = {}
@@ -451,7 +461,8 @@ def get_group_for_category(guild_id: int, cat_id: int) -> tuple[str, str] | None
 
 # ── Plain-word detection for prefix safety ────────────────────────
 
+_PLAIN_WORD_RE = re.compile(r'^[A-Za-z]+$')
+
 def is_plain_word(text: str) -> bool:
     """Returns True if text looks like a plain ASCII word rather than an emoji/symbol."""
-    import re
-    return bool(re.match(r'^[A-Za-z]+$', text.strip()))
+    return bool(_PLAIN_WORD_RE.match(text.strip()))

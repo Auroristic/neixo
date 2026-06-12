@@ -28,6 +28,7 @@ class Vanity(commands.Cog):
         self.bot = bot
         self.conn = None
         self.db_ready = False
+        self._welcomed = set()
 
     async def cog_load(self):
         self.conn = await aiosqlite.connect(DB_PATH)
@@ -171,16 +172,28 @@ class Vanity(commands.Cog):
             if role_id:
                 role = after.guild.get_role(role_id)
                 if role and role not in after.roles:
-                    await after.add_roles(role, reason="Vanity substring matched.")
-                    if channel_id and channel_msg:
-                        channel = self.bot.get_channel(channel_id)
-                        if channel:
-                            await channel.send(self.format_msg(channel_msg, after))
+                    try:
+                        if after.guild.me.guild_permissions.manage_roles and role < after.guild.me.top_role:
+                            await after.add_roles(role, reason="Vanity substring matched.")
+                    except discord.Forbidden:
+                        pass
+            if channel_id and channel_msg and after.id not in self._welcomed:
+                channel = self.bot.get_channel(channel_id)
+                if channel:
+                    self._welcomed.add(after.id)
+                    await channel.send(
+                        self.format_msg(channel_msg, after),
+                        allowed_mentions=discord.AllowedMentions(users=[after])
+                    )
         else:
             if role_id:
                 role = after.guild.get_role(role_id)
                 if role and role in after.roles:
-                    await after.remove_roles(role, reason="Vanity substring no longer present.")
+                    try:
+                        if after.guild.me.guild_permissions.manage_roles:
+                            await after.remove_roles(role, reason="Vanity substring no longer present.")
+                    except discord.Forbidden:
+                        pass
 
     @vanity.error
     async def vanity_error(self, ctx, error):

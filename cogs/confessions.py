@@ -1,15 +1,25 @@
+import asyncio
+import re
+
 import discord
 from discord.ext import commands
 from datetime import datetime, timedelta, timezone
 
 from utils import (
-    load_json, save_json, get_embed_color, get_config, invalidate_config,
-    log_audit, help_meta,
+    load_json, save_json, get_embed_color, get_config,
+    log_audit, help_meta, get_next_confession_id,
     CONFESSIONS_FILE, CONFIG_FILE, SEOULITIES_SERVER_ID
 )
 
 
 # ── cogs/confessions.py ─────────────────────────────────────────
+URL_RE = re.compile(
+    r'(https?://|www\.)[^\s]+|'
+    r'[^\s]*\.(com|net|org|gg|io|co|me|xyz|dev|app|ru|cn)\b|'
+    r'discord\.(gg|com/invite)|bit\.ly|tinyurl\.com|t\.co',
+    re.IGNORECASE
+)
+
 COG_META = {
     "category": "staff",
     "label": "Staff",
@@ -36,9 +46,8 @@ class ConfessionModal(discord.ui.Modal, title="Submit Anonymous Confession"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             text = self.confession_text.value.lower()
-            blocked_patterns = ['http://', 'https://', 'www.', '.com', '.net', '.org', '.gg', 'discord.gg', '.io', '.co', '.me']
             
-            if any(pattern in text for pattern in blocked_patterns):
+            if URL_RE.search(text):
                 await interaction.response.send_message(
                     "? Links and URLs are not allowed in confessions!",
                     ephemeral=True
@@ -80,8 +89,7 @@ class ConfessionModal(discord.ui.Modal, title="Submit Anonymous Confession"):
                 return
             
             confessions = load_json(CONFESSIONS_FILE)
-            guild_confessions = [c for c in confessions.values() if c.get('guild_id') == str(interaction.guild_id)]
-            confession_id = (max(c['id'] for c in guild_confessions) if guild_confessions else 0) + 1
+            confession_id = get_next_confession_id(interaction.guild_id)
 
             embed = discord.Embed(
                     title="Anonymous Confession",
@@ -95,6 +103,8 @@ class ConfessionModal(discord.ui.Modal, title="Submit Anonymous Confession"):
             message = await channel.send(embed=embed, view=view)
             
             confession_key = f"{interaction.guild_id}_{confession_id}"
+            # WARNING: user_id stored in plaintext for staff .cid lookups.
+            # This means confession authorship is permanently recorded.
             confessions[confession_key] = {
                 'id': confession_id,
                 'guild_id': str(interaction.guild_id),
@@ -143,9 +153,7 @@ class ReplyModal(discord.ui.Modal, title="Reply Anonymously"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             text = self.reply_text.value.lower()
-            blocked_patterns = ['http://', 'https://', 'www.', '.com', '.net', '.org', '.gg', 'discord.gg', '.io', '.co', '.me']
-            
-            if any(pattern in text for pattern in blocked_patterns):
+            if URL_RE.search(text):
                 await interaction.response.send_message(
                     "u aint sending links buddy, back off.",
                     ephemeral=True
@@ -213,8 +221,10 @@ class ReplyModal(discord.ui.Modal, title="Reply Anonymously"):
                     )
                     return
             
-            confessions_list = load_json(CONFESSIONS_FILE)
-            reply_count = sum(len(c.get('replies', [])) for c in confessions_list.values())
+            reply_count = sum(
+                len(c.get('replies', [])) for c in confessions.values()
+                if c.get('guild_id') == str(interaction.guild_id)
+            )
             reply_id = reply_count + 1
             
             reply_embed = discord.Embed(
@@ -278,6 +288,26 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.user_cooldowns = {}
+        self._cooldown_cleanup_task = None
+
+    async def cog_load(self):
+        self._cooldown_cleanup_task = asyncio.create_task(self._cooldown_cleanup_loop())
+
+    async def cog_unload(self):
+        if self._cooldown_cleanup_task and not self._cooldown_cleanup_task.done():
+            self._cooldown_cleanup_task.cancel()
+
+    async def _cooldown_cleanup_loop(self):
+        try:
+            await self.bot.wait_until_ready()
+            while not self.bot.is_closed():
+                now = datetime.now(timezone.utc)
+                expired = [uid for uid, expires in self.user_cooldowns.items() if expires <= now]
+                for uid in expired:
+                    self.user_cooldowns.pop(uid, None)
+                await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            pass
 
     @help_meta(
         usage="`.cid latest | number | user <id>`",

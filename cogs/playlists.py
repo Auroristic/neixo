@@ -5,6 +5,7 @@ from utils import (
     save_playlist, load_playlist, delete_playlist, list_playlists,
     get_embed_color, help_meta
 )
+from cogs.music_helpers import _is_track_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +83,13 @@ class Playlists(commands.Cog):
                         t = next((x for x in t.tracks if x.length and x.length <= 30*60*1000), None)
                         if t is None:
                             continue
+                    ok, reason = _is_track_allowed(t)
+                    if not ok:
+                        continue
                     await player.queue.put_wait(t)
                     added += 1
                 except Exception:
-                    logger.warning(f"Failed to add track: %s", track)
+                    logger.warning("Failed to add track: %s", track)
                     continue
             
             if added == 0:
@@ -115,6 +119,14 @@ class Playlists(commands.Cog):
         
         # Extract track names/URLs from queue
         tracks = []
+        current = getattr(player, 'current', None)
+        if current is not None:
+            if hasattr(current, 'uri') and current.uri:
+                tracks.append(current.uri)
+            elif hasattr(current, 'title') and hasattr(current, 'author'):
+                tracks.append(f"{current.author} - {current.title}")
+            else:
+                tracks.append(str(current))
         for track in player.queue:
             # Try to get searchable identifier
             if hasattr(track, 'uri') and track.uri:
@@ -149,13 +161,22 @@ class Playlists(commands.Cog):
         import wavelink
         player = ctx.voice_client
         if not player:
-            await ctx.send("No active player! Join a voice channel and play something first.")
-            return
+            if not ctx.author.voice or not ctx.author.voice.channel:
+                await ctx.send("You need to be in a voice channel first!")
+                return
+            try:
+                player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+                player.autoplay = wavelink.AutoPlayMode.disabled
+                if not hasattr(player, "home"):
+                    player.home = ctx.channel
+            except Exception as e:
+                await ctx.send(f"Failed to connect: {e}")
+                return
         
         added = 0
-        for track in tracks:
+        for track_data in tracks:
             try:
-                results = await wavelink.Playable.search(track)
+                results = await wavelink.Playable.search(track_data)
                 if not results:
                     continue
                 t = results[0] if isinstance(results, list) else results
@@ -163,12 +184,23 @@ class Playlists(commands.Cog):
                     t = next((x for x in t.tracks if x.length and x.length <= 30*60*1000), None)
                     if t is None:
                         continue
+                ok, reason = _is_track_allowed(t)
+                if not ok:
+                    continue
                 await player.queue.put_wait(t)
                 added += 1
             except Exception:
                 continue
         
-        await ctx.send(f"Added {added}/{len(tracks)} tracks from playlist `{name}` to queue.")
+        if added == 0:
+            await ctx.send("Could not add any tracks from the playlist.")
+        else:
+            await ctx.send(f"Added {added}/{len(tracks)} tracks from playlist `{name}` to queue!")
+            if not player.playing and not player.queue.is_empty:
+                try:
+                    await player.play(player.queue.get())
+                except Exception as e:
+                    logger.warning("failed to start loaded playlist: %s", e)
 
     @playlist.command(aliases=["del"])
     @help_meta(section="Music", usage=".playlist delete <name>", desc="Delete a playlist")

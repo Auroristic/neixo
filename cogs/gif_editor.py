@@ -14,6 +14,34 @@ import re as _re
 
 from utils import get_embed_color, check_gif_cooldown, gif_cooldown_msg, help_meta
 
+# ── Font paths (Ubuntu 22 compatible) ──────────────────────────────
+_FONT_REG_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSans-Regular.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+]
+_FONT_BOLD_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Bold.ttf",
+    "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSans-Bold.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+]
+
+def _load_font(size: int, bold: bool = False):
+    for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
 # ── cogs/gif_editor.py ──────────────────────────────────────────
 COG_META = {
     "category": "image",
@@ -126,17 +154,17 @@ async def get_image_from_ctx(ctx) -> tuple[bytes | None, bool]:
                                 if resp.status == 200:
                                     return await resp.read(), image_url.lower().endswith('.gif')
                     else:
-                        gif_path = await asyncio.get_event_loop().run_in_executor(
-                            None, tenor_fetch, image_url
-                        )
+                        gif_path = await asyncio.to_thread(tenor_fetch, image_url)
                         if gif_path:
-                            with open(gif_path, "rb") as f:
-                                data = f.read()
                             try:
-                                os.unlink(gif_path)
-                            except Exception:
-                                pass
-                            return data, True
+                                with open(gif_path, "rb") as f:
+                                    data = f.read()
+                                return data, True
+                            finally:
+                                try:
+                                    os.unlink(gif_path)
+                                except Exception:
+                                    pass
                 else:
                     async with aiohttp.ClientSession() as session:
                         async with session.get(image_url) as resp:
@@ -219,7 +247,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 with Image.open(io.BytesIO(image_bytes)) as img_obj:
                     img_converted = img_obj.convert("RGBA")
                     img_converted.thumbnail((600, 600), Image.Resampling.LANCZOS)
-                    frames = [img_converted] * 2
+                    frames = [img_converted.copy()] * 2
                     b = io.BytesIO()
                     frames[0].save(
                         b,
@@ -261,7 +289,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not img_bytes:
                     return await ctx.send("❌ Reply to an image to create a fade GIF.")
 
-                img_obj = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+                with Image.open(io.BytesIO(img_bytes)) as img:
+                    img_obj = img.convert("RGBA")
                 img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
                 bg_layer = Image.new("RGBA", img_obj.size, COLORS[color])
@@ -285,7 +314,6 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     return await ctx.send("❌ GIF too large! Try a smaller source image.")
                 ioB.seek(0)
                 await ctx.reply(file=discord.File(fp=ioB, filename=f"{name}_{color}.gif"))
-                img_obj.close()
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -304,7 +332,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not image_bytes:
                     return await ctx.send("❌ Attach or reply to an image.")
 
-                img_obj = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+                with Image.open(io.BytesIO(image_bytes)) as img:
+                    img_obj = img.convert("RGBA")
                 img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
                 frames = []
@@ -343,7 +372,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
             if not img_bytes:
                 return await ctx.send("Reply to an image to use this command.")
 
-            so = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            with Image.open(io.BytesIO(img_bytes)) as img:
+                so = img.convert("RGB")
             so.thumbnail((600, 600), Image.Resampling.LANCZOS)
             orig_w, orig_h = so.size
 
@@ -394,7 +424,6 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
             )
             ioB.seek(0)
             await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}.gif"))
-            so.close()
 
     # ─────────────────────────────────────────────────────────
     # .bouncegif — bounce with easing
@@ -411,7 +440,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not image_bytes:
                     return await ctx.send("❌ Attach or reply to an image.")
 
-                img_obj = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+                with Image.open(io.BytesIO(image_bytes)) as img:
+                    img_obj = img.convert("RGBA")
                 img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
                 w, h = img_obj.size
@@ -451,10 +481,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
             try:
                 frames = []
                 bg = Image.new("RGB", (400, 200), "white")
-                try:
-                    font = ImageFont.truetype("arial.ttf", 32)
-                except Exception:
-                    font = ImageFont.load_default()
+                font = _load_font(32)
 
                 current = ""
                 for char in text[:30]:
@@ -501,7 +528,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not img_bytes:
                     return await ctx.send("Reply to an image to use this command.")
 
-                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                with Image.open(io.BytesIO(img_bytes)) as img:
+                    img = img.convert("RGB")
                 w, h = img.size
                 new_size = (w * factor_int, h * factor_int)
                 if new_size[0] > 4000 or new_size[1] > 4000:
@@ -512,7 +540,6 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 upscaled.save(ioB, format='PNG')
                 ioB.seek(0)
                 await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}_{factor_int}x.png"))
-                img.close()
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -537,7 +564,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not img_bytes:
                     return await ctx.send("Reply to an image to use this command.")
 
-                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                with Image.open(io.BytesIO(img_bytes)) as img:
+                    img = img.convert("RGB")
                 w, h = img.size
                 new_size = (max(1, w // factor_int), max(1, h // factor_int))
                 downscaled = img.resize(new_size, Image.Resampling.LANCZOS)
@@ -545,7 +573,6 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 downscaled.save(ioB, format='PNG')
                 ioB.seek(0)
                 await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}_{factor_int}x.png"))
-                img.close()
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -570,7 +597,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not img_bytes:
                     return await ctx.send("Reply to an image to use this command.")
 
-                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                with Image.open(io.BytesIO(img_bytes)) as img:
+                    img = img.convert("RGB")
                 orig_size = img.size
                 small_size = (max(1, orig_size[0] // factor_int), max(1, orig_size[1] // factor_int))
                 temp_small = img.resize(small_size, Image.Resampling.BILINEAR)
@@ -579,7 +607,6 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 final.save(ioB, format='PNG')
                 ioB.seek(0)
                 await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}_{factor_int}x.png"))
-                img.close()
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -616,7 +643,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not img_bytes:
                     return await ctx.send("No image found in that message.")
 
-                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                with Image.open(io.BytesIO(img_bytes)) as img:
+                    img = img.convert("RGB")
                 w, h = img.size
                 hex_color = COLORS_DICT[color]
 
@@ -645,7 +673,6 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 bg.save(ioB, format='PNG')
                 ioB.seek(0)
                 await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}.png"))
-                img.close()
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -681,26 +708,31 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
             frame = frame.convert("RGBA")
             fw, fh = frame.size
             pw, ph = pov_mask.size
-            scale = fw / pw
+            scale = max(fw / pw, fh / ph)
+            new_pw = int(pw * scale)
             new_ph = int(ph * scale)
-            scaled_mask = pov_mask.resize((fw, new_ph), Image.Resampling.LANCZOS)
+            scaled_mask = pov_mask.resize((new_pw, new_ph), Image.Resampling.LANCZOS)
             frame_pixels = frame.load()
             mask_pixels = scaled_mask.load()
+            x_offset = (new_pw - fw) // 2
+            y_offset = (new_ph - fh) // 2
             for y in range(min(new_ph, fh)):
                 for x in range(fw):
-                    if mask_pixels[x, y][3] < 255:
+                    mx = x + x_offset
+                    my = y + y_offset
+                    if 0 <= mx < new_pw and 0 <= my < new_ph and mask_pixels[mx, my][3] < 255:
                         frame_pixels[x, y] = (0, 0, 0, 0)
             return frame
 
         output_buffer = io.BytesIO()
         if is_gif:
-            input_gif = Image.open(io.BytesIO(img_bytes))
-            frames = []
-            durations = []
-            for frame in ImageSequence.Iterator(input_gif):
-                frame = frame.convert("RGBA")
-                durations.append(frame.info.get("duration", 100))
-                frames.append(apply_mask(frame))
+            with Image.open(io.BytesIO(img_bytes)) as input_gif:
+                frames = []
+                durations = []
+                for frame in ImageSequence.Iterator(input_gif):
+                    frame = frame.convert("RGBA")
+                    durations.append(frame.info.get("duration", 100))
+                    frames.append(apply_mask(frame))
 
             if len(frames) > 1:
                 frames[0].save(
@@ -711,8 +743,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 frames[0].save(output_buffer, format="GIF", duration=durations[0], loop=0)
             filename = "this_u.gif"
         else:
-            input_image = Image.open(io.BytesIO(img_bytes))
-            final_image = apply_mask(input_image)
+            with Image.open(io.BytesIO(img_bytes)) as input_image:
+                final_image = apply_mask(input_image)
             final_image.save(output_buffer, format="PNG")
             filename = "this_u.png"
 

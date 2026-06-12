@@ -73,6 +73,7 @@ class Music(commands.Cog):
         # the queue auto-advance for the *replaced* track is suppressed.
         self._prev_pressed: set[int] = set()
         self._session_stats: dict[int, dict] = {}
+        self._disconnecting: set[int] = set()
 
     async def cog_load(self) -> None:
         """Initialize HTTP session when cog loads"""
@@ -162,7 +163,7 @@ class Music(commands.Cog):
                 return syncedlyrics.search(query)
             except Exception:
                 return None
-        return await asyncio.get_event_loop().run_in_executor(None, sync_search)
+        return await asyncio.get_running_loop().run_in_executor(None, sync_search)
 
     async def _lrclib_lyrics(self, artist: str, title: str) -> Optional[Tuple[str, Optional[List[Tuple[int, str]]]]]:
         url = f"https://lrclib.net/api/get?artist_name={urllib.parse.quote(artist)}&track_name={urllib.parse.quote(title)}"
@@ -365,6 +366,12 @@ class Music(commands.Cog):
         else:
             if not user_vc:
                 await ctx.send(embed=_err_embed("join a voice channel first.", ctx))
+                return False
+            if not user_vc.permissions_for(ctx.guild.me).connect:
+                await ctx.send(embed=_err_embed("i need `connect` permission in that voice channel.", ctx))
+                return False
+            if not user_vc.permissions_for(ctx.guild.me).speak:
+                await ctx.send(embed=_err_embed("i need `speak` permission in that voice channel.", ctx))
                 return False
         return True
 
@@ -608,8 +615,7 @@ class Music(commands.Cog):
             async def _resolve_one(name: str):
                 async with sem:
                     results = await self._yt_search_with_retry(name + " audio", source="ytsearch")
-                if not results:
-                    async with sem:
+                    if not results:
                         results = await self._yt_search_with_retry(name, source="ytsearch")
                 if not results:
                     return None
@@ -800,30 +806,38 @@ class Music(commands.Cog):
             if vc and vc.channel == before.channel:
                 humans = [m for m in before.channel.members if not m.bot]
                 if not humans:
-                    await asyncio.sleep(180)  # wait 3 minutes
-                    # re-check after sleep — someone may have rejoined
-                    vc = guild.voice_client
-                    if vc and vc.channel == before.channel:
-                        humans = [m for m in before.channel.members if not m.bot]
-                        if not humans:
-                            guild_id = guild.id
-                            self._cancel_live_lyrics(guild_id)
-                            player: wavelink.Player = cast(wavelink.Player, vc)
-                            np_view = self._np_views.pop(guild_id, None)
-                            if np_view:
-                                await np_view.deactivate()
-                                if np_view.message:
-                                    try:
-                                        await np_view.message.delete()
-                                    except discord.HTTPException:
-                                        pass
-                            self._history.pop(guild_id, None)
-                            self._track_locks.pop(guild_id, None)
-                            self._prev_pressed.discard(guild_id)
-                            home = getattr(player, "home", None)
-                            await player.disconnect()
-                            if home:
-                                await home.send(embed=_ok_embed("everyone left — disconnected.", guild.id))
+                    guild_id = guild.id
+                    if guild_id in self._disconnecting:
+                        return
+                    self._disconnecting.add(guild_id)
+                    try:
+                        await asyncio.sleep(180)  # wait 3 minutes
+                        # re-check after sleep — someone may have rejoined
+                        vc = guild.voice_client
+                        if vc and vc.channel == before.channel:
+                            humans = [m for m in before.channel.members if not m.bot]
+                            if not humans:
+                                self._cancel_live_lyrics(guild_id)
+                                player: wavelink.Player = cast(wavelink.Player, vc)
+                                np_view = self._np_views.pop(guild_id, None)
+                                if np_view:
+                                    await np_view.deactivate()
+                                    if np_view.message:
+                                        try:
+                                            await np_view.message.delete()
+                                        except discord.HTTPException:
+                                            pass
+                                self._history.pop(guild_id, None)
+                                self._track_locks.pop(guild_id, None)
+                                self._prev_pressed.discard(guild_id)
+                                self._session_stats.pop(guild_id, None)
+                                self._live_msgs.pop(guild_id, None)
+                                home = getattr(player, "home", None)
+                                await player.disconnect()
+                                if home:
+                                    await home.send(embed=_ok_embed("everyone left — disconnected.", guild.id))
+                    finally:
+                        self._disconnecting.discard(guild_id)
 
         if member.id != self.bot.user.id:
             return
@@ -841,6 +855,8 @@ class Music(commands.Cog):
             self._history.pop(guild_id, None)
             self._track_locks.pop(guild_id, None)
             self._prev_pressed.discard(guild_id)
+            self._session_stats.pop(guild_id, None)
+            self._live_msgs.pop(guild_id, None)
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload) -> None:
@@ -870,9 +886,6 @@ class Music(commands.Cog):
             active_view = self._np_views.get(guild_id)
             if active_view:
                 asyncio.create_task(self._schedule_lyrics_fetch(player, track, active_view))
-
-
-
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(
@@ -1030,9 +1043,6 @@ class Music(commands.Cog):
             or ctx.author.guild_permissions.manage_guild
             or (player.current and getattr(player.current, "requester_id", None) == ctx.author.id)
         ):
-            if player.current and getattr(player.current, "requester_id", None) == ctx.author.id and not ctx.author.guild_permissions.manage_guild and len(listeners) > 1:
-                await player.skip(force=True)
-                return await ctx.send(embed=_ok_embed("skipped your own track.", ctx))
             await player.skip(force=True)
             return await ctx.send(embed=_ok_embed("skipped.", ctx))
 
@@ -1099,6 +1109,8 @@ class Music(commands.Cog):
 
         self._history.pop(guild_id, None)
         self._track_locks.pop(guild_id, None)
+        self._prev_pressed.discard(guild_id)
+        self._live_msgs.pop(guild_id, None)
         self._session_stats.pop(guild_id, None)
         await player.disconnect()
         await ctx.send(embed=_ok_embed("disconnected.", ctx))
@@ -1142,7 +1154,7 @@ class Music(commands.Cog):
     async def nowplaying(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         track = player.current
         msg = await ctx.send(embed=discord.Embed(
             description=f"**{track.title}** by {track.author}\n-# generating card...",
@@ -1180,7 +1192,7 @@ class Music(commands.Cog):
     async def loop(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         labels = {
             wavelink.QueueMode.loop: "looping **track**",
             wavelink.QueueMode.loop_all: "looping **queue**",
@@ -1199,7 +1211,7 @@ class Music(commands.Cog):
     async def shuffle(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         player.queue.shuffle()
         await ctx.send(embed=_ok_embed("queue shuffled.", ctx))
 
@@ -1233,7 +1245,8 @@ class Music(commands.Cog):
                 ms = int(parts[0]) * 1000
         except ValueError:
             return await ctx.send(embed=_err_embed("use format `1:30`, `90`, or `1:30:00`.", ctx))
-        ms = max(0, min(ms, player.current.length))
+        max_ms = player.current.length if player.current.length is not None else ms
+        ms = max(0, min(ms, max_ms))
         await player.seek(ms)
         await ctx.send(embed=_ok_embed(f"seeked to `{_fmt_time(ms)}`.", ctx))
         # Restart live lyrics if active
@@ -1249,7 +1262,8 @@ class Music(commands.Cog):
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
         player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
-        new_pos = min(player.position + seconds * 1000, player.current.length)
+        max_ms = player.current.length if player.current.length is not None else player.position + seconds * 1000
+        new_pos = min(player.position + seconds * 1000, max_ms)
         await player.seek(new_pos)
         await ctx.send(embed=_ok_embed(f"fast forwarded to `{_fmt_time(new_pos)}`.", ctx))
         guild_id = ctx.guild.id
@@ -1295,7 +1309,7 @@ class Music(commands.Cog):
     async def similar(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         vid_id = None
         if hasattr(player.current, "identifier"):
             vid_id = player.current.identifier
@@ -1321,7 +1335,9 @@ class Music(commands.Cog):
             return
         if not ctx.voice_client:
             if ctx.author.voice and ctx.author.voice.channel:
-                await ctx.author.voice.channel.connect(cls=wavelink.Player)
+                player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+                player.home = ctx.channel
+                player.autoplay = wavelink.AutoPlayMode.partial
         view = GenreView(self, ctx)
         embed = discord.Embed(
             description=f"-# {Neixoemojis.get('rightarrow')} | pick a genre to load tracks.",
@@ -1353,7 +1369,7 @@ class Music(commands.Cog):
         else:
             if not await self._check_vc(ctx) or not await self._check_playing(ctx):
                 return
-            player: wavelink.Player = ctx.voice_client
+            player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
             track = player.current
             artist = track.author
             title = track.title
@@ -1443,7 +1459,7 @@ class Music(commands.Cog):
     @help_meta(usage="`.queue`", desc="shows the queue with total duration and loop mode. paginated.", section="Controls")
     @commands.group(name="queue", aliases=["q"], invoke_without_command=True)
     async def queue_group(self, ctx: commands.Context) -> None:
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         if not player or not player.current:
             return await ctx.send(embed=_err_embed("nothing playing.", ctx))
         if player.autoplay == wavelink.AutoPlayMode.enabled and player.queue.is_empty:
@@ -1460,7 +1476,7 @@ class Music(commands.Cog):
     async def queue_remove(self, ctx: commands.Context, index: int) -> None:
         if not await self._check_vc(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         q = list(player.queue)
         if not q:
             return await ctx.send(embed=_err_embed("queue is empty.", ctx))
@@ -1475,7 +1491,7 @@ class Music(commands.Cog):
     async def queue_shuffle(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         player.queue.shuffle()
         await ctx.send(embed=_ok_embed("queue shuffled.", ctx))
 
@@ -1484,7 +1500,7 @@ class Music(commands.Cog):
     async def queue_empty(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         player.queue.clear()
         await ctx.send(embed=_ok_embed("queue cleared.", ctx))
 
@@ -1493,7 +1509,7 @@ class Music(commands.Cog):
     async def queue_move(self, ctx: commands.Context, position: int, new_position: int) -> None:
         if not await self._check_vc(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         q = list(player.queue)
         if not q:
             return await ctx.send(embed=_err_embed("queue is empty.", ctx))
@@ -1522,6 +1538,7 @@ class Music(commands.Cog):
             return await ctx.send(embed=_err_embed(f"invalid position. pick 1–{len(q)}.", ctx))
         target = q[position - 1]
         player.queue.clear()
+        await player.queue.put_wait(target)
         for t in q[position:]:
             await player.queue.put_wait(t)
         await player.skip(force=True)
@@ -1532,7 +1549,7 @@ class Music(commands.Cog):
     async def queue_dedupe(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         q = list(player.queue)
         if not q:
             return await ctx.send(embed=_err_embed("queue is empty.", ctx))
@@ -1886,7 +1903,7 @@ class Music(commands.Cog):
     async def save(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         track = player.current
         embed = discord.Embed(
             description=f"**[{track.title}]({track.uri})**\nby {track.author} — {_fmt_time(track.length)}",
@@ -1996,7 +2013,7 @@ class Music(commands.Cog):
     @help_meta(usage="`.exportqueue`", desc="DMs you the current queue as clickable links.", section="Controls")
     @commands.command(aliases=["eq"])
     async def exportqueue(self, ctx: commands.Context) -> None:
-        player: wavelink.Player = ctx.voice_client
+        player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         if not player or not player.current:
             return await ctx.send(embed=_err_embed("nothing playing.", ctx))
         lines = [f"**now playing:** [{player.current.title}]({player.current.uri})"]

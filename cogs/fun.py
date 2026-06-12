@@ -23,8 +23,6 @@ COG_META = {
  
 
 
-_uwulocked: dict[int, discord.Webhook] = {}  # legacy alias kept for clarity (unused)
-
 # ── uwulock state (persisted) ───────────────────────────────────
 UWULOCKED_FILE = f"{DATA_DIR}/uwulocked.json"
 
@@ -154,7 +152,8 @@ def _uwufy(text: str) -> str:
     return _TOKEN_RE.sub(lambda m: stash[int(m.group(1))], text)
 
 async def _get_or_make_webhook(
-    channel: discord.TextChannel, member: discord.Member
+    channel: discord.TextChannel, member: discord.Member,
+    session: _aiohttp.ClientSession | None = None,
 ) -> discord.Webhook:
     """Return a webhook for (member, channel), creating one if needed.
     Each (user, channel) pair gets its own webhook so per-channel locks coexist."""
@@ -172,10 +171,16 @@ async def _get_or_make_webhook(
 
     avatar_bytes = None
     try:
-        async with _aiohttp.ClientSession() as s:
-            async with s.get(str(member.display_avatar.url)) as r:
+        own_session = session is None
+        if own_session:
+            session = _aiohttp.ClientSession()
+        try:
+            async with session.get(str(member.display_avatar.url)) as r:
                 if r.status == 200:
                     avatar_bytes = await r.read()
+        finally:
+            if own_session:
+                await session.close()
     except Exception as e:
         log.warning(f"avatar download error: {e}")
 
@@ -190,8 +195,10 @@ async def _get_or_make_webhook(
 class FunCog(commands.Cog, name="Fun"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.session: _aiohttp.ClientSession | None = None
 
     async def cog_load(self):
+        self.session = _aiohttp.ClientSession()
         _load_state(self.bot)
 
     async def cog_unload(self):
@@ -202,6 +209,8 @@ class FunCog(commands.Cog, name="Fun"):
                 pass
         _lock_scopes.clear()
         _webhooks.clear()
+        if self.session:
+            await self.session.close()
 
     async def _gc_webhooks_for(self, user_id: int) -> None:
         """Delete cached webhooks the user no longer needs after a scope change."""
@@ -344,14 +353,12 @@ class FunCog(commands.Cog, name="Fun"):
 
         try:
             try:
-                wh = await _get_or_make_webhook(message.channel, message.author)
+                wh = await _get_or_make_webhook(message.channel, message.author, self.session)
             except Exception as e:
                 log.warning(f"uwulock webhook issue: {e}")
                 return
 
             uwufied = _uwufy(message.content) if message.content else ""
-            if not uwufied:
-                return
 
             files = []
             for att in message.attachments:
@@ -359,6 +366,9 @@ class FunCog(commands.Cog, name="Fun"):
                     files.append(await att.to_file())
                 except Exception as e:
                     log.warning(f"uwulock attachment download: {e}")
+
+            if not uwufied and not files:
+                return
 
             await message.delete()
 
