@@ -3,9 +3,9 @@ import logging
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone, timedelta
-from contextlib import contextmanager
 import time
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 
 DATA_DIR = "data"
 DB_FILE  = f"{DATA_DIR}/bot.db"
@@ -72,7 +72,7 @@ def _ensure_db():
             PRIMARY KEY (filepath)
         )
     """)
-    
+
     # NEW: Per-guild avatars table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS guild_avatars (
@@ -82,7 +82,7 @@ def _ensure_db():
             PRIMARY KEY (guild_id, user_id)
         )
     """)
-    
+
     # NEW: Music playlists table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS playlists (
@@ -92,7 +92,7 @@ def _ensure_db():
             PRIMARY KEY (user_id, name)
         )
     """)
-    
+
     # NEW: XP and leveling table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS user_xp (
@@ -105,7 +105,7 @@ def _ensure_db():
             PRIMARY KEY (user_id, guild_id)
         )
     """)
-    
+
     # NEW: Level roles table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS level_roles (
@@ -115,7 +115,7 @@ def _ensure_db():
             PRIMARY KEY (guild_id, level)
         )
     """)
-    
+
     _db_initialized = True
 
 # ── List-file detection (same logic as before) ───────────────────
@@ -180,7 +180,7 @@ def migrate_json_files():
         if not os.path.exists(fp):
             continue
         try:
-            with open(fp, "r", encoding="utf-8") as f:
+            with open(fp, encoding="utf-8") as f:
                 data = json.load(f)
             # Only import if SQLite doesn't already have this key
             with _db() as conn:
@@ -431,6 +431,7 @@ def imagine_cooldown_msg(seconds):
 # ── Constants ────────────────────────────────────────────────────
 
 from neixoconfig import SeoulitiesServerID as SEOULITIES_SERVER_ID
+
 CREATOR_ID           = int(os.getenv("CREATOR_ID", "887382911924441139"))
 
 
@@ -678,7 +679,7 @@ def add_xp(user_id: int | str, guild_id: int | str, xp_amount: int = 10, message
         level_up_info["level"] = new_level
         level_up_info["messages"] = new_messages
         level_up_info["voice_minutes"] = new_voice
-    
+
     return level_up_info
 
 

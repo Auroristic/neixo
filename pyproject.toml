@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "neixo"
+version = "0.1.0"
+description = "Feature-rich Discord bot with music, AI, leveling, and more"
+requires-python = ">=3.10"
+dependencies = [
+    "discord.py>=2.4.0",
+    "wavelink>=3.4.0",
+    "python-dotenv",
+    "openai",
+    "duckduckgo_search",
+    "aiohttp",
+    "Pillow",
+    "curl_cffi",
+    "beautifulsoup4",
+    "aiosqlite",
+    "syncedlyrics",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.5.0",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "S", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]

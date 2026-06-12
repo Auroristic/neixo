@@ -15,8 +15,7 @@ import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from neixoconfig import Neixocolor, Neixoname
-from utils import DATA_DIR, get_embed_color, help_meta
+from utils import DATA_DIR, help_meta
 
 log = logging.getLogger(__name__)
 

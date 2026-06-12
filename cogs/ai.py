@@ -1,15 +1,15 @@
 from __future__ import annotations
+
 import asyncio
+import importlib
+import ipaddress
 import itertools
+import json
 import os
 import re
-import json
-import ipaddress
 import time as _time
-import importlib
-from datetime import datetime, timezone
 from collections import OrderedDict
-from typing import Optional
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 
@@ -17,20 +17,31 @@ def _now_iso() -> str:
     """UTC timestamp in ISO format. Replaces deprecated datetime.utcnow()."""
     return datetime.now(timezone.utc).isoformat()
 
+import base64
+import io
+
+import aiohttp
 import discord
+from bs4 import BeautifulSoup
+from ddgs import DDGS
 from discord.ext import commands
 from openai import AsyncOpenAI
-from ddgs import DDGS
-import io
-import aiohttp
-import base64
-from bs4 import BeautifulSoup
 
 from utils import (
-    load_json, save_json, get_embed_color, get_config, invalidate_config,
-    invalidate_dm_whitelist, is_owner_or_creator, CREATOR_ID,
-    DATA_DIR, CONFIG_FILE, CONVERSATIONS_FILE, BOT_MEMORY_FILE,
-    DM_WHITELIST_FILE, get_current_date_line, help_meta
+    BOT_MEMORY_FILE,
+    CONFIG_FILE,
+    CONVERSATIONS_FILE,
+    CREATOR_ID,
+    DATA_DIR,
+    DM_WHITELIST_FILE,
+    get_current_date_line,
+    get_embed_color,
+    help_meta,
+    invalidate_config,
+    invalidate_dm_whitelist,
+    is_owner_or_creator,
+    load_json,
+    save_json,
 )
 
 
@@ -87,7 +98,7 @@ _MEDIA_FILE_URL_RE = re.compile(
 
 
 _XML_TOOL_CALL_RE = re.compile(r'<invoke\s+name="([^"]+)"(.*?)</invoke>', re.DOTALL)
-_XML_PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)"\s+string="true">(.*?)</parameter>', re.DOTALL)
+_XML_PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)"\s+string="True">(.*?)</parameter>', re.DOTALL)
 
 def _parse_xml_tool_calls(text: str) -> list[tuple[str, dict]]:
     """Parse raw XML tool calls that some models output instead of structured tool_calls."""
@@ -257,7 +268,7 @@ class AICog(commands.Cog, name="AI"):
         self._update_keys()
 
         # aiohttp session (opened in cog_load)
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
     def _update_keys(self):
         """Rebuild _keys_list and key_cycle based on active provider."""
@@ -316,7 +327,7 @@ class AICog(commands.Cog, name="AI"):
         REQUEST_TIMEOUT = 60.0
 
         if model:
-            last_error: Optional[Exception] = None
+            last_error: Exception | None = None
             for attempt in range(len(self._keys_list)):
                 client = self._get_client(next(self.key_cycle))
                 kwargs = dict(
@@ -462,18 +473,18 @@ class AICog(commands.Cog, name="AI"):
             from cogs.help import _collect
             # Collect for non-owners, but include whitelisted (staff) commands
             categories, _ = _collect(self.bot, is_owner=False, is_wl=True, has_admin=False)
-            
+
             groups: dict[str, list[str]] = {}
             for cat_id, cat in categories.items():
                 label = str(cat["label"]).title()
                 cog_is_staff = bool(cat.get("staff"))
-                
+
                 for sec_label, cmds in cat["sections"].items():
                     for cmd_name, d in cmds:
                         usage = d.get("usage", f"`.{cmd_name}`").strip()
                         desc = d.get("desc", "").strip()
                         is_staff = cog_is_staff or bool(d.get("staff"))
-                        
+
                         line = usage
                         aliases = d.get("aliases", [])
                         if aliases:
@@ -482,7 +493,7 @@ class AICog(commands.Cog, name="AI"):
                             line += f" \u2014 {desc}"
                         if is_staff:
                             line += " [staff-only]"
-                        
+
                         groups.setdefault(label, []).append(line)
 
             # Order: Music first, General next, then Fun, then alphabetical
@@ -540,9 +551,10 @@ class AICog(commands.Cog, name="AI"):
             print(f"Image search error: {e}")
             return []
 
-    async def search_gif(self, query: str) -> Optional[str]:
+    async def search_gif(self, query: str) -> str | None:
         """Pick a GIF URL from custom gifs in neixoset.toml. No external scraping."""
         import random
+
         from neixoconfig import Neixogifs
 
         q = (query or "").lower().strip()
@@ -618,7 +630,7 @@ class AICog(commands.Cog, name="AI"):
             _log(f"Image error: {e}")
         return None
 
-    async def _generate_image(self, prompt: str, needs_text: bool = False, image_url: Optional[str] = None) -> tuple[str, list]:
+    async def _generate_image(self, prompt: str, needs_text: bool = False, image_url: str | None = None) -> tuple[str, list]:
         """Generate an image via NVIDIA NIM (FLUX.2-klein-4b)."""
         if needs_text:
             return "the current image model can't render legible text in images", []
@@ -650,7 +662,6 @@ class AICog(commands.Cog, name="AI"):
                 if artifacts:
                     b64 = artifacts[0].get("base64", "")
                     if b64:
-                        import base64 as b64mod
                         data_uri = f"data:image/png;base64,{b64}"
                         return "image generated", [data_uri]
                 img_url = data.get("data", [{}])[0].get("url") or data.get("image", "")
@@ -705,7 +716,7 @@ class AICog(commands.Cog, name="AI"):
             sent = await message.reply(text)
             self._track_ai_message(sent.id)
 
-    async def _get_image_from_message(self, message: discord.Message) -> Optional[str]:
+    async def _get_image_from_message(self, message: discord.Message) -> str | None:
         """Backwards-compat wrapper — returns the first image only."""
         images = await self._get_images_from_message(message)
         return images[0] if images else None
@@ -864,7 +875,7 @@ class AICog(commands.Cog, name="AI"):
         images: list[str] = []
         text = ""
         all_tools = [SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL]
-        status_msg: Optional[discord.Message] = None  # live "what i'm doing" message
+        status_msg: discord.Message | None = None  # live "what i'm doing" message
 
         for round_num in range(max_rounds):
             msg = response.choices[0].message
@@ -1097,7 +1108,7 @@ class AICog(commands.Cog, name="AI"):
         gifs: list[str] = []
         images: list[str] = []
         text = raw_text
-        status_msg: Optional[discord.Message] = None
+        status_msg: discord.Message | None = None
 
         for round_num in range(2):
             if not xml_tools:
@@ -1854,7 +1865,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".aiadd", ".aiadd #general"],
         params=[
-            {"name": "channel", "type": "discord.TextChannel", "required": false, "desc": "The channel to enable AI in. Defaults to current channel."},
+            {"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "The channel to enable AI in. Defaults to current channel."},
         ],
         note="Owner only.",
     )
@@ -1883,7 +1894,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".airemove", ".airemove #general"],
         params=[
-            {"name": "channel", "type": "discord.TextChannel", "required": false, "desc": "The channel to disable AI in. Defaults to current channel."},
+            {"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "The channel to disable AI in. Defaults to current channel."},
         ],
         note="Owner only.",
     )
@@ -1972,7 +1983,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".dmadd @user"],
         params=[
-            {"name": "user", "type": "discord.User", "required": true, "desc": "The user to enable DM AI for."},
+            {"name": "user", "type": "discord.User", "required": True, "desc": "The user to enable DM AI for."},
         ],
         note="Owner only.",
     )
@@ -1997,7 +2008,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".dmremove @user"],
         params=[
-            {"name": "user", "type": "discord.User", "required": true, "desc": "The user to disable DM AI for."},
+            {"name": "user", "type": "discord.User", "required": True, "desc": "The user to disable DM AI for."},
         ],
         note="Owner only.",
     )
@@ -2069,7 +2080,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".creset", ".creset @user", ".creset all"],
         params=[
-            {"name": "target", "type": "str", "required": false, "desc": "A user mention or `all` to reset everyone."},
+            {"name": "target", "type": "str", "required": False, "desc": "A user mention or `all` to reset everyone."},
         ],
         note="Owner only. Clears the AI's memory of past conversations.",
     )
@@ -2152,7 +2163,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".crefresh", ".crefresh all"],
         params=[
-            {"name": "target", "type": "str", "required": false, "desc": "Set to `all` to refresh conversations for all users."},
+            {"name": "target", "type": "str", "required": False, "desc": "Set to `all` to refresh conversations for all users."},
         ],
         note="Owner only.",
     )
@@ -2239,7 +2250,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".mreset", ".mreset @user"],
         params=[
-            {"name": "user", "type": "discord.User", "required": false, "desc": "The user to clear memory for. Omit for self."},
+            {"name": "user", "type": "discord.User", "required": False, "desc": "The user to clear memory for. Omit for self."},
         ],
         note="Owner only. Memory notes are stored separately from conversation history.",
     )
@@ -2284,8 +2295,8 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".model", ".model add gpt-4", ".model remove 2"],
         params=[
-            {"name": "action", "type": "str", "required": false, "desc": "`add` or `remove`."},
-            {"name": "value", "type": "str/int", "required": false, "desc": "Model name (for add) or index number (for remove)."},
+            {"name": "action", "type": "str", "required": False, "desc": "`add` or `remove`."},
+            {"name": "value", "type": "str/int", "required": False, "desc": "Model name (for add) or index number (for remove)."},
         ],
         note="Owner only. Multiple models race to respond; the fastest reply wins.",
     )
@@ -2390,7 +2401,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         owner=True,
         examples=[".aitoggle nvidia", ".aitoggle zen"],
         params=[
-            {"name": "provider", "type": "str", "required": true, "desc": "`nvidia` or `zen` — the AI backend to use."},
+            {"name": "provider", "type": "str", "required": True, "desc": "`nvidia` or `zen` — the AI backend to use."},
         ],
         note="Owner only.",
     )

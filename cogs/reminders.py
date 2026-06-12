@@ -2,12 +2,11 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import discord
 from discord.ext import commands
 
-from utils import load_json, save_json, get_embed_color, DATA_DIR, help_meta
+from utils import DATA_DIR, get_embed_color, help_meta, load_json, save_json
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def parse_when(s: str) -> Optional[datetime]:
+def parse_when(s: str) -> datetime | None:
     """Parse `5m`, `2h`, `2026/11/08`, `2026/11/08 14:30` etc → UTC datetime."""
     s = s.strip()
     m = _REL_RE.match(s)
@@ -59,7 +58,7 @@ def parse_when(s: str) -> Optional[datetime]:
     return None
 
 
-def parse_bday(s: str) -> Optional[str]:
+def parse_bday(s: str) -> str | None:
     """Parse a date → 'MM-DD' string. Year is ignored (yearly recurring)."""
     s = s.strip()
     for fmt in _BDAY_FMTS:
@@ -142,7 +141,7 @@ class RemindersCog(commands.Cog, name="Reminders"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._last_scan: dict[int, dict[int, str]] = {}  # guild_id → {1: "∞・", 2: "🔥"}
-        self.task: Optional[asyncio.Task] = None
+        self.task: asyncio.Task | None = None
 
     async def cog_load(self):
         self.task = asyncio.create_task(self._scheduler())

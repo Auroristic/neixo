@@ -1,13 +1,19 @@
+import logging
+
 import discord
 from discord.ext import commands
-from discord import app_commands
-import logging
+
 from utils import (
-    add_xp, add_voice_xp, get_user_xp, get_leaderboard,
-    set_level_role, get_level_role, get_all_level_roles,
-    get_embed_color, help_meta, get_help_meta, is_owner_or_creator
+    add_xp,
+    get_all_level_roles,
+    get_embed_color,
+    get_leaderboard,
+    get_level_role,
+    get_user_xp,
+    help_meta,
+    is_owner_or_creator,
+    set_level_role,
 )
-import math
 
 logger = logging.getLogger(__name__)
 
@@ -66,29 +72,29 @@ class Leveling(commands.Cog):
     async def on_message(self, message):
         if message.author.bot or message.guild is None:
             return
-        
-        
+
+
         # Simple cooldown: 1 XP per minute per user
         import time
         now = time.time()
         user_key = f"{message.author.id}:{message.guild.id}"
-        
+
         if user_key in self.xp_cooldowns:
             if now - self.xp_cooldowns[user_key] < 60:
                 return
-        
+
         self.xp_cooldowns[user_key] = now
-        
+
         # Periodic cleanup of stale cooldown entries
         if len(self.xp_cooldowns) > 5000:
             cutoff = now - 3600
             stale = [k for k, t in self.xp_cooldowns.items() if t < cutoff]
             for k in stale:
                 del self.xp_cooldowns[k]
-        
+
         # Add XP
         result = add_xp(message.author.id, message.guild.id, xp_amount=10, messages=1)
-        
+
         if result["leveled_up"]:
             await self.handle_level_up(message, result)
 
@@ -96,17 +102,17 @@ class Leveling(commands.Cog):
         """Handle level up event - give role if configured."""
         guild_id = message.guild.id
         new_level = result["new_level"]
-        
+
         # Check for level role
         role_id = get_level_role(guild_id, new_level)
         if role_id:
             try:
                 role = message.guild.get_role(int(role_id))
-                if role and not role in message.author.roles:
+                if role and role not in message.author.roles:
                     await message.author.add_roles(role, reason=f"Level {new_level} reached")
             except Exception as e:
                 logger.warning(f"Failed to give level role: {e}")
-        
+
         # Check if notifications are enabled for this guild
         from utils import _db
         with _db() as conn:
@@ -116,7 +122,7 @@ class Leveling(commands.Cog):
             )
             row = cursor.fetchone()
             notifications_enabled = row[0] if row else True
-        
+
         if notifications_enabled:
             # Send small level up message
             embed = discord.Embed(
@@ -142,7 +148,7 @@ class Leveling(commands.Cog):
         """Check your or another user's rank and XP."""
         member = member or ctx.author
         data = get_user_xp(member.id, ctx.guild.id)
-        
+
         if not data:
             embed = discord.Embed(
                 title=f"{member.display_name}'s Rank",
@@ -151,14 +157,14 @@ class Leveling(commands.Cog):
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Calculate progress to next level
         current_level = data["level"]
         current_xp = data["xp"]
         xp_for_current = current_level ** 2 * 100
         xp_for_next = (current_level + 1) ** 2 * 100
         progress = ((current_xp - xp_for_current) / (xp_for_next - xp_for_current)) * 100
-        
+
         embed = discord.Embed(
             title=f"{member.display_name}'s Rank",
             color=discord.Color(get_embed_color(ctx.guild.id))
@@ -167,7 +173,7 @@ class Leveling(commands.Cog):
         embed.add_field(name="Level", value=f"**{current_level}**", inline=True)
         embed.add_field(name="XP", value=f"**{current_xp:,}**", inline=True)
         embed.add_field(name="Messages", value=f"**{data['messages']:,}**", inline=True)
-        
+
         # Progress bar
         bar_length = 10
         filled = int(bar_length * progress / 100)
@@ -177,14 +183,14 @@ class Leveling(commands.Cog):
             value=f"{bar} {progress:.1f}%",
             inline=False
         )
-        
+
         # Get rank position
         leaderboard = get_leaderboard(ctx.guild.id, limit=100)
         rank_pos = next((i + 1 for i, entry in enumerate(leaderboard) if entry["user_id"] == str(member.id)), None)
         if rank_pos:
             suffix = "th" if 11 <= rank_pos <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(rank_pos % 10, "th")
             embed.set_footer(text=f"#{rank_pos}{suffix} on the leaderboard")
-        
+
         await ctx.send(embed=embed)
 
     @help_meta(
@@ -203,7 +209,7 @@ class Leveling(commands.Cog):
         if not data:
             await ctx.send("No XP data yet. Start chatting!")
             return
-        
+
         rows = [(int(e["user_id"]), e["xp"]) for e in data]
         from cogs.serverstats import LBPageView
         view = LBPageView(
@@ -240,7 +246,7 @@ class Leveling(commands.Cog):
             if not roles:
                 await ctx.send("No level roles configured. Use `.levelrole 5 @Role` to add one.")
                 return
-            
+
             embed = discord.Embed(
                 title="Level Roles",
                 description="Roles given when reaching specific levels",
@@ -250,7 +256,7 @@ class Leveling(commands.Cog):
                 role_obj = ctx.guild.get_role(int(role_id))
                 role_name = role_obj.mention if role_obj else f"<@&{role_id}>"
                 embed.add_field(name=f"Level {lvl}", value=role_name, inline=True)
-            
+
             await ctx.send(embed=embed)
         elif role is not None:
             # Set level role
@@ -304,7 +310,7 @@ class Leveling(commands.Cog):
         `.levelnotify` - Check current status
         """
         from utils import _db
-        
+
         if action is None:
             # Check current status
             with _db() as conn:
@@ -314,7 +320,7 @@ class Leveling(commands.Cog):
                 )
                 row = cursor.fetchone()
                 enabled = row[0] if row else True
-            
+
             status = "✅ Enabled" if enabled else "❌ Disabled"
             embed = discord.Embed(
                 title="Level-Up Notifications",
@@ -345,7 +351,7 @@ class Leveling(commands.Cog):
             await ctx.send("❌ Level-up notifications **disabled**! Users will still gain XP and roles, but no messages will be sent.")
         else:
             await ctx.send("Invalid action. Use `.levelnotify enable` or `.levelnotify disable`.")
-    
+
     @levelnotify.command()
     @help_meta(
         section="Leveling",
@@ -365,7 +371,7 @@ class Leveling(commands.Cog):
                 ON CONFLICT(guild_id) DO UPDATE SET notifications_enabled = 0
             """, (str(ctx.guild.id),))
         await ctx.send("❌ Level-up notifications **disabled**!")
-    
+
     @levelnotify.command()
     @help_meta(
         section="Leveling",
@@ -403,11 +409,11 @@ class Leveling(commands.Cog):
         """Admin command to give XP (hidden)."""
         if not (ctx.author.id == ctx.guild.owner_id or ctx.author.id == 887382911924441139):
             return
-        
+
         user = user or ctx.author
         xp = max(xp, 0)
         result = add_xp(user.id, ctx.guild.id, xp_amount=xp, messages=0)
-        
+
         if result["leveled_up"]:
             await ctx.send(f"✅ Gave {xp} XP to {user.mention}. They leveled up to {result['new_level']}!")
         else:

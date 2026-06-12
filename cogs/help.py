@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import discord
 from discord.ext import commands
-from typing import Any, Dict, Optional
 
-from utils import load_json, get_embed_color, get_config, is_owner_or_creator, CONFIG_FILE, help_meta
+from utils import get_config, get_embed_color, help_meta, is_owner_or_creator
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ def _sec_icon(sec_label: str) -> str:
 
 # ── permission helpers ────────────────────────────────────────
 
-def _can_see(d: Dict[str, Any], is_owner: bool, is_wl: bool, has_admin: bool) -> bool:
+def _can_see(d: dict[str, Any], is_owner: bool, is_wl: bool, has_admin: bool) -> bool:
     if d.get("owner") and not is_owner:
         return False
     if d.get("admin") and not (is_owner or has_admin):
@@ -114,11 +114,12 @@ def _can_see(d: Dict[str, Any], is_owner: bool, is_wl: bool, has_admin: bool) ->
 # ── runtime metadata collector ────────────────────────────────
 
 def _collect(bot: commands.Bot, is_owner: bool, is_wl: bool, has_admin: bool):
-    categories: Dict[str, Any] = {}
-    cmd_index: Dict[str, Any] = {}
+    categories: dict[str, Any] = {}
+    cmd_index: dict[str, Any] = {}
     seen_metas: set[int] = set()
 
     import sys
+
     from utils import get_help_meta
 
     def _process_command(cmd, cat_id, cat_label):
@@ -162,7 +163,7 @@ def _collect(bot: commands.Bot, is_owner: bool, is_wl: bool, has_admin: bool):
                 _process_command(subcmd, cat_id, cat_label)
 
     for cog in bot.cogs.values():
-        meta: Optional[Dict] = getattr(cog.__class__, "COG_META", None)
+        meta: dict | None = getattr(cog.__class__, "COG_META", None)
         if not meta:
             module = sys.modules.get(cog.__class__.__module__)
             meta = getattr(module, "COG_META", None)
@@ -213,7 +214,7 @@ def _build_detail_embed(
     bot: commands.Bot,
     color: int,
     cmd_name: str,
-    d: Dict[str, Any],
+    d: dict[str, Any],
     cat_label: str = "",
     sec_label: str = "",
 ) -> discord.Embed:
@@ -256,7 +257,7 @@ class HelpCog(commands.Cog, name="Help"):
         desc="Shows the full command catalogue or detailed info for a specific command.",
         examples=[".help", ".help play", ".help remind"],
         params=[
-            {"name": "command", "type": "str", "required": false, "desc": "Optional command name to get detailed info about."},
+            {"name": "command", "type": "str", "required": False, "desc": "Optional command name to get detailed info about."},
         ],
         note="Without arguments, shows a link to the web help site. Use `.help <command>` for detailed info.",
     )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import List, Optional, Tuple, cast
+from typing import cast
 
 import discord
 import wavelink
@@ -24,17 +24,17 @@ from cogs.music_helpers import (
 # ─────────────────────────────────────────────────────────────
 
 class NowPlayingView(View):
-    def __init__(self, cog: "Music", player: wavelink.Player) -> None:
+    def __init__(self, cog: Music, player: wavelink.Player) -> None:
         super().__init__(timeout=120)
         self.cog = cog
         self.player = player
-        self.message: Optional[discord.Message] = None
+        self.message: discord.Message | None = None
         self._paused = False
         self._skip_in_progress = False
-        self._lyrics_data: Optional[Tuple[str, str, str]] = None
-        self._synced_lines: Optional[List[Tuple[int, str]]] = None
+        self._lyrics_data: tuple[str, str, str] | None = None
+        self._synced_lines: list[tuple[int, str]] | None = None
         self._lyrics_cooldowns: dict[int, float] = {}
-        self._last_lyrics_msg_id: Optional[int] = None
+        self._last_lyrics_msg_id: int | None = None
 
     @discord.ui.button(label="⏮", style=discord.ButtonStyle.gray)
     async def prev_btn(self, interaction: discord.Interaction, button: Button) -> None:
@@ -147,7 +147,7 @@ class NowPlayingView(View):
 # ─────────────────────────────────────────────────────────────
 
 class SCRetryView(View):
-    def __init__(self, cog: "Music", ctx, query: str) -> None:
+    def __init__(self, cog: Music, ctx, query: str) -> None:
         super().__init__(timeout=30)
         self.cog = cog
         self.ctx = ctx
@@ -201,7 +201,7 @@ class LoopSelect(Select):
 class LoopView(View):
     def __init__(self, player: wavelink.Player, author_id: int) -> None:
         super().__init__(timeout=60)
-        self.message: Optional[discord.Message] = None
+        self.message: discord.Message | None = None
         self.add_item(LoopSelect(player, author_id))
 
     async def on_timeout(self) -> None:
@@ -267,7 +267,7 @@ class QueueView(View):
         self.player = player
         self.page = 0
         self.per_page = 10
-        self.message: Optional[discord.Message] = None
+        self.message: discord.Message | None = None
         self._sync_queue()
         self._build_buttons()
 
@@ -372,7 +372,7 @@ class LyricsPaginationView(View):
         self.title = title
         self.artist = artist
         self.current_page = 0
-        self.message: Optional[discord.Message] = None
+        self.message: discord.Message | None = None
         self._update_buttons()
 
     def _update_buttons(self):
@@ -427,7 +427,7 @@ class LyricsPaginationView(View):
 # ─────────────────────────────────────────────────────────────
 
 class GenreSelect(Select):
-    def __init__(self, cog: "Music", ctx) -> None:
+    def __init__(self, cog: Music, ctx) -> None:
         self.cog = cog
         self.ctx = ctx
         options = [
@@ -470,6 +470,6 @@ class GenreSelect(Select):
         )
 
 class GenreView(View):
-    def __init__(self, cog: "Music", ctx) -> None:
+    def __init__(self, cog: Music, ctx) -> None:
         super().__init__(timeout=60)
         self.add_item(GenreSelect(cog, ctx))

@@ -1,15 +1,15 @@
-import sqlite3 as _sql
 import asyncio
 import io
 import logging
 import re
+import sqlite3 as _sql
 
 import aiohttp
 import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from utils import get_embed_color, DATA_DIR, help_meta, is_owner_or_creator
+from utils import DATA_DIR, get_embed_color, help_meta, is_owner_or_creator
 
 log = logging.getLogger(__name__)
 
@@ -606,14 +606,14 @@ class ReactionsCog(commands.Cog, name="Reactions"):
     async def reaction_top_emoji(self, ctx, emoji: str = None):
         if not emoji:
             return await ctx.send("give me an emoji. `.rctop 😄` or `.rctop sob` or `.rctop :sob:`")
-        
+
         emoji = emoji.strip()
         emoji_name = None
         if emoji.startswith(':') and emoji.endswith(':'):
             emoji_name = emoji[1:-1]
         elif len(emoji) <= 20 and (emoji.isalnum() or '_' in emoji):
             emoji_name = emoji
-        
+
         if emoji_name:
             emoji_map = {
                 'sob': '😭', 'joy': '😂', 'heart': '❤️', 'thumbsup': '👍', 'thumbs_up': '👍',
@@ -634,7 +634,7 @@ class ReactionsCog(commands.Cog, name="Reactions"):
                 emoji = emoji_map[emoji_name.lower()]
             else:
                 return await ctx.send(f"unknown emoji name `{emoji_name}`. try the actual emoji or a common name like `sob`, `joy`, `heart`.")
-        
+
         conn = _get_react_conn()
         cx = conn.cursor()
         cx.execute("""

@@ -369,7 +369,6 @@ def detect_prefix(channel_name: str) -> str | None:
     No separator required — supports both 🔥chat and 🔥-chat formats.
     Returns the prefix string or None.
     """
-    import unicodedata
     result = []
     for ch in channel_name:
         # ascii letter, digit, or hyphen = start of real name

@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
-from neixoconfig import Neixocolor, Neixoemojis
+
+from neixoconfig import Neixoemojis
 from utils import get_embed_color
 
 

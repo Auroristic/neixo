@@ -1,6 +1,5 @@
 import asyncio
 import time
-from typing import Optional
 
 import aiohttp
 import discord
@@ -18,7 +17,7 @@ COG_META = {
 class Check(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
     async def cog_load(self):
         self.session = aiohttp.ClientSession()

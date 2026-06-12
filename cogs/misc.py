@@ -1,20 +1,25 @@
-import discord
-from discord.ext import commands
-import aiohttp
 import asyncio
+import os
 import random
 import tempfile
-import os
 import time
 import urllib.parse
-import wavelink
 from datetime import datetime, timezone
 
+import aiohttp
+import discord
+import wavelink
+from discord.ext import commands
+
 from utils import (
-    load_json, save_json, get_embed_color, get_config, invalidate_config,
-    log_audit, is_owner_or_creator, help_meta,
-    check_gif_cooldown, gif_cooldown_msg,
-    DATA_DIR, CONFIG_FILE, DM_WHITELIST_FILE, SEOULITIES_SERVER_ID
+    SEOULITIES_SERVER_ID,
+    check_gif_cooldown,
+    get_config,
+    get_embed_color,
+    gif_cooldown_msg,
+    help_meta,
+    is_owner_or_creator,
+    log_audit,
 )
 
 # ── cogs/misc.py ──────────────────────────────────────────────
@@ -166,7 +171,7 @@ class MiscCog(commands.Cog, name="Misc"):
         # memory (linux /proc; works under PM2 on ubuntu)
         rss_mb = 0.0
         try:
-            with open("/proc/self/status", "r") as f:
+            with open("/proc/self/status") as f:
                 for line in f:
                     if line.startswith("VmRSS:"):
                         rss_mb = int(line.split()[1]) / 1024
@@ -288,16 +293,16 @@ class MiscCog(commands.Cog, name="Misc"):
             guild_id = str(ctx.guild.id)
         else:
             guild_id = str(SEOULITIES_SERVER_ID)
-        
+
         # Single config load for all checks (was loading multiple times before)
         config = get_config()
         guild_config = config.get(guild_id, {})
         whitelist = guild_config.get('whitelist', [])
-        
+
         if str(ctx.author.id) not in whitelist:
             await ctx.send("no perms?")
             return
-        
+
         try:
             await user.send(message)
             await ctx.message.add_reaction("<:7079verifiedblacksimplified:1255031445806780467>")
@@ -323,29 +328,29 @@ class MiscCog(commands.Cog, name="Misc"):
             guild_id = str(ctx.guild.id)
         else:
             guild_id = str(SEOULITIES_SERVER_ID)
-        
+
         # Single config load for all checks (was loading multiple times before)
         config = get_config()
         guild_config = config.get(guild_id, {})
         whitelist = guild_config.get('whitelist', [])
-        
+
         if str(ctx.author.id) not in whitelist:
             await ctx.send("no perms?")
             return
-        
+
         try:
             dm_channel = user.dm_channel
             if not dm_channel:
                 dm_channel = await user.create_dm()
-            
+
             messages = [msg async for msg in dm_channel.history(limit=100, oldest_first=True)]
-            
+
             if not messages:
                 return await ctx.send("no messages found")
-            
+
             content = f"DM History with {user.name} — last {len(messages)} messages\n"
             content += f"fetched at {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
-            
+
             for msg in messages:
                 timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
                 text = msg.content or ""
@@ -354,7 +359,7 @@ class MiscCog(commands.Cog, name="Misc"):
                 if msg.embeds:
                     text += " [embed]"
                 content += f"[{timestamp}] {msg.author.name}: {text}\n"
-            
+
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
                 f.write(content)
                 tmppath = f.name
@@ -363,7 +368,7 @@ class MiscCog(commands.Cog, name="Misc"):
                 await ctx.send(file=discord.File(tmppath, filename=f"dm_{user.name}.txt"))
             finally:
                 os.remove(tmppath)
-            
+
         except Exception as e:
             await ctx.send(f"error: {str(e)}")
 
@@ -377,7 +382,7 @@ class EchoModal(discord.ui.Modal, title="Echo Message"):
         required=True,
         max_length=2000
     )
-    
+
     async def on_submit(self, interaction: discord.Interaction):
         try:
             await interaction.channel.send(self.message_text.value)
@@ -385,7 +390,7 @@ class EchoModal(discord.ui.Modal, title="Echo Message"):
                 "✅ Message sent!",
                 ephemeral=True
             )
-            log_audit("echo_command", interaction.guild_id, interaction.user.id, 
+            log_audit("echo_command", interaction.guild_id, interaction.user.id,
                      f"Channel: {interaction.channel.id}, Message: {self.message_text.value[:50]}")
         except Exception as e:
             await interaction.response.send_message(

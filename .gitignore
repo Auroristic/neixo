@@ -40,3 +40,18 @@ target/
 print_all_help.py
 commands.json
 /lavalink
+
+# Database files
+*.db
+
+# Migrated legacy files
+data/*.migrated
+
+# Graphify output
+graphify-out/
+
+# Python egg info
+*.egg-info/
+
+# Ruff cache
+.ruff_cache/

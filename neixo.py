@@ -10,6 +10,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_required_env = ['DISCORD_TOKEN']
+_missing = [k for k in _required_env if not os.getenv(k)]
+if _missing:
+    raise SystemExit(
+        f'Missing required env var(s): {", ".join(_missing)}. '
+        'Create a .env file (see .env.example or README.md).'
+    )
+
 import wavelink
 
 from utils import (

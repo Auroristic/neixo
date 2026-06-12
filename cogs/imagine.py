@@ -1,15 +1,16 @@
 from __future__ import annotations
-import logging
-import os
-import json
+
 import base64
 import io
+import json
+import logging
+import os
 
+import aiohttp
 import discord
 from discord.ext import commands
-import aiohttp
 
-from utils import help_meta, check_imagine_cooldown, imagine_cooldown_msg
+from utils import check_imagine_cooldown, help_meta, imagine_cooldown_msg
 
 log = logging.getLogger(__name__)
 

@@ -38,19 +38,14 @@ Commands (prefix: .):
 
 import asyncio
 import base64
-import io
 import logging
 import time
 
-import aiohttp
 import discord
 from discord.ext import commands
-from discord.ui import View, Button
+from discord.ui import Button, View
 
-from neixoconfig import Neixocolor
-from utils import help_meta
 import theme_manager as tm
-
 from cogs.theme_helpers import (
     _close_http_session,
     _edit_progress,
@@ -59,10 +54,11 @@ from cogs.theme_helpers import (
     _get_http_session,
     _is_theme_admin,
     _ok_embed,
-    _progress_bar,
     _resolve_icon_bytes,
 )
 from cogs.theme_views import ConfirmView, PreviewView, RolePickerView, RoleSlotModal
+from neixoconfig import Neixocolor
+from utils import help_meta
 
 log = logging.getLogger(__name__)
 
@@ -425,8 +421,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Setup",
         examples=[".theme setrole Owner @God Emperor", ".theme setrole Member @User"],
         params=[
-            {"name": "slot", "type": "str", "required": true, "desc": "The slot name (e.g. Owner, Admin, Member)."},
-            {"name": "role", "type": "discord.Role", "required": true, "desc": "The discord role to map to this slot."},
+            {"name": "slot", "type": "str", "required": True, "desc": "The slot name (e.g. Owner, Admin, Member)."},
+            {"name": "role", "type": "discord.Role", "required": True, "desc": "The discord role to map to this slot."},
         ],
         note="Only maps the slot. Use `.theme role` to rename the role itself.",
     )
@@ -611,8 +607,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Roles",
         examples=[".theme role Owner God Emperor", ".theme role Member Peasant"],
         params=[
-            {"name": "slot", "type": "str", "required": true, "desc": "The slot whose role to rename."},
-            {"name": "new name", "type": "str", "required": true, "desc": "The new display name for the role."},
+            {"name": "slot", "type": "str", "required": True, "desc": "The slot whose role to rename."},
+            {"name": "new name", "type": "str", "required": True, "desc": "The new display name for the role."},
         ],
         note="This actually changes the role name on Discord. Use `.theme role revert` to undo.",
     )
@@ -716,7 +712,7 @@ class ThemeCog(commands.Cog, name="Theme"):
                 async def done_btn(self_v, interaction: discord.Interaction, button: Button):
                     action["type"] = "done"
                     await interaction.response.edit_message(
-                        content=f"-# stopping here.",
+                        content="-# stopping here.",
                         view=None,
                     )
                     self_v.stop()
@@ -763,8 +759,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Roles",
         examples=[".theme roleicon Owner 👑", ".theme roleicon Admin https://i.imgur.com/icon.png"],
         params=[
-            {"name": "slot", "type": "str", "required": true, "desc": "The slot to set the icon for."},
-            {"name": "source", "type": "str", "required": false, "desc": "Emoji, image URL, or attachment. Omit to clear."},
+            {"name": "slot", "type": "str", "required": True, "desc": "The slot to set the icon for."},
+            {"name": "source", "type": "str", "required": False, "desc": "Emoji, image URL, or attachment. Omit to clear."},
         ],
         note="Requires server boost level 2 for role icons.",
     )
@@ -832,7 +828,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Roles",
         examples=[".theme role revert Owner"],
         params=[
-            {"name": "slot", "type": "str", "required": true, "desc": "The slot to restore the previous name for."},
+            {"name": "slot", "type": "str", "required": True, "desc": "The slot to restore the previous name for."},
         ],
         note="Only the most recent name change per role is stored.",
     )
@@ -888,7 +884,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme prefix scan #general-category", ".theme prefix scan"],
         params=[
-            {"name": "category", "type": "discord.CategoryChannel", "required": false, "desc": "Category to scan. Omit to scan all channels."},
+            {"name": "category", "type": "discord.CategoryChannel", "required": False, "desc": "Category to scan. Omit to scan all channels."},
         ],
         note="The scan detects leading emojis/symbols in channel names and reports them.",
     )
@@ -973,8 +969,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme prefix add ★ #text-channels", ".theme prefix add 🎮 #gaming #general"],
         params=[
-            {"name": "emoji", "type": "str", "required": true, "desc": "The emoji or symbol to use as prefix."},
-            {"name": "categories", "type": "discord.CategoryChannel", "required": true, "desc": "One or more category channels to apply the prefix to."},
+            {"name": "emoji", "type": "str", "required": True, "desc": "The emoji or symbol to use as prefix."},
+            {"name": "categories", "type": "discord.CategoryChannel", "required": True, "desc": "One or more category channels to apply the prefix to."},
         ],
         note="Existing prefixes on channels will be replaced.",
     )
@@ -1040,7 +1036,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme prefix remove #text-channels", ".theme prefix remove"],
         params=[
-            {"name": "category", "type": "discord.CategoryChannel", "required": false, "desc": "Category to strip prefixes from. Omit to strip all."},
+            {"name": "category", "type": "discord.CategoryChannel", "required": False, "desc": "Category to strip prefixes from. Omit to strip all."},
         ],
         note="Only removes leading emojis/symbols that were detected as prefixes.",
     )
@@ -1132,7 +1128,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme prefix server ★", ".theme prefix server"],
         params=[
-            {"name": "emoji", "type": "str", "required": false, "desc": "Emoji to apply server-wide. Omit to remove all prefixes."},
+            {"name": "emoji", "type": "str", "required": False, "desc": "Emoji to apply server-wide. Omit to remove all prefixes."},
         ],
         note="This overrides any existing prefixes on all channels.",
     )
@@ -1216,8 +1212,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme prefix replace 3 ★", ".theme prefix replace 1 🎮"],
         params=[
-            {"name": "n", "type": "int", "required": true, "desc": "The index of the prefix to replace (from scan results)."},
-            {"name": "new", "type": "str", "required": true, "desc": "The new prefix emoji or symbol."},
+            {"name": "n", "type": "int", "required": True, "desc": "The index of the prefix to replace (from scan results)."},
+            {"name": "new", "type": "str", "required": True, "desc": "The new prefix emoji or symbol."},
         ],
         note="Use `.theme prefix scan` first to see detected prefixes and their indices.",
     )
@@ -1424,7 +1420,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme channel strip -", ".theme channel strip oldtext"],
         params=[
-            {"name": "text", "type": "str", "required": true, "desc": "The exact text to remove from all channel names."},
+            {"name": "text", "type": "str", "required": True, "desc": "The exact text to remove from all channel names."},
         ],
         note="Case-sensitive. Only exact matches are removed.",
     )
@@ -1523,8 +1519,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme font set cursive #general", ".theme font set bold all"],
         params=[
-            {"name": "font", "type": "str", "required": true, "desc": "Font style name (from `.theme font list`)."},
-            {"name": "target", "type": "str", "required": false, "desc": "`all` for server-wide, or one or more category mentions."},
+            {"name": "font", "type": "str", "required": True, "desc": "Font style name (from `.theme font list`)."},
+            {"name": "target", "type": "str", "required": False, "desc": "`all` for server-wide, or one or more category mentions."},
         ],
         note="Only visible to Discord clients that support unicode font rendering.",
     )
@@ -1636,7 +1632,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme font reset all", ".theme font reset #general"],
         params=[
-            {"name": "target", "type": "str", "required": false, "desc": "`all` for server-wide, or a category mention."},
+            {"name": "target", "type": "str", "required": False, "desc": "`all` for server-wide, or a category mention."},
         ],
         note="Restores the original (pre-font) channel names.",
     )
@@ -1717,7 +1713,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Presets",
         examples=[".theme save mytheme", ".theme save backup1"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name for the preset."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name for the preset."},
         ],
         note="Presets include role mappings, channel names, prefixes, and fonts.",
     )
@@ -1789,7 +1785,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Presets",
         examples=[".theme apply mytheme"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name of the preset to apply."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the preset to apply."},
         ],
         note="A snapshot is created before applying so you can revert with `.theme reset`.",
     )
@@ -2003,7 +1999,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Presets",
         examples=[".theme delete oldtheme"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name of the preset to delete."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the preset to delete."},
         ],
         note="This cannot be undone.",
     )
@@ -2025,7 +2021,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Setup",
         examples=[".theme seticon https://i.imgur.com/icon.png", ".theme seticon"],
         params=[
-            {"name": "source", "type": "str", "required": false, "desc": "Image URL or attachment. Omit to clear the stored icon."},
+            {"name": "source", "type": "str", "required": False, "desc": "Image URL or attachment. Omit to clear the stored icon."},
         ],
         note="The icon is saved as part of the theme and can be restored with `.theme apply`.",
     )
@@ -2058,7 +2054,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Setup",
         examples=[".theme setbanner https://i.imgur.com/banner.png", ".theme setbanner"],
         params=[
-            {"name": "source", "type": "str", "required": false, "desc": "Image URL or attachment. Omit to clear the stored banner."},
+            {"name": "source", "type": "str", "required": False, "desc": "Image URL or attachment. Omit to clear the stored banner."},
         ],
         note="The banner is saved as part of the theme and can be restored with `.theme apply`.",
     )
@@ -2425,8 +2421,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme group create gaming 🎮", ".theme group create info ℹ️"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name for the new prefix group."},
-            {"name": "prefix", "type": "str", "required": true, "desc": "The prefix emoji or symbol for channels in this group."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name for the new prefix group."},
+            {"name": "prefix", "type": "str", "required": True, "desc": "The prefix emoji or symbol for channels in this group."},
         ],
         note="The prefix is not applied to any channels yet. Use `.theme group add` to assign categories.",
     )
@@ -2453,7 +2449,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme group delete gaming"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name of the group to delete."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the group to delete."},
         ],
         note="Channel names are NOT changed when a group is deleted.",
     )
@@ -2488,8 +2484,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme group set gaming 🕹️", ".theme group set info 📋"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name of the group to update."},
-            {"name": "new prefix", "type": "str", "required": true, "desc": "The new prefix emoji or symbol."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the group to update."},
+            {"name": "new prefix", "type": "str", "required": True, "desc": "The new prefix emoji or symbol."},
         ],
         note="All channels in the group are immediately renamed with the new prefix.",
     )
@@ -2582,8 +2578,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme group add gaming #game-chat", ".theme group add info #information"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name of the target group."},
-            {"name": "category", "type": "discord.CategoryChannel", "required": true, "desc": "The category to add to the group."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the target group."},
+            {"name": "category", "type": "discord.CategoryChannel", "required": True, "desc": "The category to add to the group."},
         ],
         note="All channels in the category will be prefixed with the group's prefix.",
     )
@@ -2671,8 +2667,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme group remove gaming #game-chat"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name of the group."},
-            {"name": "category", "type": "discord.CategoryChannel", "required": true, "desc": "The category to remove from the group."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the group."},
+            {"name": "category", "type": "discord.CategoryChannel", "required": True, "desc": "The category to remove from the group."},
         ],
         note="Channel names retain their current prefix. Use `.theme prefix remove` to strip prefixes.",
     )
@@ -2716,8 +2712,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         section="Channels",
         examples=[".theme group apply gaming #random"],
         params=[
-            {"name": "name", "type": "str", "required": true, "desc": "Name of the group whose prefix to use."},
-            {"name": "channel", "type": "discord.TextChannel", "required": true, "desc": "The channel to stamp the prefix on."},
+            {"name": "name", "type": "str", "required": True, "desc": "Name of the group whose prefix to use."},
+            {"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "The channel to stamp the prefix on."},
         ],
         note="The channel's name is prefixed but it is NOT added to the group's category list.",
     )

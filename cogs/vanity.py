@@ -1,9 +1,10 @@
-import discord
-from discord.ext import commands
-import aiosqlite
 import os
 
-from utils import help_meta, DATA_DIR
+import aiosqlite
+import discord
+from discord.ext import commands
+
+from utils import DATA_DIR, help_meta
 
 DB_PATH = os.path.join(DATA_DIR, "vanity.db")
 
@@ -14,7 +15,7 @@ COG_META = {
     "desc": "Vanity and custom status tools.",
     "staff": True,
 }
- 
+
 
 
 
@@ -128,7 +129,7 @@ class Vanity(commands.Cog):
         staff=True,
         examples=[".vanity substring seoulities", ".vanity substring .gg/"],
         params=[
-            {"name": "text", "type": "str", "required": true, "desc": "The substring to match in member statuses."},
+            {"name": "text", "type": "str", "required": True, "desc": "The substring to match in member statuses."},
         ],
         note="Staff only. Members whose status contains this text will trigger the configured notification.",
     )
@@ -146,7 +147,7 @@ class Vanity(commands.Cog):
         staff=True,
         examples=[".vanity channel #announcements"],
         params=[
-            {"name": "channel", "type": "discord.TextChannel", "required": true, "desc": "The channel to send vanity match notifications to."},
+            {"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "The channel to send vanity match notifications to."},
         ],
         note="Staff only.",
     )
@@ -164,7 +165,7 @@ class Vanity(commands.Cog):
         staff=True,
         examples=[".vanity message {{user}} is repping {{server}}!"],
         params=[
-            {"name": "text", "type": "str", "required": true, "desc": "The message template. Supports `{{user}}`, `{{username}}`, and `{{server}}` placeholders."},
+            {"name": "text", "type": "str", "required": True, "desc": "The message template. Supports `{{user}}`, `{{username}}`, and `{{server}}` placeholders."},
         ],
         note="Staff only.",
     )
@@ -182,7 +183,7 @@ class Vanity(commands.Cog):
         staff=True,
         examples=[".vanity role @Member"],
         params=[
-            {"name": "role", "type": "discord.Role", "required": true, "desc": "The role to assign on status match."},
+            {"name": "role", "type": "discord.Role", "required": True, "desc": "The role to assign on status match."},
         ],
         note="Staff only.",
     )

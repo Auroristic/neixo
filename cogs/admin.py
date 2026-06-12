@@ -4,16 +4,23 @@ import discord
 from discord.ext import commands
 
 from utils import (
-    load_json, save_json, get_embed_color, get_config, invalidate_config,
-    get_ignore_list, invalidate_ignore, is_owner_or_creator,
-    get_aliases, invalidate_aliases,
-    CONFIG_FILE, IGNORE_LIST_FILE, ALIASES_FILE,
-    get_cmd_channel_rule,
+    ALIASES_FILE,
+    CONFIG_FILE,
+    IGNORE_LIST_FILE,
     clear_cmd_channel_rule,
-    clear_cmd_channel_rules,
-    set_cmd_channel_rule,
+    get_cmd_channel_rule,
     get_cmd_channel_rules,
+    get_config,
+    get_embed_color,
+    get_ignore_list,
     help_meta,
+    invalidate_aliases,
+    invalidate_config,
+    invalidate_ignore,
+    is_owner_or_creator,
+    load_json,
+    save_json,
+    set_cmd_channel_rule,
 )
 
 # ── cogs/admin.py ───────────────────────────────────────────────
@@ -23,7 +30,7 @@ COG_META = {
     "desc": "Server management and AI configuration.",
     "admin": True,
 }
- 
+
 
 
 
@@ -44,26 +51,26 @@ class AdminCog(commands.Cog, name="Admin"):
         owner=True,
         examples=[".whitelist", ".whitelist @user"],
         params=[
-            {"name": "user", "type": "discord.Member", "required": false, "desc": "The member to toggle. Omit to see usage."},
+            {"name": "user", "type": "discord.Member", "required": False, "desc": "The member to toggle. Omit to see usage."},
         ],
         note="Only the bot owner/creator can manage the whitelist.",
     )
     async def whitelist(self, ctx, user: discord.Member = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
-        
+
         async with self._config_lock:
             config = load_json(CONFIG_FILE)
             if str(ctx.guild.id) not in config:
                 config[str(ctx.guild.id)] = {}
             if 'whitelist' not in config[str(ctx.guild.id)]:
                 config[str(ctx.guild.id)]['whitelist'] = []
-            
+
             whitelist_ids = config[str(ctx.guild.id)]['whitelist']
-            
+
             if not user:
                 return await ctx.send("`.whitelist @user` to toggle them")
-            
+
             uid = user.id
             if uid in whitelist_ids:
                 whitelist_ids.remove(uid)
@@ -90,15 +97,15 @@ class AdminCog(commands.Cog, name="Admin"):
     async def whitelist_show(self, ctx):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
-        
+
         async with self._config_lock:
             config = load_json(CONFIG_FILE)
             whitelist_ids = config.get(str(ctx.guild.id), {}).get('whitelist', [])
-        
+
         if not whitelist_ids:
             embed = discord.Embed(description="no one whitelisted yet", color=get_embed_color(ctx.guild.id))
             return await ctx.send(embed=embed)
-        
+
         lines = [f"• <@{uid}>" for uid in whitelist_ids]
         embed = discord.Embed(
             title="antiblack",
@@ -116,20 +123,20 @@ class AdminCog(commands.Cog, name="Admin"):
         owner=True,
         examples=[".setcolor #FF0000", ".setcolor FF0000"],
         params=[
-            {"name": "color", "type": "str", "required": true, "desc": "Hex colour code with or without #."},
+            {"name": "color", "type": "str", "required": True, "desc": "Hex colour code with or without #."},
         ],
         note="Only the bot owner/creator can change the colour.",
     )
     async def setcolor(self, ctx, color: str):
         if not is_owner_or_creator(ctx):
             return await ctx.send("no perms")
-        
+
         color = color.strip('#')
         try:
             color_int = int(color, 16) & 0xFFFFFF
         except ValueError:
             return await ctx.send("invalid color, use hex like `#FF0000` or `FF0000`")
-        
+
         async with self._config_lock:
             config = load_json(CONFIG_FILE)
             if str(ctx.guild.id) not in config:
@@ -137,7 +144,7 @@ class AdminCog(commands.Cog, name="Admin"):
             config[str(ctx.guild.id)]['embed_color'] = color_int
             save_json(CONFIG_FILE, config)
             invalidate_config()
-        embed = discord.Embed(description=f"nya?", color=color_int)
+        embed = discord.Embed(description="nya?", color=color_int)
         await ctx.send(embed=embed)
 
     # ── ignore ─────────────────────────────────────────────────
@@ -149,7 +156,7 @@ class AdminCog(commands.Cog, name="Admin"):
         staff=True,
         examples=[".ignore @user"],
         params=[
-            {"name": "user", "type": "discord.Member", "required": true, "desc": "The member to ignore or unignore."},
+            {"name": "user", "type": "discord.Member", "required": True, "desc": "The member to ignore or unignore."},
         ],
         note="Staff only (whitelisted users).",
     )
@@ -212,8 +219,8 @@ class AdminCog(commands.Cog, name="Admin"):
         admin=True,
         examples=[".confess set #confessions"],
         params=[
-            {"name": "action", "type": "str", "required": false, "desc": "Currently only `set` is supported."},
-            {"name": "channel", "type": "discord.TextChannel", "required": false, "desc": "The channel to send confessions to."},
+            {"name": "action", "type": "str", "required": False, "desc": "Currently only `set` is supported."},
+            {"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "The channel to send confessions to."},
         ],
         note="Admin only.",
     )
@@ -222,16 +229,16 @@ class AdminCog(commands.Cog, name="Admin"):
             if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
                 await ctx.send("admin only")
                 return
-            
+
             if not channel:
                 await ctx.send("mention a channel. `.confess set #channel`")
                 return
-            
+
             async with self._config_lock:
                 config = load_json(CONFIG_FILE)
                 if str(ctx.guild.id) not in config:
                     config[str(ctx.guild.id)] = {}
-                
+
                 config[str(ctx.guild.id)]['confession_channel'] = str(channel.id)
                 save_json(CONFIG_FILE, config)
                 invalidate_config()
@@ -248,9 +255,9 @@ class AdminCog(commands.Cog, name="Admin"):
         admin=True,
         examples=[".alias", ".alias bb .bday", ".alias remove bb"],
         params=[
-            {"name": "new", "type": "str", "required": false, "desc": "The new alias name."},
-            {"name": "existing", "type": "str", "required": false, "desc": "The existing command to alias."},
-            {"name": "action", "type": "str", "required": false, "desc": "Use `remove` to delete an alias."},
+            {"name": "new", "type": "str", "required": False, "desc": "The new alias name."},
+            {"name": "existing", "type": "str", "required": False, "desc": "The existing command to alias."},
+            {"name": "action", "type": "str", "required": False, "desc": "Use `remove` to delete an alias."},
         ],
         note="Anyone can view the alias list. Adding/removing requires admin. Built-in aliases are shown automatically.",
     )
@@ -400,8 +407,8 @@ class AdminCog(commands.Cog, name="Admin"):
         section="Command Channels",
         examples=[".cmd allow #mod #staff purge", ".cmd allow #mod .ping"],
         params=[
-            {"name": "channels", "type": "discord.TextChannel", "required": true, "desc": "One or more channel mentions."},
-            {"name": "target", "type": "str", "required": true, "desc": "A command name (e.g. `.ping`) or category name."},
+            {"name": "channels", "type": "discord.TextChannel", "required": True, "desc": "One or more channel mentions."},
+            {"name": "target", "type": "str", "required": True, "desc": "A command name (e.g. `.ping`) or category name."},
         ],
         note="Admin only. Overrides any existing rule for the target.",
     )
@@ -431,8 +438,8 @@ class AdminCog(commands.Cog, name="Admin"):
         section="Command Channels",
         examples=[".cmd deny #general .play", ".cmd deny #chat music"],
         params=[
-            {"name": "channels", "type": "discord.TextChannel", "required": true, "desc": "One or more channel mentions."},
-            {"name": "target", "type": "str", "required": true, "desc": "A command name (e.g. `.play`) or category name."},
+            {"name": "channels", "type": "discord.TextChannel", "required": True, "desc": "One or more channel mentions."},
+            {"name": "target", "type": "str", "required": True, "desc": "A command name (e.g. `.play`) or category name."},
         ],
         note="Admin only.",
     )
@@ -462,7 +469,7 @@ class AdminCog(commands.Cog, name="Admin"):
         section="Command Channels",
         examples=[".cmd clear .ping", ".cmd clear music"],
         params=[
-            {"name": "target", "type": "str", "required": true, "desc": "The command or category to clear the rule for."},
+            {"name": "target", "type": "str", "required": True, "desc": "The command or category to clear the rule for."},
         ],
         note="Admin only. The command/category will work in all channels after clearing.",
     )
@@ -487,7 +494,7 @@ class AdminCog(commands.Cog, name="Admin"):
         section="Command Channels",
         examples=[".cmd show", ".cmd show .ping"],
         params=[
-            {"name": "target", "type": "str", "required": false, "desc": "Optional command or category to check."},
+            {"name": "target", "type": "str", "required": False, "desc": "Optional command or category to check."},
         ],
         note="Admin only. Run without arguments to see all rules.",
     )
@@ -523,7 +530,7 @@ class AdminCog(commands.Cog, name="Admin"):
         section="Moderation",
         examples=[".purge bots", ".purge bots 100"],
         params=[
-            {"name": "limit", "type": "int", "required": false, "desc": "Number of messages to scan (max 200, default 50)."},
+            {"name": "limit", "type": "int", "required": False, "desc": "Number of messages to scan (max 200, default 50)."},
         ],
         note="Requires manage_messages permission. Only deletes bot messages and messages starting with `.`.",
     )

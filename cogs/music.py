@@ -4,10 +4,9 @@ import asyncio
 import json
 import logging
 import re
-import time
 import urllib.parse
 from collections import deque
-from typing import cast, Deque, List, Optional, Tuple
+from typing import cast
 
 import aiohttp
 import discord
@@ -16,18 +15,7 @@ import wavelink
 from discord.ext import commands
 from discord.ui import Select, View
 
-from neixoconfig import Neixocolor, Neixoemojis
-from utils import help_meta
-
 from cogs.music_helpers import (
-    _err_embed,
-    _fmt_time,
-    _gen_music_card,
-    _is_track_allowed,
-    _ok_embed,
-    _parse_lrc,
-    _scrape_spotify_playlist,
-    _spotify,
     SEARCH_RETRIES,
     SEARCH_RETRY_DELAY,
     SOUNDCLOUD_RE,
@@ -36,6 +24,14 @@ from cogs.music_helpers import (
     SPOTIFY_PLAYLIST_CAP,
     SPOTIFY_PLAYLIST_RE,
     SPOTIFY_TRACK_RE,
+    _err_embed,
+    _fmt_time,
+    _gen_music_card,
+    _is_track_allowed,
+    _ok_embed,
+    _parse_lrc,
+    _scrape_spotify_playlist,
+    _spotify,
 )
 from cogs.music_views import (
     GenreView,
@@ -46,6 +42,8 @@ from cogs.music_views import (
     SCRetryView,
     SimilarView,
 )
+from neixoconfig import Neixocolor, Neixoemojis
+from utils import help_meta
 
 # ── cogs/music.py ───────────────────────────────────────────────
 COG_META = {
@@ -62,10 +60,10 @@ log = logging.getLogger(__name__)
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self._history: dict[int, Deque[wavelink.Playable]] = {}
+        self._history: dict[int, deque[wavelink.Playable]] = {}
         self._np_views: dict[int, NowPlayingView] = {}
         self._track_locks: dict[int, asyncio.Lock] = {}
-        self._http_session: Optional[aiohttp.ClientSession] = None
+        self._http_session: aiohttp.ClientSession | None = None
         self._live_tasks: dict[int, asyncio.Task] = {}
         self._live_msgs: dict[int, discord.Message] = {}
         # Guilds where the ⏮ (prev) button was just pressed. Set before the
@@ -91,12 +89,12 @@ class Music(commands.Cog):
         text = re.sub(r'\s+', ' ', text).strip()
         return text
 
-    def _get_history(self, guild_id: int) -> Deque[wavelink.Playable]:
+    def _get_history(self, guild_id: int) -> deque[wavelink.Playable]:
         if guild_id not in self._history:
             self._history[guild_id] = deque(maxlen=50)
         return self._history[guild_id]
 
-    async def _fetch_lyrics(self, artist: str, title: str) -> Optional[Tuple[str, Optional[List[Tuple[int, str]]]]]:
+    async def _fetch_lyrics(self, artist: str, title: str) -> tuple[str, list[tuple[int, str]] | None] | None:
         """Returns (plain_text, synced_lines) or None. synced_lines is list of (ms, text) or None."""
         clean_artist = self._clean_query(artist)
         clean_title = self._clean_query(title)
@@ -156,7 +154,7 @@ class Music(commands.Cog):
 
         return None
 
-    async def _syncedlyrics_search(self, artist: str, title: str) -> Optional[str]:
+    async def _syncedlyrics_search(self, artist: str, title: str) -> str | None:
         query = f"{title} {artist}"
         def sync_search():
             try:
@@ -165,7 +163,7 @@ class Music(commands.Cog):
                 return None
         return await asyncio.get_running_loop().run_in_executor(None, sync_search)
 
-    async def _lrclib_lyrics(self, artist: str, title: str) -> Optional[Tuple[str, Optional[List[Tuple[int, str]]]]]:
+    async def _lrclib_lyrics(self, artist: str, title: str) -> tuple[str, list[tuple[int, str]] | None] | None:
         url = f"https://lrclib.net/api/get?artist_name={urllib.parse.quote(artist)}&track_name={urllib.parse.quote(title)}"
         session = await self._get_session()
         try:
@@ -186,7 +184,7 @@ class Music(commands.Cog):
         except Exception:
             return None
 
-    async def _ovh_lyrics(self, artist: str, title: str) -> Optional[str]:
+    async def _ovh_lyrics(self, artist: str, title: str) -> str | None:
         url = f"https://api.lyrics.ovh/v1/{urllib.parse.quote(artist)}/{urllib.parse.quote(title)}"
         session = await self._get_session()
         try:
@@ -206,7 +204,7 @@ class Music(commands.Cog):
         self,
         player: wavelink.Player,
         track: wavelink.Playable,
-        view: "NowPlayingView",
+        view: NowPlayingView,
     ) -> None:
         await asyncio.sleep(5)
         if player.current != track:
@@ -237,7 +235,7 @@ class Music(commands.Cog):
         if task and not task.done():
             task.cancel()
 
-    def _render_live_window(self, lines: List[Tuple[int, str]], idx: int, double: bool) -> str:
+    def _render_live_window(self, lines: list[tuple[int, str]], idx: int, double: bool) -> str:
         """Render 3 before + current (+ next if double) + 3 after. Current lines get # heading."""
         total = len(lines)
         # Determine which indices are "active" (bolded with #)
@@ -258,7 +256,7 @@ class Music(commands.Cog):
                 out.append(txt)
         return "\n".join(out)
 
-    async def _start_live_lyrics(self, channel: discord.TextChannel, player: wavelink.Player, synced: List[Tuple[int, str]], track: wavelink.Playable) -> None:
+    async def _start_live_lyrics(self, channel: discord.TextChannel, player: wavelink.Player, synced: list[tuple[int, str]], track: wavelink.Playable) -> None:
         guild_id = player.guild.id
         self._cancel_live_lyrics(guild_id)
         # Delete old live msg if exists
@@ -274,7 +272,7 @@ class Music(commands.Cog):
         task = asyncio.create_task(self._live_lyrics_loop(player, track, synced, msg, guild_id))
         self._live_tasks[guild_id] = task
 
-    async def _live_lyrics_loop(self, player: wavelink.Player, track: wavelink.Playable, synced: List[Tuple[int, str]], msg: discord.Message, guild_id: int) -> None:
+    async def _live_lyrics_loop(self, player: wavelink.Player, track: wavelink.Playable, synced: list[tuple[int, str]], msg: discord.Message, guild_id: int) -> None:
         last_state = None
         try:
             _active_speed = 1.0
@@ -446,7 +444,7 @@ class Music(commands.Cog):
             tracks.append({"title": title, "identifier": vid, "url": f"https://www.youtube.com/watch?v={vid}"})
         return tracks
 
-    async def _resolve_spotify(self, query: str) -> List[str]:
+    async def _resolve_spotify(self, query: str) -> list[str]:
         if m := SPOTIFY_TRACK_RE.search(query):
             return await _spotify.get_track(m.group(1))
         if m := SPOTIFY_ALBUM_RE.search(query):
@@ -458,7 +456,7 @@ class Music(commands.Cog):
 
     async def _yt_search_with_retry(self, query: str, source: str = "ytsearch"):
         """wavelink search with retries on transient errors. Returns list/Playlist or [] on failure."""
-        last_err: Optional[Exception] = None
+        last_err: Exception | None = None
         for attempt in range(SEARCH_RETRIES + 1):
             try:
                 results = await wavelink.Playable.search(query, source=source)
@@ -545,9 +543,9 @@ class Music(commands.Cog):
         try:
             duration = _fmt_time(track.length)
             card_file = await _gen_music_card(
-                track.title, 
-                track.author, 
-                track.artwork, 
+                track.title,
+                track.author,
+                track.artwork,
                 duration,
                 session=self._http_session
             )
@@ -686,7 +684,7 @@ class Music(commands.Cog):
             return
 
         if isinstance(tracks, list) and len(tracks) > 1:
-            tracks = [self._prefer_audio_track(tracks, query)] 
+            tracks = [self._prefer_audio_track(tracks, query)]
 
         await self._queue_tracks(ctx, player, tracks)
 
@@ -770,7 +768,7 @@ class Music(commands.Cog):
         ctx: commands.Context,
         filters: wavelink.Filters,
         label: str,
-        vol_cap: Optional[int] = None,
+        vol_cap: int | None = None,
     ) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -956,8 +954,8 @@ class Music(commands.Cog):
         if guild_id not in self._track_locks:
             self._track_locks[guild_id] = asyncio.Lock()
 
-        next_track: Optional[wavelink.Playable] = None
-        np_view: Optional[NowPlayingView] = None
+        next_track: wavelink.Playable | None = None
+        np_view: NowPlayingView | None = None
         autoplay_on = False
         home = None
         home_channel = None
@@ -1019,7 +1017,7 @@ class Music(commands.Cog):
             except Exception:
                 pass
 
-            
+
 
     # ── commands ──────────────────────────────────────────────
 
@@ -2331,7 +2329,7 @@ class Music(commands.Cog):
             player.autoplay = wavelink.AutoPlayMode.disabled
             if not hasattr(player, "home"):
                 player.home = ctx.channel
-        url = f"https://de1.api.radio-browser.info/json/stations/byname/{urllib.parse.quote(name)}?limit=1&hidebroken=true&order=clickcount"
+        url = f"https://de1.api.radio-browser.info/json/stations/byname/{urllib.parse.quote(name)}?limit=1&hidebroken=True&order=clickcount"
         session = await self._get_session()
         try:
             async with session.get(url) as r:

@@ -1,18 +1,19 @@
 from __future__ import annotations
+
 import asyncio
 import io
 import os
+import re as _re
 import tempfile
 
 import aiohttp
 import discord
-from discord.ext import commands
-from PIL import Image, ImageSequence, ImageFont, ImageDraw
-from curl_cffi import requests as req
 from bs4 import BeautifulSoup
-import re as _re
+from curl_cffi import requests as req
+from discord.ext import commands
+from PIL import Image, ImageDraw, ImageFont, ImageSequence
 
-from utils import get_embed_color, check_gif_cooldown, gif_cooldown_msg, help_meta
+from utils import check_gif_cooldown, gif_cooldown_msg, help_meta
 
 # ── Font paths (Ubuntu 22 compatible) ──────────────────────────────
 _FONT_REG_PATHS = [
@@ -166,13 +167,12 @@ async def get_image_from_ctx(ctx) -> tuple[bytes | None, bool]:
                                 except Exception:
                                     pass
                 else:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(image_url) as resp:
-                            if resp.status == 200:
-                                return await resp.read(), (
-                                    image_url.lower().endswith('.gif')
-                                    or 'gif' in resp.headers.get('content-type', '').lower()
-                                )
+                    async with aiohttp.ClientSession() as session, session.get(image_url) as resp:
+                        if resp.status == 200:
+                            return await resp.read(), (
+                                image_url.lower().endswith('.gif')
+                                or 'gif' in resp.headers.get('content-type', '').lower()
+                            )
             return None, False
 
     if target:

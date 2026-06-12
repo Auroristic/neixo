@@ -1,10 +1,15 @@
+import logging
+
 import discord
 from discord.ext import commands
-from discord import app_commands
-import logging
+
 from utils import (
-    set_guild_avatar, get_guild_avatar, remove_guild_avatar,
-    get_embed_color, help_meta, is_owner_or_creator
+    get_embed_color,
+    get_guild_avatar,
+    help_meta,
+    is_owner_or_creator,
+    remove_guild_avatar,
+    set_guild_avatar,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,7 +53,7 @@ class GuildAvatars(commands.Cog):
         elif not image_url:
             await ctx.send("Please provide an image URL or attach an image!")
             return
-        
+
         # Validate it's an image
         if not any(image_url.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
             await ctx.send("That doesn't look like a valid image URL!")
@@ -61,7 +66,7 @@ class GuildAvatars(commands.Cog):
 
         # Save to database
         set_guild_avatar(ctx.guild.id, ctx.author.id, image_url)
-        
+
         embed = discord.Embed(
             title="✅ Avatar Updated!",
             description=f"Your custom avatar has been set for **{ctx.guild.name}**.",
@@ -83,7 +88,7 @@ class GuildAvatars(commands.Cog):
     async def removeavatar(self, ctx):
         """Remove your custom avatar for this server and revert to global avatar."""
         removed = remove_guild_avatar(ctx.guild.id, ctx.author.id)
-        
+
         if removed:
             embed = discord.Embed(
                 title="✅ Avatar Removed",
@@ -96,7 +101,7 @@ class GuildAvatars(commands.Cog):
                 description="You don't have a custom avatar set for this server.",
                 color=discord.Color(get_embed_color(ctx.guild.id))
             )
-        
+
         await ctx.send(embed=embed)
 
     @commands.command(aliases=["pfps"])
@@ -111,32 +116,32 @@ class GuildAvatars(commands.Cog):
     async def serveravatars(self, ctx):
         """Show all members who have custom avatars in this server."""
         from utils import _db
-        
+
         with _db() as conn:
             rows = conn.execute(
                 "SELECT user_id, avatar_url FROM guild_avatars WHERE guild_id = ?",
                 (str(ctx.guild.id),)
             ).fetchall()
-        
+
         if not rows:
             await ctx.send("No custom avatars set in this server yet!")
             return
-        
+
         embed = discord.Embed(
             title=f"🖼️ Custom Avatars in {ctx.guild.name}",
             description=f"{len(rows)} member(s) have custom avatars",
             color=discord.Color(get_embed_color(ctx.guild.id))
         )
-        
+
         # Show up to 10 avatars inline, rest in footer
         for i, (user_id, avatar_url) in enumerate(rows[:10]):
             user = ctx.guild.get_member(int(user_id))
             name = user.display_name if user else f"<@{user_id}>"
             embed.add_field(name=name, value="[Avatar Link](" + avatar_url + ")", inline=True)
-        
+
         if len(rows) > 10:
             embed.set_footer(text=f"...and {len(rows) - 10} more")
-        
+
         await ctx.send(embed=embed)
 
     @commands.command()
@@ -153,31 +158,31 @@ class GuildAvatars(commands.Cog):
     async def profile(self, ctx, member: discord.Member = None):
         """View a user's profile with their custom server avatar if set."""
         member = member or ctx.author
-        
+
         # Check for custom guild avatar
         custom_avatar = get_guild_avatar(ctx.guild.id, member.id)
         display_avatar = custom_avatar if custom_avatar else member.display_avatar.url
-        
+
         embed = discord.Embed(
             title=f"{member.display_name}'s Profile",
             color=discord.Color(get_embed_color(ctx.guild.id))
         )
         embed.set_thumbnail(url=display_avatar)
         embed.add_field(name="Global Avatar", value="[Link](" + member.display_avatar.url + ")", inline=True)
-        
+
         if custom_avatar:
             embed.add_field(name="Server Avatar", value="[Link](" + custom_avatar + ")", inline=True)
             embed.set_footer(text="✨ Has custom server avatar")
         else:
             embed.set_footer(text="Using global avatar")
-        
+
         # Add join date
         embed.add_field(
             name="Member Since",
             value=member.joined_at.strftime("%B %d, %Y") if member.joined_at else "Unknown",
             inline=False
         )
-        
+
         await ctx.send(embed=embed)
 
     @commands.command(hidden=True)
@@ -195,7 +200,7 @@ class GuildAvatars(commands.Cog):
         """Quick view someone's custom avatar in this server."""
         member = member or ctx.author
         custom_avatar = get_guild_avatar(ctx.guild.id, member.id)
-        
+
         if custom_avatar:
             embed = discord.Embed(
                 title=f"{member.display_name}'s Server Avatar",

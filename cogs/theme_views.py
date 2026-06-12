@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import discord
-from discord.ui import Button, Modal, Select, View, TextInput
+from discord.ui import Button, Modal, Select, TextInput, View
 
 from neixoconfig import Neixocolor
 

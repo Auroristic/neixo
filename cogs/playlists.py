@@ -1,11 +1,10 @@
+import logging
+
 import discord
 from discord.ext import commands
-import logging
-from utils import (
-    save_playlist, load_playlist, delete_playlist, list_playlists,
-    get_embed_color, help_meta
-)
+
 from cogs.music_helpers import _is_track_allowed
+from utils import delete_playlist, get_embed_color, help_meta, list_playlists, load_playlist, save_playlist
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class Playlists(commands.Cog):
             if not playlists:
                 await ctx.send("You don't have any saved playlists. Use `.playlist save <name>` to create one!")
                 return
-            
+
             embed = discord.Embed(
                 title="Your Playlists",
                 description="\n".join(f"• `{p}`" for p in sorted(playlists)),
@@ -64,7 +63,7 @@ class Playlists(commands.Cog):
             if not tracks:
                 await ctx.send(f"Playlist '{name}' not found! Use `.playlist list` to see your playlists.")
                 return
-            
+
             import wavelink
             player = ctx.voice_client
             if not player:
@@ -79,7 +78,7 @@ class Playlists(commands.Cog):
                 except Exception as e:
                     await ctx.send(f"Failed to connect: {e}")
                     return
-            
+
             await ctx.send(f"Loading playlist **{name}** ({len(tracks)} tracks)...")
             added = 0
             for track in tracks:
@@ -100,7 +99,7 @@ class Playlists(commands.Cog):
                 except Exception:
                     logger.warning("Failed to add track: %s", track)
                     continue
-            
+
             if added == 0:
                 await ctx.send("Could not add any tracks from the playlist.")
             else:
@@ -129,12 +128,12 @@ class Playlists(commands.Cog):
         if not music_cog:
             await ctx.send("Music system is not available!")
             return
-        
+
         player = ctx.voice_client
         if not player or player.queue.is_empty:
             await ctx.send("There's no queue to save! Add some tracks first.")
             return
-        
+
         # Extract track names/URLs from queue
         tracks = []
         current = getattr(player, 'current', None)
@@ -153,13 +152,13 @@ class Playlists(commands.Cog):
                 tracks.append(f"{track.author} - {track.title}")
             else:
                 tracks.append(str(track))
-        
+
         if not tracks:
             await ctx.send("Queue is empty!")
             return
-        
+
         save_playlist(ctx.author.id, name, tracks)
-        
+
         embed = discord.Embed(
             title="✅ Playlist Saved!",
             description=f"Saved **{len(tracks)}** tracks to playlist `{name}`",
@@ -184,7 +183,7 @@ class Playlists(commands.Cog):
         if not tracks:
             await ctx.send(f"Playlist '{name}' not found!")
             return
-        
+
         import wavelink
         player = ctx.voice_client
         if not player:
@@ -199,7 +198,7 @@ class Playlists(commands.Cog):
             except Exception as e:
                 await ctx.send(f"Failed to connect: {e}")
                 return
-        
+
         added = 0
         for track_data in tracks:
             try:
@@ -218,7 +217,7 @@ class Playlists(commands.Cog):
                 added += 1
             except Exception:
                 continue
-        
+
         if added == 0:
             await ctx.send("Could not add any tracks from the playlist.")
         else:
@@ -263,7 +262,7 @@ class Playlists(commands.Cog):
         if not playlists:
             await ctx.send("You don't have any saved playlists!")
             return
-        
+
         embed = discord.Embed(
             title=f"🎵 Your Playlists ({len(playlists)})",
             description="\n".join(f"• `{p}`" for p in sorted(playlists)),
@@ -289,20 +288,20 @@ class Playlists(commands.Cog):
         if not tracks:
             await ctx.send(f"Playlist '{name}' not found!")
             return
-        
+
         embed = discord.Embed(
             title=f"📀 Playlist: {name}",
             description=f"**{len(tracks)}** tracks",
             color=discord.Color(get_embed_color(ctx.guild.id))
         )
-        
+
         # Show first 10 tracks
         for i, track in enumerate(tracks[:10], 1):
             embed.add_field(name=f"{i}. {track[:50]}", value="\u200b", inline=False)
-        
+
         if len(tracks) > 10:
             embed.set_footer(text=f"...and {len(tracks) - 10} more tracks")
-        
+
         await ctx.send(embed=embed)
 
 

@@ -7,15 +7,14 @@ import logging
 import os
 import re
 import time
-from typing import List, Optional, Tuple
 
 import aiohttp
 import discord
-import wavelink
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from spotify_scraper import SpotifyClient as SpotifyScraper
+
 from neixoconfig import Neixocolor, Neixoemojis
 from utils import get_embed_color
-from spotify_scraper import SpotifyClient as SpotifyScraper
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +129,7 @@ async def _edit_progress(msg: discord.Message, done: int, total: int, label: str
     except discord.HTTPException:
         pass
 
-def _is_track_allowed(track) -> Tuple[bool, str]:
+def _is_track_allowed(track) -> tuple[bool, str]:
     if track is None:
         return False, "no track."
     if getattr(track, "is_stream", False):
@@ -149,9 +148,9 @@ def _is_track_allowed(track) -> Tuple[bool, str]:
 
 class SpotifyClient:
     def __init__(self) -> None:
-        self._token: Optional[str] = None
+        self._token: str | None = None
         self._expires: float = 0.0
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
         self._lock = asyncio.Lock()
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -183,13 +182,13 @@ class SpotifyClient:
                 raise RuntimeError(f"Spotify API error {r.status}: {path}")
             return await r.json()
 
-    async def get_track(self, track_id: str) -> List[str]:
+    async def get_track(self, track_id: str) -> list[str]:
         data = await self._get(f"/tracks/{track_id}")
         name = data["name"]
         artists = ", ".join(a["name"] for a in data["artists"])
         return [f"{artists} - {name}"]
 
-    async def get_album_tracks(self, album_id: str) -> List[str]:
+    async def get_album_tracks(self, album_id: str) -> list[str]:
         album_data = await self._get(f"/albums/{album_id}")
         album_artists = ", ".join(a["name"] for a in album_data.get("artists", []))
         tracks = []
@@ -209,12 +208,12 @@ class SpotifyClient:
             offset += len(items)
         return tracks[:SPOTIFY_PLAYLIST_CAP]
 
-    async def get_playlist_tracks(self, playlist_id: str) -> List[str]:
+    async def get_playlist_tracks(self, playlist_id: str) -> list[str]:
         # Spotify Feb 2026: playlist items only available for owner/collaborator
         # when using client credentials in Development Mode.
         # Try the deprecated /tracks endpoint (still works for Extended Quota),
         # then fall back to the playlist object which may have items embedded.
-        tracks: List[str] = []
+        tracks: list[str] = []
         offset = 0
         limit = 50  # new max for /items endpoint
         while len(tracks) < SPOTIFY_PLAYLIST_CAP:
@@ -284,7 +283,7 @@ _spotify = SpotifyClient()
 
 # ── SPOTIFY SCRAPER (playlist fallback) ──────────────────────
 
-async def _scrape_spotify_playlist(url: str) -> List[str]:
+async def _scrape_spotify_playlist(url: str) -> list[str]:
     def sync_scrape():
         client = SpotifyScraper()
         try:
@@ -312,7 +311,7 @@ async def _gen_music_card(
     duration: str,
     progress: float = 0.15,
     position_str: str = "",
-    session: Optional[aiohttp.ClientSession] = None,
+    session: aiohttp.ClientSession | None = None,
 ) -> discord.File:
     close_session = False
     if session is None:
@@ -405,7 +404,7 @@ async def _gen_music_card(
 
 _LRC_RE = re.compile(r"\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)")
 
-def _parse_lrc(text: str) -> Optional[List[Tuple[int, str]]]:
+def _parse_lrc(text: str) -> list[tuple[int, str]] | None:
     lines = text.strip().splitlines()
     parsed = []
     total = 0

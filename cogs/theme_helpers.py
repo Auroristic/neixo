@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-import time
 
 import aiohttp
 import discord
@@ -28,8 +27,8 @@ _BLOCKED_NETWORKS = [
 
 
 def _is_safe_url(url: str) -> bool:
-    from urllib.parse import urlparse
     import socket
+    from urllib.parse import urlparse
     try:
         parsed = urlparse(url)
         hostname = parsed.hostname

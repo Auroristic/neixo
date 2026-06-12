@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
@@ -7,8 +9,12 @@ import discord
 from discord.ext import commands
 
 from utils import (
-    load_json, save_json, is_creator, get_embed_color, help_meta,
     DATA_DIR,
+    get_embed_color,
+    help_meta,
+    is_creator,
+    load_json,
+    save_json,
 )
 
 log = logging.getLogger(__name__)
@@ -275,14 +281,13 @@ async def _resolve_image_bytes(ctx: commands.Context, source: str | None) -> byt
         return None
     if len(source) > 2000:
         return None
-    async with aiohttp.ClientSession() as s:
-        async with s.get(source, timeout=aiohttp.ClientTimeout(total=15)) as r:
-            if r.status != 200:
-                raise RuntimeError(f"download failed: HTTP {r.status}")
-            data = await r.read()
-            if len(data) > _IMAGE_MAX_BYTES:
-                raise RuntimeError(f"file too large ({len(data)} bytes)")
-            return data
+    async with aiohttp.ClientSession() as s, s.get(source, timeout=aiohttp.ClientTimeout(total=15)) as r:
+        if r.status != 200:
+            raise RuntimeError(f"download failed: HTTP {r.status}")
+        data = await r.read()
+        if len(data) > _IMAGE_MAX_BYTES:
+            raise RuntimeError(f"file too large ({len(data)} bytes)")
+        return data
 
 
 def _creator_only():
