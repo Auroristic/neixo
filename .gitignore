@@ -47,6 +47,9 @@ commands.json
 # Migrated legacy files
 data/*.migrated
 
+# AI runtime config (model selection, provider)
+data/ai_config.json
+
 # Graphify output
 graphify-out/
 

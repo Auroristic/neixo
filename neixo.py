@@ -315,42 +315,60 @@ class Neixo(commands.Bot):
         # ── Guild AI handling ─────────────────────────────────
 
         # If this is a real command we already handled it via process_commands,
-        # so skip the AI flow.  We use the cached context that process_commands
-        # already attached to the message (discord.py sets message.ctx internally).
+        # so skip the AI flow entirely.
         ctx = getattr(message, "_ctx", None) or await self.get_context(message)
         if ctx.valid:
             return
 
         config = get_config()
-        ai_channels = config.get(str(message.guild.id), {}).get('ai_channels', [])
-        if str(message.channel.id) not in ai_channels:
-            return
+        guild_config = config.get(str(message.guild.id), {})
+        ai_channels = guild_config.get('ai_channels', [])
 
         cog = self.get_cog("AI")
         if not cog:
             return
 
-        await cog.store_message_context(message)
-
-        # 15% chance of dropping a 😭 reaction on relatable messages.
-        # Two branches that did the identical thing have been merged into one.
-        if random.random() < 0.15:
-            content_lower = message.content.lower()
-            if any(word in content_lower for word in _REACTION_TRIGGERS):
-                try:
-                    await message.add_reaction('😭')
-                except Exception:
-                    pass
-
+        is_ai_channel = str(message.channel.id) in ai_channels
         is_mention = self.user in message.mentions
-        is_reply = bool(message.reference and message.reference.resolved)
-        is_reply_to_ai = bool(
-            is_reply
+        is_reply_to_bot = bool(
+            message.reference
             and getattr(message.reference.resolved, 'author', None) == self.user
-            and message.reference.resolved.id in cog._ai_chat_ids
         )
-        if (is_mention and not is_reply) or is_reply_to_ai:
+        is_reply_to_ai = is_reply_to_bot and message.reference.resolved.id in cog._ai_chat_ids
+
+        # ── Decide whether to trigger AI ─────────────────────
+        trigger_ai = False
+
+        if is_ai_channel and (not is_reply_to_bot or is_reply_to_ai):
+            # In AI channels, respond to everything (commands already filtered above),
+            # but skip replies to non-AI bot messages (e.g. command output embeds).
+            trigger_ai = True
+        elif is_mention:
+            # Direct ping in any channel — always respond
+            trigger_ai = True
+        elif is_reply_to_ai:
+            # Replying to a previous AI message in any channel
+            trigger_ai = True
+
+        if trigger_ai:
+            # Store context for AI memory
+            await cog.store_message_context(message)
+
+            # 15% chance of dropping a 😭 reaction on relatable messages.
+            if random.random() < 0.15:
+                content_lower = message.content.lower()
+                if any(word in content_lower for word in _REACTION_TRIGGERS):
+                    try:
+                        await message.add_reaction('😭')
+                    except Exception:
+                        pass
+
             await cog.handle_ai_response(message)
+        elif is_ai_channel and not is_reply_to_bot:
+            # In AI channels, store context for passive messages too
+            # so the AI has conversation history when it IS addressed later.
+            # Skip bot replies (command output) to keep history clean.
+            await cog.store_message_context(message)
 
     async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
         # Re-run a command when the user edits a typo into a real one

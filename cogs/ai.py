@@ -44,6 +44,8 @@ from utils import (
     save_json,
 )
 
+AI_CONFIG_FILE = f"{DATA_DIR}/ai_config.json"
+
 
 def _log(msg: str):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -215,19 +217,92 @@ IMAGE_GEN_TOOL = {
     "type": "function",
     "function": {
         "name": "generate_image",
-        "description": (
-            "NOT AVAILABLE — image generation is broken on this model. "
-            "Tell the user to use the .imagine command instead."
-        ),
+        "description": "Generate an image from a text description using AI (NVIDIA FLUX.2). Use this when someone asks you to draw/create/generate an image, make art, or visualize something. The image auto-attaches to your reply.",
         "parameters": {
             "type": "object",
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "ignored"
+                    "description": "Detailed description of the image to generate"
                 },
             },
             "required": ["prompt"]
+        }
+    }
+}
+
+WEATHER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "weather",
+        "description": "Get current weather conditions and forecast for any city. Use this when someone asks about the weather, temperature, or forecast somewhere.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "City name and optional country/region (e.g. 'Tokyo', 'London UK', 'Paris France')"
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "Number of forecast days (1-3). Default 1 for today only.",
+                }
+            },
+            "required": ["location"]
+        }
+    }
+}
+
+WIKIPEDIA_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "wikipedia",
+        "description": "Search Wikipedia and get a summary of any topic. Use this for general knowledge questions, definitions of concepts, historical events, science, or when you need to look something up.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The topic or thing to look up on Wikipedia"
+                }
+            },
+            "required": ["query"]
+        }
+    }
+}
+
+DEFINE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "define",
+        "description": "Look up the dictionary definition of a word. Use this when someone asks what a word means.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "word": {
+                    "type": "string",
+                    "description": "The word to define"
+                }
+            },
+            "required": ["word"]
+        }
+    }
+}
+
+URBAN_DICT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "urban_dict",
+        "description": "Look up a slang term or phrase on Urban Dictionary. Use this for slang, internet terms, memes, or informal language definitions.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "term": {
+                    "type": "string",
+                    "description": "The slang term or phrase to look up"
+                }
+            },
+            "required": ["term"]
         }
     }
 }
@@ -257,13 +332,11 @@ class AICog(commands.Cog, name="AI"):
         self._zen_key = zen_key
         self._nvidia_keys = nvidia_keys
 
-        # ── Provider + models — persisted on bot instance so reloads don't reset ──
-        if not hasattr(bot, "_provider"):
-            bot._provider = "zen"
-        if not hasattr(bot, "_race_models"):
-            bot._race_models = [MAIN_MODEL]
-        if not hasattr(bot, "_zen_model"):
-            bot._zen_model = MAIN_MODEL
+        # ── Provider + models — persisted across restarts ──
+        saved = self._load_persisted_config()
+        bot._provider = saved.get("provider", "zen")
+        bot._zen_model = saved.get("zen_model", MAIN_MODEL)
+        bot._race_models = saved.get("race_models", [MAIN_MODEL])
         self.race_models = bot._race_models
         self._update_keys()
 
@@ -278,6 +351,22 @@ class AICog(commands.Cog, name="AI"):
             keys = [self._zen_key] if self._zen_key else self._nvidia_keys
         self._keys_list = keys
         self.key_cycle = itertools.cycle(keys)
+
+    def _load_persisted_config(self) -> dict:
+        try:
+            return load_json(AI_CONFIG_FILE) or {}
+        except Exception:
+            return {}
+
+    def _save_persisted_config(self) -> None:
+        try:
+            save_json(AI_CONFIG_FILE, {
+                "provider": getattr(self.bot, "_provider", "zen"),
+                "zen_model": getattr(self.bot, "_zen_model", MAIN_MODEL),
+                "race_models": self.race_models,
+            })
+        except Exception as e:
+            print(f"Failed to save AI config: {e}")
 
     async def cog_load(self):
         self.session = aiohttp.ClientSession()
@@ -618,6 +707,113 @@ class AICog(commands.Cog, name="AI"):
         except Exception as e:
             return f"failed to fetch url: {e}"
 
+    async def weather(self, location: str, days: int = 1) -> str:
+        try:
+            days = max(1, min(3, days or 1))
+            url = f"https://wttr.in/{urllib.parse.quote(location)}?format=%l:+%C,+%t,+feels+like+%f,+humidity+%h,+wind+%w&m"
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    text = await resp.text()
+                    return text.strip() or f"weather data not available for {location}"
+                return f"couldn't get weather for {location}"
+        except asyncio.TimeoutError:
+            return "weather request timed out"
+        except Exception as e:
+            return f"weather lookup failed: {e}"
+
+    async def wikipedia(self, query: str) -> str:
+        try:
+            params = {
+                "action": "query",
+                "list": "search",
+                "srsearch": query,
+                "srlimit": 3,
+                "format": "json",
+            }
+            async with self.session.get(
+                "https://en.wikipedia.org/w/api.php", params=params,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status != 200:
+                    return "wikipedia search failed"
+                data = await resp.json()
+                results = data.get("query", {}).get("search", [])
+                if not results:
+                    return f"no wikipedia results for '{query}'"
+
+                # Get the summary for the top result
+                page_id = results[0]["pageid"]
+                summary_params = {
+                    "action": "query",
+                    "pageids": page_id,
+                    "prop": "extracts",
+                    "exintro": True,
+                    "explaintext": True,
+                    "exsentences": 4,
+                    "format": "json",
+                }
+                async with self.session.get(
+                    "https://en.wikipedia.org/api/w/api.php", params=summary_params,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as summ_resp:
+                    summ_data = await summ_resp.json()
+                    pages = summ_data.get("query", {}).get("pages", {})
+                    page = pages.get(str(page_id), {})
+                    title = page.get("title", "?")
+                    extract = page.get("extract", "no summary available")[:800]
+                    url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+                    return f"{title}: {extract}\n{url}"
+        except asyncio.TimeoutError:
+            return "wikipedia request timed out"
+        except Exception as e:
+            return f"wikipedia lookup failed: {e}"
+
+    async def define_word(self, word: str) -> str:
+        try:
+            url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{urllib.parse.quote(word)}"
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return f"no definition found for '{word}'"
+                data = (await resp.json())[0]
+                word_name = data.get("word", word)
+                meanings = data.get("meanings", [])
+                parts = []
+                for m in meanings[:3]:
+                    pos = m.get("partOfSpeech", "")
+                    defs = m.get("definitions", [])
+                    if defs:
+                        d = defs[0].get("definition", "")
+                        example = defs[0].get("example", "")
+                        line = f"*{pos}*: {d}" if not example else f"*{pos}*: {d} (e.g. \"{example}\")"
+                        parts.append(line)
+                return f"**{word_name}**:\n" + "\n".join(parts[:4]) if parts else f"no definitions for '{word}'"
+        except asyncio.TimeoutError:
+            return "dictionary request timed out"
+        except Exception as e:
+            return f"dictionary lookup failed: {e}"
+
+    async def urban_dict(self, term: str) -> str:
+        try:
+            url = f"https://api.urbandictionary.com/v0/define?term={urllib.parse.quote(term)}"
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return f"no urban dictionary results for '{term}'"
+                data = await resp.json()
+                entries = data.get("list", [])
+                if not entries:
+                    return f"no urban dictionary results for '{term}'"
+                top = entries[0]
+                definition = top.get("definition", "")[:400].strip()
+                example = top.get("example", "")[:200].strip()
+                result = f"{term}: {definition}"
+                if example:
+                    result += f"\n   example: \"{example}\""
+                return result
+        except asyncio.TimeoutError:
+            return "urban dictionary request timed out"
+        except Exception as e:
+            return f"urban dictionary lookup failed: {e}"
+
     async def image_to_base64(self, url):
         try:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
@@ -630,15 +826,8 @@ class AICog(commands.Cog, name="AI"):
             _log(f"Image error: {e}")
         return None
 
-    async def _generate_image(self, prompt: str, needs_text: bool = False, image_url: str | None = None) -> tuple[str, list]:
+    async def _generate_image(self, prompt: str) -> tuple[str, list]:
         """Generate an image via NVIDIA NIM (FLUX.2-klein-4b)."""
-        if needs_text:
-            return "the current image model can't render legible text in images", []
-        if image_url:
-            return "editing existing images isn't supported on this model", []
-        text_keywords = re.search(r'(?i)\b(text|words?|says?|written|label(led)?|headline|title|poster|sign|banner|menu|logo)\b', prompt)
-        if text_keywords:
-            return "the current image model can't render legible text inside images — describe the scene visually instead", []
         key = next(self.key_cycle)
         headers = {
             "Authorization": f"Bearer {key}",
@@ -763,6 +952,31 @@ class AICog(commands.Cog, name="AI"):
             text = await self.fetch_url(url)
             return f"page content:\n{text}", []
 
+        if func_name == "weather":
+            location = (args.get("location") or "").strip()
+            if not location:
+                return "no location provided", []
+            days = args.get("days", 1)
+            return await self.weather(location, days), []
+
+        if func_name == "wikipedia":
+            query = (args.get("query") or "").strip()
+            if not query:
+                return "no query provided", []
+            return await self.wikipedia(query), []
+
+        if func_name == "define":
+            word = (args.get("word") or "").strip()
+            if not word:
+                return "no word provided", []
+            return await self.define_word(word), []
+
+        if func_name == "urban_dict":
+            term = (args.get("term") or "").strip()
+            if not term:
+                return "no term provided", []
+            return await self.urban_dict(term), []
+
         query = (args.get("query") or "").strip()
         if not query:
             return "no query provided", []
@@ -791,9 +1005,7 @@ class AICog(commands.Cog, name="AI"):
             prompt = (args.get("prompt") or "").strip()
             if not prompt:
                 return "no prompt provided", []
-            needs_text = args.get("needs_text", False)
-            image_url = (args.get("image_url") or "").strip() or None
-            return await self._generate_image(prompt, needs_text, image_url)
+            return await self._generate_image(prompt), []
         return f"unknown tool: {func_name}", []
 
     @staticmethod
@@ -808,6 +1020,10 @@ class AICog(commands.Cog, name="AI"):
             "gif_search":   "looking for a gif",
             "web_fetch":    "reading a webpage",
             "generate_image": "generating an image",
+            "weather":      "checking the weather",
+            "wikipedia":    "looking something up",
+            "define":       "looking up a definition",
+            "urban_dict":   "looking up slang",
         }
         if len(unique) == 1:
             return f"-# {labels.get(unique[0], 'doing stuff')}..."
@@ -874,7 +1090,7 @@ class AICog(commands.Cog, name="AI"):
         gifs: list[str] = []
         images: list[str] = []
         text = ""
-        all_tools = [SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL]
+        all_tools = [SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL, WEATHER_TOOL, WIKIPEDIA_TOOL, DEFINE_TOOL, URBAN_DICT_TOOL]
         status_msg: discord.Message | None = None  # live "what i'm doing" message
 
         for round_num in range(max_rounds):
@@ -1317,14 +1533,18 @@ personality:
 - NEVER use asterisks for actions. not even once.
 - dont do *sent a gif* or *sent a happy gif* if u r asked to send gifs its in the tools description where u can find gifs and such
 tools:
-- u have web_search, web_fetch, image_search, and gif_search tools
+- u have web_search, web_fetch, image_search, gif_search, weather, wikipedia, define, urban_dict, and generate_image tools
 - USE web_search whenever someone asks u to google/search something, or when u need current info u dont know
 - USE web_fetch to read the content of a specific URL when someone sends u a link or asks what a page says
 - USE image_search when someone asks for images or pictures
 - USE gif_search ONLY when the vibe matches one of ur available gif categories. query must be one of these categories:
 {gif_categories}
-- when someone asks u to draw/create/generate an image or make art, tell them to use the .imagine command (e.g. `.imagine a cute cat`) — u can't generate images directly
-- when u use gif_search OR image_search the media AUTO-ATTACHES to ur reply on its own. NEVER paste any url/link in ur text — just write the casual reaction text only
+- USE weather when someone asks about the weather, temperature, or forecast somewhere
+- USE wikipedia for general knowledge questions, facts, or looking things up
+- USE define to look up the dictionary definition of a word
+- USE urban_dict to look up slang or internet terms
+- USE generate_image when someone asks u to draw/create/generate an image or make art — it uses AI to create an image
+- when u use gif_search OR image_search OR generate_image the media AUTO-ATTACHES to ur reply on its own. NEVER paste any url/link in ur text — just write the casual reaction text only
 
 bot commands (when ppl ask u "what can u do" / "how do i X" / "how to play music" / etc — find the EXACT command from this list and reply with it casually. NEVER make up commands that aren't here. if a command is tagged [staff-only] and a non-staff user asks, just tell them it's staff-only. if nothing matches, just say u don't have a command for that):
 {cmd_summary}
@@ -1389,14 +1609,18 @@ identity:
 - also try to be cute by including stuff like: "tehe", "hehehehehehe", "meow" (randomly), "umm", "~", "<33"
 
 tools:
-- u have web_search, web_fetch, image_search, and gif_search tools
+- u have web_search, web_fetch, image_search, gif_search, weather, wikipedia, define, urban_dict, and generate_image tools
 - USE web_search whenever someone asks u to google/search something, or when u need current info u dont know
 - USE web_fetch to read the content of a specific URL when someone sends u a link or asks what a page says
 - USE image_search when someone asks for images or pictures
 - USE gif_search ONLY when the vibe matches one of ur available gif categories. query must be one of these categories:
 {gif_categories}
-- when someone asks u to draw/create/generate an image or make art, tell them to use the .imagine command (e.g. `.imagine a cute cat`) — u can't generate images directly
-- when u use gif_search OR image_search the media AUTO-ATTACHES to ur reply on its own. NEVER paste any url/link in ur text — just write the casual reaction text only
+- USE weather when someone asks about the weather, temperature, or forecast somewhere
+- USE wikipedia for general knowledge questions, facts, or looking things up
+- USE define to look up the dictionary definition of a word
+- USE urban_dict to look up slang or internet terms
+- USE generate_image when someone asks u to draw/create/generate an image or make art — it uses AI to create an image
+- when u use gif_search OR image_search OR generate_image the media AUTO-ATTACHES to ur reply on its own. NEVER paste any url/link in ur text — just write the casual reaction text only
 
 bot commands (when ppl ask u "what can u do" / "how do i X" / "how to play music" / etc — find the EXACT command from this list and reply with it casually. NEVER make up commands that aren't here. if a command is tagged [staff-only] and a non-staff user asks, just tell them it's staff-only. if nothing matches, just say u don't have a command for that):
 {cmd_summary}
@@ -1569,7 +1793,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 response = await self.nvidia_complete(
                     messages_payload,
                     max_tokens=350,
-                    tools=[SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL]
+                    tools=[SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL, WEATHER_TOOL, WIKIPEDIA_TOOL, DEFINE_TOOL, URBAN_DICT_TOOL]
                 )
 
                 already_sent, response_text = await self._handle_tool_calls(
@@ -1764,7 +1988,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 response = await self.nvidia_complete(
                     messages_payload,
                     max_tokens=350,
-                    tools=[SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL]
+                    tools=[SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL, WEATHER_TOOL, WIKIPEDIA_TOOL, DEFINE_TOOL, URBAN_DICT_TOOL]
                 )
                 already_sent, response_text = await self._handle_tool_calls(
                     response, messages_payload, message, bot_memory, mem_key
@@ -2340,6 +2564,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                         return await interaction.response.send_message("not ur menu", ephemeral=True)
                     chosen = self_inner.values[0]
                     self.bot._zen_model = chosen
+                    self._save_persisted_config()
                     await interaction.response.edit_message(
                         content=f"zen model set to `{chosen}`",
                         view=None,
@@ -2372,6 +2597,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 return await ctx.send("already in the race list")
             self.race_models.append(value)
             self.bot._race_models = self.race_models
+            self._save_persisted_config()
             return await ctx.send(f"added `{value}` \u2014 {len(self.race_models)} model(s) total")
 
         if action == "remove" and value:
@@ -2383,11 +2609,13 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 if 0 <= idx < len(self.race_models):
                     removed = self.race_models.pop(idx)
                     self.bot._race_models = self.race_models
+                    self._save_persisted_config()
                     return await ctx.send(f"removed `{removed}`")
                 return await ctx.send(f"invalid number, only {len(self.race_models)} model(s) listed")
             if value in self.race_models:
                 self.race_models.remove(value)
                 self.bot._race_models = self.race_models
+                self._save_persisted_config()
                 return await ctx.send(f"removed `{value}`")
             return await ctx.send("not in race list, check `.model` for exact names")
 
@@ -2414,6 +2642,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         self.bot._provider = provider
         self._update_keys()
         self._clients = {}
+        self._save_persisted_config()
 
         if provider == "nvidia":
             await ctx.send(f"switched to **nvidia** \u2014 race models: {', '.join(f'`{m}`' for m in self.race_models)}")
