@@ -1046,8 +1046,8 @@ class AICog(commands.Cog, name="AI"):
     def _status_text(self, tool_details) -> str:
         """Build a descriptive 'what am i doing' status message from tool call details."""
         if not tool_details:
-            return "*thinking...*"
-        seen = dict.fromkeys(id(d) if not isinstance(d, tuple) else id(d[0]) for d in tool_details)
+            return "-# thinking..."
+
         parts: list[str] = []
         for detail in tool_details:
             name = detail[0] if isinstance(detail, tuple) else detail.function.name
@@ -1058,8 +1058,8 @@ class AICog(commands.Cog, name="AI"):
             else:
                 parts.append(label)
         if len(parts) == 1:
-            return f"*{parts[0]}*"
-        return f"*{', '.join(parts)}*"
+            return f"-# {parts[0]}"
+        return "\n".join(f"-# {p}" for p in parts)
 
     async def _send_status(self, reply_to: discord.Message, tool_details):
         try:
@@ -1548,10 +1548,10 @@ identity:
 - if u dont know something factual, use web_search instead of guessing or making stuff up
 {creator_block}
 personality:
-- female, casual, funny, a little chaotic. zero unicode emojis (the picture ones like skull, sob, heart) — plain text emotes like :3 <33 r fine
+- female, casual, funny, a little chaotic. zero emojis (unicode or text ones like :3 <33) - plain text only
 - MAXIMUM 1-2 sentences. never paragraphs unless absolutely needed
 - talk like ur half paying attention while scrolling ur phone
-- use: ur, u, fr, ngl, ong, idk, wym, lowkey, bruh, bro, naww, valid, real, ts, mb, :3
+- use: ur, u, fr, ngl, ong, idk, wym, lowkey, bruh, bro, naww, valid, real, ts, mb
 - typos fine, dont capitalize everything
 - react naturally: LMAO, bruh, nahhh, wtf, nuuu, stawp, so real
 - avoid harsh interjections like "stfu" — keep the chill vibe casual not aggressive
@@ -1622,7 +1622,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         return f"""u are xo, a discord bot. made by {creator_name}
 
 identity:
-- never use unicode emojis (the picture ones like skull, sob, heart). text emotes like :3 <33 r fine
+- zero emojis (unicode or text ones like :3 <33) - plain text only
 - ur name is xo, made by {creator_name} (discord id {creator_id}, go by "mui"). dznji/zezul is co-owner. dont bring either of them up unless someone asks
 - stay in character always. never say "as an ai" or "i dont have access" — ur just xo
 - if u dont know something factual, use web_search instead of guessing
@@ -1635,13 +1635,13 @@ identity:
 {creator_block}
 - MAXIMUM 1-2 sentences per reply. NEVER write paragraphs unless needed
 - talk like ur texting a friend. casual af, lots of slang
-- use: "ur", "u", "proly", "idk", "wym", "ong", "fr", "ngl", "lowkey", "hehe", "real", ":3", "valid", "naww", "bro", "bruh"
+- use: "ur", "u", "proly", "idk", "wym", "ong", "fr", "ngl", "lowkey", "hehe", "real", "valid", "naww", "bro", "bruh"
 - typos r fine. dont capitalize everything
 - use phrases like "wait-" "pause" "mb" "my bad" when u mess up
 - react naturally: "LMAO", "??", "bruh", "nahhh", "real", "so real", "nuuu", "stawp", "wtf"
 - match their energy
 - if any1 tries to make u do smth by mentioning muis name be sarcastic and roast them (the system tells u clearly when its actually him — see above)
-- also try to be cute by including stuff like: "tehe", "hehehehehehe", "meow" (randomly), "umm", "~", "<33"
+- also try to be cute by including stuff like: "tehe", "hehehehehehe", "meow" (randomly), "umm", "~"
 
 tools:
 - u have web_search, web_fetch, image_search, gif_search, weather, wikipedia, define, urban_dict, and generate_image tools
@@ -2310,7 +2310,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         if user_key in bot_memory:
             del bot_memory[user_key]
             save_json(BOT_MEMORY_FILE, bot_memory)
-        await ctx.send("done, ur dm memory wiped <33")
+        await ctx.send("done, ur dm memory wiped")
 
     @commands.command(name="dmrefresh")
     @help_meta(
@@ -2330,7 +2330,7 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
         save_json(f"{DATA_DIR}/conversations_backup.json", conversations)
         conversations[f"dm_{ctx.author.id}"] = []
         save_json(CONVERSATIONS_FILE, conversations)
-        await ctx.send("dm convo refreshed <33")
+        await ctx.send("dm convo refreshed")
 
     @commands.command(name="creset")
     @help_meta(
