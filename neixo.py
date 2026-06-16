@@ -334,12 +334,16 @@ class Neixo(commands.Bot):
             message.reference
             and getattr(message.reference.resolved, 'author', None) == self.user
         )
-        is_reply_to_ai = is_reply_to_bot and message.reference.resolved.id in cog._ai_chat_ids
+        # When the referenced message isn't in Discord's cache, `resolved` is None.
+        # We can't tell whether it's a reply to a bot or a user, so be conservative
+        # and skip AI (the user can @mention the bot to get its attention).
+        could_not_resolve = bool(message.reference and message.reference.resolved is None)
+        is_reply_to_ai = is_reply_to_bot and getattr(message.reference.resolved, 'id', None) in cog._ai_chat_ids
 
         # ── Decide whether to trigger AI ─────────────────────
         trigger_ai = False
 
-        if is_ai_channel and (not is_reply_to_bot or is_reply_to_ai):
+        if is_ai_channel and (not is_reply_to_bot or is_reply_to_ai) and not could_not_resolve:
             # In AI channels, respond to everything (commands already filtered above),
             # but skip replies to non-AI bot messages (e.g. command output embeds).
             trigger_ai = True

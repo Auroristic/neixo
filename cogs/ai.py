@@ -10,7 +10,7 @@ import re
 import time as _time
 from collections import OrderedDict
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 
 def _now_iso() -> str:
@@ -688,7 +688,7 @@ class AICog(commands.Cog, name="AI"):
                     if ip.is_private or ip.is_loopback or ip.is_link_local:
                         return "blocked: this url points to an internal or private address"
         except Exception:
-            pass
+            return "blocked: could not verify url safety"
         try:
             async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:
@@ -710,7 +710,7 @@ class AICog(commands.Cog, name="AI"):
     async def weather(self, location: str, days: int = 1) -> str:
         try:
             days = max(1, min(3, days or 1))
-            url = f"https://wttr.in/{urllib.parse.quote(location)}?format=%l:+%C,+%t,+feels+like+%f,+humidity+%h,+wind+%w&m"
+            url = f"https://wttr.in/{quote(location)}?format=%l:+%C,+%t,+feels+like+%f,+humidity+%h,+wind+%w&m"
             async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status == 200:
                     text = await resp.text()
@@ -761,7 +761,7 @@ class AICog(commands.Cog, name="AI"):
                     page = pages.get(str(page_id), {})
                     title = page.get("title", "?")
                     extract = page.get("extract", "no summary available")[:800]
-                    url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+                    url = f"https://en.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"
                     return f"{title}: {extract}\n{url}"
         except asyncio.TimeoutError:
             return "wikipedia request timed out"
@@ -770,7 +770,7 @@ class AICog(commands.Cog, name="AI"):
 
     async def define_word(self, word: str) -> str:
         try:
-            url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{urllib.parse.quote(word)}"
+            url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{quote(word)}"
             async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
                     return f"no definition found for '{word}'"
@@ -794,7 +794,7 @@ class AICog(commands.Cog, name="AI"):
 
     async def urban_dict(self, term: str) -> str:
         try:
-            url = f"https://api.urbandictionary.com/v0/define?term={urllib.parse.quote(term)}"
+            url = f"https://api.urbandictionary.com/v0/define?term={quote(term)}"
             async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
                     return f"no urban dictionary results for '{term}'"
@@ -1391,9 +1391,7 @@ class AICog(commands.Cog, name="AI"):
                     return "no gif available.", []
                 if name == "generate_image":
                     gen_prompt = params.get("prompt", param_body) or ""
-                    gen_text = params.get("needs_text", False)
-                    gen_url = params.get("image_url") or None
-                    return await self._generate_image(gen_prompt, gen_text, gen_url)
+                    return await self._generate_image(gen_prompt)
                 return f"unknown tool: {name}", []
 
             results = await asyncio.gather(*[_exec_one(t) for t in xml_tools], return_exceptions=True)
