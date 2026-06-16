@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import random
+import re
 
 import discord
 from discord import app_commands
@@ -329,12 +330,19 @@ class Neixo(commands.Bot):
             return
 
         is_ai_channel = str(message.channel.id) in ai_channels
-        is_mention = self.user in message.mentions
+        is_mention = bool(re.search(rf"<@!?{self.user.id}>", message.content))
+        resolved_reference = message.reference.resolved if message.reference else None
+        if resolved_reference is None and message.reference and message.reference.message_id:
+            try:
+                resolved_reference = await message.channel.fetch_message(message.reference.message_id)
+            except Exception:
+                resolved_reference = None
+
         is_reply_to_bot = bool(
             message.reference
-            and getattr(message.reference.resolved, 'author', None) == self.user
+            and getattr(resolved_reference, 'author', None) == self.user
         )
-        is_reply_to_ai = is_reply_to_bot and getattr(message.reference.resolved, 'id', None) in cog._ai_chat_ids
+        is_reply_to_ai = is_reply_to_bot and getattr(resolved_reference, 'id', None) in cog._ai_chat_ids
 
         # ── Decide whether to trigger AI ─────────────────────
         trigger_ai = False
