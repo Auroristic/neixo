@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import discord
 import wavelink
 from discord.ui import Button, Select, View
-
-log = logging.getLogger(__name__)
 
 from cogs.music_helpers import (
     GENRE_MAP,
@@ -18,6 +16,11 @@ from cogs.music_helpers import (
     _ok_embed,
     _spotify,
 )
+
+if TYPE_CHECKING:
+    from cogs.music import Music
+
+log = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
 # NOW-PLAYING VIEW (prev / pause-toggle / next)

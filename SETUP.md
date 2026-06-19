@@ -163,7 +163,7 @@ DISCORD_TOKEN=your_actual_bot_token
 LAVALINK_URI=http://localhost:2333
 LAVALINK_PASS=youshallnotpass
 # Optional:
-# CREATOR_ID=887382911924441139
+# CREATOR_ID=your_discord_user_id_here
 ```
 
 ---

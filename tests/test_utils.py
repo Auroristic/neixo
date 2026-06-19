@@ -1,4 +1,6 @@
 
+import importlib
+
 import pytest
 
 
@@ -66,6 +68,29 @@ class TestConfigCache:
         from utils import get_embed_color
         color = get_embed_color(999999)
         assert isinstance(color, int)
+
+
+class TestCreatorId:
+    def test_is_creator_uses_env_creator_id(self, monkeypatch):
+        import utils
+
+        monkeypatch.setattr(utils, 'CREATOR_ID', 987654321)
+
+        assert utils.is_creator(987654321) is True
+        assert utils.is_creator('987654321') is True
+        assert utils.is_creator(123456789) is False
+
+    def test_default_creator_id_is_not_real_user_id(self, monkeypatch):
+        import utils
+
+        monkeypatch.delenv('CREATOR_ID', raising=False)
+        reloaded = importlib.reload(utils)
+
+        try:
+            assert reloaded.CREATOR_ID == 0
+        finally:
+            monkeypatch.setenv('CREATOR_ID', '123456789')
+            importlib.reload(reloaded)
 
 
 class TestGuildAvatars:

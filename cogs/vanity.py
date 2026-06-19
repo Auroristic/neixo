@@ -66,14 +66,18 @@ class Vanity(commands.Cog):
             await self.conn.commit()
 
     async def update_rule(self, guild_id, **kwargs):
-        _ALLOWED_COLUMNS = {"substring", "channel_id", "channel_msg", "role_id"}
         for key, value in kwargs.items():
-            if key not in _ALLOWED_COLUMNS:
+            if key == "substring":
+                query = "UPDATE vanity_rules SET substring = ? WHERE guild_id = ?"
+            elif key == "channel_id":
+                query = "UPDATE vanity_rules SET channel_id = ? WHERE guild_id = ?"
+            elif key == "channel_msg":
+                query = "UPDATE vanity_rules SET channel_msg = ? WHERE guild_id = ?"
+            elif key == "role_id":
+                query = "UPDATE vanity_rules SET role_id = ? WHERE guild_id = ?"
+            else:
                 raise ValueError(f"invalid column: {key}")
-            await self.conn.execute(
-                f"UPDATE vanity_rules SET {key} = ? WHERE guild_id = ?",
-                (value, guild_id),
-            )
+            await self.conn.execute(query, (value, guild_id))
         await self.conn.commit()
 
     def format_msg(self, template, member):

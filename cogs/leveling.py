@@ -11,6 +11,7 @@ from utils import (
     get_level_role,
     get_user_xp,
     help_meta,
+    is_creator,
     is_owner_or_creator,
     set_level_role,
 )
@@ -407,7 +408,7 @@ class Leveling(commands.Cog):
     )
     async def givexp(self, ctx, xp: int, user: discord.Member = None):
         """Admin command to give XP (hidden)."""
-        if not (ctx.author.id == ctx.guild.owner_id or ctx.author.id == 887382911924441139):
+        if not (ctx.author.id == ctx.guild.owner_id or is_creator(ctx.author.id)):
             return
 
         user = user or ctx.author

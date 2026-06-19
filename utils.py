@@ -432,7 +432,7 @@ def imagine_cooldown_msg(seconds):
 
 from neixoconfig import SeoulitiesServerID as SEOULITIES_SERVER_ID
 
-CREATOR_ID           = int(os.getenv("CREATOR_ID", "887382911924441139"))
+CREATOR_ID           = int(os.getenv("CREATOR_ID", "0"))
 
 
 def is_creator(user_id) -> bool:

@@ -76,7 +76,7 @@ On first run the bot creates `data/bot.db` (SQLite) and migrates any legacy JSON
 
 ### Optional env vars
 ```env
-CREATOR_ID=887382911924441139
+CREATOR_ID=your_discord_user_id_here
 LAVALINK_URI=http://localhost:2333
 LAVALINK_PASS=youshallnotpass
 ```

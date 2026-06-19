@@ -627,8 +627,7 @@ class ReactionsCog(commands.Cog, name="Reactions"):
                 'sick': '🤢', 'vomit': '🤮', 'poop': '💩', 'shit': '💩',
                 'middle_finger': '🖕', 'fuck_you': '🖕', 'peace': '✌️', 'v': '✌️', 'wave': '👋',
                 'point_right': '👉', 'point_left': '👈', 'point_up': '👆', 'point_down': '👇',
-                'raised_hands': '🙌', 'fist': '✊', 'punch': '👊', 'open_hands': '👐', 'pray': '🙏',
-                'muscle': '💪'
+                'raised_hands': '🙌', 'fist': '✊', 'punch': '👊', 'open_hands': '👐'
             }
             if emoji_name.lower() in emoji_map:
                 emoji = emoji_map[emoji_name.lower()]
