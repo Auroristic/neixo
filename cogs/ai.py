@@ -136,6 +136,150 @@ def _sanitize_name(name: str) -> str:
     cleaned = _INJECTION_PATTERNS.sub("", name).strip()
     return cleaned[:64] if cleaned else "user"
 
+# ── NVIDIA model browser ────────────────────────────────────
+
+NVIDIA_MODELS_CACHE_FILE = f"{DATA_DIR}/nvidia_models_cache.json"
+NVIDIA_CACHE_TTL = 5 * 3600
+
+
+async def _fetch_nvidia_models() -> list[dict]:
+    """Scrape model catalog from build.nvidia.com/models.
+    Returns list of {"id": "publisher/model", "display": "model-name"}
+    sorted alphabetically. Cached on disk with 5-hour TTL."""
+    try:
+        cached = load_json(NVIDIA_MODELS_CACHE_FILE)
+        if cached and isinstance(cached, dict):
+            ts = cached.get("timestamp", 0)
+            if _time.time() - ts < NVIDIA_CACHE_TTL:
+                return cached.get("models", [])
+    except Exception:
+        pass
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://build.nvidia.com/models",
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                html = await resp.text()
+    except Exception:
+        try:
+            cached = load_json(NVIDIA_MODELS_CACHE_FILE)
+            if cached and isinstance(cached, dict):
+                return cached.get("models", [])
+        except Exception:
+            pass
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    models = []
+    seen = set()
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        m = re.match(r"^/([a-z][a-z0-9-]*[a-z0-9])/([a-z0-9][a-z0-9._/-]*)$", href)
+        if not m:
+            continue
+        pub, name = m.group(1), m.group(2)
+        if pub in ("docs", "blog", "resources", "login", "explore", "account", "help"):
+            continue
+        full = f"{pub}/{name}"
+        if full in seen:
+            continue
+        seen.add(full)
+        models.append({"id": full, "display": name})
+
+    if not models:
+        try:
+            cached = load_json(NVIDIA_MODELS_CACHE_FILE)
+            if cached and isinstance(cached, dict):
+                return cached.get("models", [])
+        except Exception:
+            pass
+        return []
+
+    models.sort(key=lambda x: x["id"].lower())
+    try:
+        save_json(NVIDIA_MODELS_CACHE_FILE, {
+            "timestamp": _time.time(),
+            "models": models,
+        })
+    except Exception:
+        pass
+    return models
+
+
+class NvidiaModelView(discord.ui.View):
+    """Paginated Select view for browsing and adding NVIDIA models."""
+
+    def __init__(self, ctx, models: list[dict], cog):
+        super().__init__(timeout=120)
+        self.ctx = ctx
+        self.models = models
+        self.cog = cog
+        self.page = 0
+        self.per_page = 25
+        self.total = max(1, (len(models) - 1) // self.per_page + 1)
+        self._build_page()
+
+    def _build_page(self):
+        for child in list(self.children):
+            if isinstance(child, discord.ui.Select):
+                self.remove_item(child)
+
+        start = self.page * self.per_page
+        chunk = self.models[start:start + self.per_page]
+
+        select = discord.ui.Select(
+            placeholder=f"model to add (page {self.page + 1}/{self.total})",
+            options=[discord.SelectOption(label=m["id"], value=m["id"]) for m in chunk],
+            min_values=1, max_values=1,
+        )
+
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.ctx.author.id:
+                return await interaction.response.send_message("not ur menu", ephemeral=True)
+            chosen = select.values[0]
+            if chosen in self.cog.race_models:
+                return await interaction.response.send_message(f"`{chosen}` already in race list", ephemeral=True)
+            self.cog.race_models.append(chosen)
+            self.cog.bot._race_models = self.cog.race_models
+            self.cog._save_persisted_config()
+            await interaction.response.send_message(f"added `{chosen}` to race list", ephemeral=True)
+
+        select.callback = callback
+        self.add_item(select)
+
+    @discord.ui.button(label="\u25c0", style=discord.ButtonStyle.grey)
+    async def prev(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        if self.page > 0:
+            self.page -= 1
+            self._build_page()
+            await interaction.response.edit_message(
+                content=f"NVIDIA models \u2014 page {self.page + 1}/{self.total}",
+                view=self,
+            )
+        else:
+            await interaction.response.defer()
+
+    @discord.ui.button(label="\u25b6", style=discord.ButtonStyle.grey)
+    async def next(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        if self.page < self.total - 1:
+            self.page += 1
+            self._build_page()
+            await interaction.response.edit_message(
+                content=f"NVIDIA models \u2014 page {self.page + 1}/{self.total}",
+                view=self,
+            )
+        else:
+            await interaction.response.defer()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.ctx.author.id
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+
 # ── Tool definition for the model ────────────────────────────
 
 SEARCH_TOOL = {
@@ -2618,11 +2762,34 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
             if not self.race_models:
                 return await ctx.send("no models in the list rn")
             lines = "\n".join([f"`{i+1}.` {m}" for i, m in enumerate(self.race_models)])
-            return await ctx.send(embed=discord.Embed(
-                title="racing models",
-                description=lines,
-                color=get_embed_color(ctx.guild.id)
-            ))
+
+            class _RemoveSelect(discord.ui.Select):
+                def __init__(self_inner):
+                    super().__init__(
+                        placeholder="remove a model...",
+                        options=[discord.SelectOption(label=m, value=m) for m in self.race_models],
+                        min_values=1, max_values=1,
+                    )
+                async def callback(self_inner, interaction):
+                    if interaction.user.id != ctx.author.id:
+                        return await interaction.response.send_message("not ur menu", ephemeral=True)
+                    chosen = self_inner.values[0]
+                    if len(self.race_models) <= 1:
+                        return await interaction.response.send_message("can't remove the last model", ephemeral=True)
+                    self.race_models.remove(chosen)
+                    self.bot._race_models = self.race_models
+                    self._save_persisted_config()
+                    await interaction.response.send_message(f"removed `{chosen}`", ephemeral=True)
+
+            class _RemoveView(discord.ui.View):
+                def __init__(self_inner):
+                    super().__init__(timeout=30)
+                    self_inner.add_item(_RemoveSelect())
+
+            return await ctx.send(
+                embed=discord.Embed(title="racing models", description=lines, color=get_embed_color(ctx.guild.id)),
+                view=_RemoveView(),
+            )
 
         if action == "add" and value:
             value = value.strip()
@@ -2653,6 +2820,27 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
             return await ctx.send("not in race list, check `.model` for exact names")
 
         await ctx.send("usage: `.model` | `.model add <model>` | `.model remove <number or name>`")
+
+    # ── nvidia ────────────────────────────────────────────────
+    @commands.command(name="nvidia")
+    @help_meta(
+        usage=".nvidia",
+        desc="Browse all models from build.nvidia.com and add them to the race list.",
+        owner=True,
+        examples=[".nvidia"],
+        note="Owner only. Paginated list with a dropdown to pick models.",
+    )
+    async def nvidia_cmd(self, ctx):
+        if not is_owner_or_creator(ctx):
+            return await ctx.send("owner only")
+        models = await _fetch_nvidia_models()
+        if not models:
+            return await ctx.send("couldn't fetch models from build.nvidia.com")
+        view = NvidiaModelView(ctx, models, self)
+        await ctx.send(
+            f"NVIDIA models \u2014 page 1/{view.total} (pick a model to add it to the race list)",
+            view=view,
+        )
 
     # ── ai toggle ─────────────────────────────────────────────
     @commands.command(name="aitoggle")
