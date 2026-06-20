@@ -2784,8 +2784,9 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                     super().__init__(timeout=30)
                     self_inner.add_item(_RemoveSelect())
 
+            gid = ctx.guild.id if ctx.guild else None
             return await ctx.send(
-                embed=discord.Embed(title="racing models", description=lines, color=get_embed_color(ctx.guild.id)),
+                embed=discord.Embed(title="racing models", description=lines, color=get_embed_color(gid)),
                 view=_RemoveView(),
             )
 

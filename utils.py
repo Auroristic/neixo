@@ -292,7 +292,7 @@ def invalidate_aliases():
 
 def get_embed_color(guild_id):
     config = get_config()
-    saved = config.get(str(guild_id), {}).get("embed_color")
+    saved = config.get(str(guild_id), {}).get("embed_color") if guild_id is not None else None
     if saved is not None:
         return saved
     try:
