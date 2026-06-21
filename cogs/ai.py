@@ -612,6 +612,7 @@ class AICog(commands.Cog, name="AI"):
         tools: list | None = None,
         has_images: bool = False,
         has_video: bool = False,
+        max_tokens: int = 350,
     ):
         status_msg = await channel.send(f"{random.choice(STATUS_EMOJIS)} *typing...*")
         cycle_task = asyncio.create_task(
@@ -620,13 +621,16 @@ class AICog(commands.Cog, name="AI"):
 
         try:
             response = await asyncio.wait_for(
-                self.nvidia_complete(messages_payload, tools=tools),
+                self.nvidia_complete(messages_payload, tools=tools, max_tokens=max_tokens),
                 timeout=30.0,
             )
             cycle_task.cancel()
             return response, status_msg, False
 
-        except asyncio.TimeoutError:
+        except Exception as e:
+            is_timeout = isinstance(e, asyncio.TimeoutError)
+            if not is_timeout:
+                print(f"_call_with_status error: {e}")
             cycle_task.cancel()
             fail_emoji = random.choice(FAIL_EMOJIS)
 
@@ -641,9 +645,9 @@ class AICog(commands.Cog, name="AI"):
             await asyncio.sleep(0.5)
 
             if has_images or has_video:
-                response = await self.nvidia_complete(messages_payload, tools=tools)
+                response = await self.nvidia_complete(messages_payload, tools=tools, max_tokens=max_tokens)
             else:
-                response = await self._deepseek_complete(messages_payload, tools=tools)
+                response = await self._deepseek_complete(messages_payload, tools=tools, max_tokens=max_tokens)
 
             return response, status_msg, True
 
@@ -1184,6 +1188,7 @@ class AICog(commands.Cog, name="AI"):
         bot_memory: dict,
         mem_key: str,
         max_rounds: int = 2,
+        status_msg: discord.Message | None = None,
     ) -> tuple[bool, str]:
         """
         - If no tool was used: returns (False, text) so caller sends text.
@@ -1200,7 +1205,7 @@ class AICog(commands.Cog, name="AI"):
         """
         choice = response.choices[0]
 
-        # No tool used — caller handles
+        # No tool used — finalize into status_msg with chunking
         if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
             text = (choice.message.content or "").strip()
             # Check for raw XML tool calls (zen free models output these
@@ -1209,18 +1214,29 @@ class AICog(commands.Cog, name="AI"):
             if xml_tools:
                 return await self._handle_raw_tool_calls(
                     xml_tools, text, messages_payload,
-                    reply_to, bot_memory, mem_key,
+                    reply_to, bot_memory, mem_key, status_msg=status_msg,
                 )
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
             text = _strip_media_urls(text)
             text = self._handle_remember(text, bot_memory, mem_key)
+            if status_msg:
+                primary = text[:2000]
+                remainder = text[2000:]
+                if primary:
+                    await status_msg.edit(content=primary)
+                    self._track_ai_message(status_msg.id)
+                else:
+                    await status_msg.delete()
+                for i in range(0, len(remainder), 2000):
+                    sent = await reply_to.channel.send(remainder[i:i+2000])
+                    self._track_ai_message(sent.id)
+                return True, text
             return False, text
 
         gifs: list[str] = []
         images: list[str] = []
         text = ""
         all_tools = [SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL, WEATHER_TOOL, WIKIPEDIA_TOOL, DEFINE_TOOL, URBAN_DICT_TOOL]
-        status_msg: discord.Message | None = None  # live "what i'm doing" message
 
         for round_num in range(max_rounds):
             msg = response.choices[0].message
@@ -1366,6 +1382,7 @@ class AICog(commands.Cog, name="AI"):
             try:
                 if status_msg:
                     await status_msg.edit(content=primary_text, embeds=image_embeds)
+                    self._track_ai_message(status_msg.id)
                     if image_files:
                         sent = await reply_to.channel.send(files=image_files)
                         self._track_ai_message(sent.id)
@@ -1393,6 +1410,7 @@ class AICog(commands.Cog, name="AI"):
             if status_msg:
                 try:
                     await status_msg.edit(content=gifs[0], embeds=[])
+                    self._track_ai_message(status_msg.id)
                     gifs = gifs[1:]
                 except Exception:
                     try:
@@ -1447,12 +1465,12 @@ class AICog(commands.Cog, name="AI"):
         reply_to: discord.Message,
         bot_memory: dict,
         mem_key: str,
+        status_msg: discord.Message | None = None,
     ) -> tuple[bool, str]:
         """Handle raw XML tool calls from models that don't support structured tool_calls."""
         gifs: list[str] = []
         images: list[str] = []
         text = raw_text
-        status_msg: discord.Message | None = None
 
         for round_num in range(2):
             if not xml_tools:
@@ -1546,6 +1564,7 @@ class AICog(commands.Cog, name="AI"):
             try:
                 if status_msg:
                     await status_msg.edit(content=primary_text, embeds=image_embeds)
+                    self._track_ai_message(status_msg.id)
                 else:
                     sent = await reply_to.reply(content=primary_text or None, embeds=image_embeds or None)
                     self._track_ai_message(sent.id)
@@ -1559,6 +1578,7 @@ class AICog(commands.Cog, name="AI"):
             if status_msg:
                 try:
                     await status_msg.edit(content=gifs[0], embeds=[])
+                    self._track_ai_message(status_msg.id)
                     gifs = gifs[1:]
                 except Exception:
                     try:
@@ -1903,15 +1923,9 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 )
 
                 already_sent, response_text = await self._handle_tool_calls(
-                    response, messages_payload, message, bot_memory, mem_key
+                    response, messages_payload, message, bot_memory, mem_key,
+                    status_msg=status_msg,
                 )
-
-                response_text = re.sub(
-                    r'<think>.*?</think>', '', response_text, flags=re.DOTALL
-                ).strip()
-
-                # Edit the status message with the final response
-                await status_msg.edit(content=response_text)
 
                 # ── Phase 4: persist assistant reply under the lock ──
                 # Re-load inside the lock so we don't clobber any messages
@@ -2073,14 +2087,9 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 )
 
                 already_sent, response_text = await self._handle_tool_calls(
-                    response, messages_payload, message, bot_memory, mem_key
+                    response, messages_payload, message, bot_memory, mem_key,
+                    status_msg=status_msg,
                 )
-
-                response_text = re.sub(
-                    r'<think>.*?</think>', '', response_text, flags=re.DOTALL
-                ).strip()
-
-                await status_msg.edit(content=response_text)
 
                 # ── Phase 4: persist assistant reply under the lock ──
                 async with get_conversation_lock(user_key):

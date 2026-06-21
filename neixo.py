@@ -347,7 +347,7 @@ class Neixo(commands.Bot):
         # ── Decide whether to trigger AI ─────────────────────
         trigger_ai = False
 
-        if is_ai_channel and (not is_reply_to_bot or is_reply_to_ai):
+        if is_ai_channel and (is_mention or is_reply_to_ai):
             # In AI channels, respond to everything (commands already filtered above),
             # but skip replies to non-AI bot messages (e.g. command output embeds).
             trigger_ai = True
