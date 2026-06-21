@@ -31,10 +31,12 @@ class Leveling(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.xp_cooldowns = {}  # Simple cooldown tracking
+        self._leveling_disabled = True  # Disabled on startup
 
 
     async def cog_load(self):
         """Initialize level-up notification settings and backfill level roles."""
+        self._leveling_disabled = True
         from utils import _db
         with _db() as conn:
             conn.execute("""
@@ -67,11 +69,19 @@ class Leveling(commands.Cog):
         if ctx.guild is None:
             await ctx.send("This command only works in servers.")
             return False
+        # Allow .disable and .enable commands even when leveling is disabled
+        if ctx.command and ctx.command.name in ("disable", "enable"):
+            return True
+        if self._leveling_disabled:
+            await ctx.send("Leveling system is currently disabled. Use `.enable level` to turn it on.")
+            return False
         return True
 
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot or message.guild is None:
+            return
+        if self._leveling_disabled:
             return
 
 
@@ -419,6 +429,50 @@ class Leveling(commands.Cog):
             await ctx.send(f"✅ Gave {xp} XP to {user.mention}. They leveled up to {result['new_level']}!")
         else:
             await ctx.send(f"✅ Gave {xp} XP to {user.mention}. They now have {result['xp']} XP.")
+
+    @commands.command(name="disable")
+    @help_meta(
+        section="Leveling",
+        usage=".disable level",
+        desc="Disables the entire leveling system (XP gain, leaderboard, rank, roles).",
+        examples=[".disable level"],
+        params=[
+            {"name": "system", "type": "str", "required": True, "desc": "Must be `level`."},
+        ],
+        note="Owner/creator only. Stops all XP gain and blocks leveling commands until `.enable level` or restart.",
+        owner=True,
+    )
+    async def disable_cmd(self, ctx, system: str = None):
+        """Disable the leveling system."""
+        if system != "level":
+            return await ctx.send("Usage: `.disable level`")
+        if not is_owner_or_creator(ctx) and ctx.author.id != ctx.guild.owner_id:
+            return await ctx.send("Only the bot owner, creator, or server owner can disable the leveling system.")
+        self._leveling_disabled = True
+        msg = ("❌ Leveling system **disabled**. XP gain and leveling commands "
+               "are now blocked. Use `.enable level` to re-enable.")
+        await ctx.send(msg)
+
+    @commands.command(name="enable")
+    @help_meta(
+        section="Leveling",
+        usage=".enable level",
+        desc="Re-enables the entire leveling system.",
+        examples=[".enable level"],
+        params=[
+            {"name": "system", "type": "str", "required": True, "desc": "Must be `level`."},
+        ],
+        note="Owner/creator only. Restarts XP gain and leveling commands.",
+        owner=True,
+    )
+    async def enable_cmd(self, ctx, system: str = None):
+        """Enable the leveling system."""
+        if system != "level":
+            return await ctx.send("Usage: `.enable level`")
+        if not is_owner_or_creator(ctx) and ctx.author.id != ctx.guild.owner_id:
+            return await ctx.send("Only the bot owner, creator, or server owner can enable the leveling system.")
+        self._leveling_disabled = False
+        await ctx.send("✅ Leveling system **enabled**. XP gain and leveling commands are now active.")
 
 
 async def setup(bot):
