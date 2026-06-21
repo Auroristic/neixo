@@ -351,9 +351,6 @@ class Neixo(commands.Bot):
             # In AI channels, respond to everything (commands already filtered above),
             # but skip replies to non-AI bot messages (e.g. command output embeds).
             trigger_ai = True
-        elif is_mention:
-            # Direct ping in any channel — always respond
-            trigger_ai = True
 
         if trigger_ai:
             # Store context for AI memory
