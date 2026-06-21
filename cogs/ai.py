@@ -161,6 +161,14 @@ def _strip_media_urls(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     return text
 
+
+def _strip_name_prefix(text: str) -> str:
+    """Strip leading `[name]: ` prefix that the AI sometimes adds to its replies."""
+    if not text:
+        return text
+    return re.sub(r"^\[[^\]]+\]:\s*", "", text).strip()
+
+
 _INJECTION_PATTERNS = re.compile(
     r"(?i)(?:ignore|override|forget|disregard|forget all|new instructions|"
     r"system prompt|you are now|you are not|act as|pretend|"
@@ -1393,6 +1401,7 @@ class AICog(commands.Cog, name="AI"):
                     reply_to, bot_memory, mem_key, status_msg=status_msg,
                 )
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            text = _strip_name_prefix(text)
             text = _strip_media_urls(text)
             text = self._handle_remember(text, bot_memory, mem_key)
             if status_msg:
@@ -1500,6 +1509,7 @@ class AICog(commands.Cog, name="AI"):
             text = (response.choices[0].message.content or "").strip()
 
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        text = _strip_name_prefix(text)
         text = _strip_media_urls(text)
         # Strip [REMEMBER:...] tag (and save the note) BEFORE sending so the
         # tag never leaks into the visible reply.
@@ -1587,6 +1597,7 @@ class AICog(commands.Cog, name="AI"):
             xml_tools = _parse_xml_tool_calls(text)
 
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        text = _strip_name_prefix(text)
         text = _strip_media_urls(text)
         text = self._handle_remember(text, bot_memory, mem_key)
 
@@ -1628,7 +1639,14 @@ class AICog(commands.Cog, name="AI"):
             "anywhere in ur reply and itll be saved. dont show the tag to the user, "
             "just include it silently"
         )
+        name_prefix_note = (
+            "IMPORTANT: conversation history shows labels like `[name]: msg` so u "
+            "know who said what. those labels r just for u to follow the convo — "
+            "NEVER include a `[name]:` prefix in ur reply. just respond with the text."
+        )
         return f"""
+{name_prefix_note}
+
 tools:
 - u have web_search, web_fetch, image_search, gif_search, weather, wikipedia, define, urban_dict, generate_image tools
 - USE web_search whenever someone asks u to google/search something, or when u need current info u dont know
