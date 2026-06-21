@@ -310,6 +310,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
 
         async with ctx.typing():
             try:
+                multi = len(images) > 1
                 for idx, (image_bytes, _) in enumerate(images, start=1):
                     with Image.open(io.BytesIO(image_bytes)) as img_obj:
                         img_converted = img_obj.convert("RGBA")
@@ -328,7 +329,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     )
                     b.seek(0)
                     suffix = "" if idx == 1 else f"_{idx}"
-                    await ctx.reply(file=discord.File(fp=b, filename=f"{name}{suffix}.gif"))
+                    file = discord.File(fp=b, filename=f"{name}{suffix}.gif")
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
+                if multi:
+                    await ctx.send(f"{ctx.author.mention} Done — {len(images)} images converted!")
             except Exception as e:
                 await ctx.send(f"error: {str(e)}")
 
@@ -368,6 +375,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     return await ctx.send("❌ Attach or reply to an image to create a fade GIF.")
 
                 steps = 20
+                multi = len(images) > 1
                 for idx, (img_bytes, _) in enumerate(images, start=1):
                     with Image.open(io.BytesIO(img_bytes)) as img:
                         img_obj = img.convert("RGBA")
@@ -391,7 +399,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                         continue
                     ioB.seek(0)
                     suffix = "" if idx == 1 else f"_{idx}"
-                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{name}{suffix}_{color}.gif"))
+                    file = discord.File(fp=ioB, filename=f"{name}{suffix}_{color}.gif")
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
+                if multi:
+                    await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -418,6 +432,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not images:
                     return await ctx.send("❌ Attach or reply to an image.")
 
+                multi = len(images) > 1
                 for idx, (image_bytes, _) in enumerate(images, start=1):
                     with Image.open(io.BytesIO(image_bytes)) as img:
                         img_obj = img.convert("RGBA")
@@ -439,9 +454,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                         continue
                     file.fp.seek(0)
                     suffix = "" if idx == 1 else f"_{idx}"
-                    # create_gif hardcoded the filename — patch it for suffix support.
                     file.filename = f"{name}{suffix}.gif"
-                    await ctx.reply(file=file)
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
+                if multi:
+                    await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -481,6 +500,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
             default_zoom, max_zoom, num_steps = 1.0, 1.2, 30
             step_size = (max_zoom - default_zoom) / num_steps
             bg_rgb = (255, 255, 255, 255) if fcolor == "white" else (0, 0, 0, 255)
+            multi = len(images) > 1
 
             for idx, (img_bytes, _) in enumerate(images, start=1):
                 with Image.open(io.BytesIO(img_bytes)) as img:
@@ -525,7 +545,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 )
                 ioB.seek(0)
                 suffix = "" if idx == 1 else f"_{idx}"
-                await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}.gif"))
+                file = discord.File(fp=ioB, filename=f"{gif_name}{suffix}.gif")
+                if multi:
+                    await ctx.send(file=file)
+                else:
+                    await ctx.reply(file=file)
+            if multi:
+                await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
 
     # ─────────────────────────────────────────────────────────
     # .bouncegif — bounce with easing
@@ -550,6 +576,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not images:
                     return await ctx.send("❌ Attach or reply to an image.")
 
+                multi = len(images) > 1
                 for idx, (image_bytes, _) in enumerate(images, start=1):
                     with Image.open(io.BytesIO(image_bytes)) as img:
                         img_obj = img.convert("RGBA")
@@ -577,7 +604,12 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     file.fp.seek(0)
                     suffix = "" if idx == 1 else f"_{idx}"
                     file.filename = f"{name}{suffix}.gif"
-                    await ctx.reply(file=file)
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
+                if multi:
+                    await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -658,6 +690,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not images:
                     return await ctx.send("Reply to an image to use this command.")
 
+                multi = len(images) > 1
                 for idx, (img_bytes, _) in enumerate(images, start=1):
                     with Image.open(io.BytesIO(img_bytes)) as img:
                         img = img.convert("RGB")
@@ -672,7 +705,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     upscaled.save(ioB, format='PNG')
                     ioB.seek(0)
                     suffix = "" if idx == 1 else f"_{idx}"
-                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png"))
+                    file = discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png")
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
+                if multi:
+                    await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -706,6 +745,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not images:
                     return await ctx.send("Reply to an image to use this command.")
 
+                multi = len(images) > 1
                 for idx, (img_bytes, _) in enumerate(images, start=1):
                     with Image.open(io.BytesIO(img_bytes)) as img:
                         img = img.convert("RGB")
@@ -716,7 +756,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     downscaled.save(ioB, format='PNG')
                     ioB.seek(0)
                     suffix = "" if idx == 1 else f"_{idx}"
-                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png"))
+                    file = discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png")
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
+                if multi:
+                    await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -751,6 +797,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                 if not images:
                     return await ctx.send("Reply to an image to use this command.")
 
+                multi = len(images) > 1
                 for idx, (img_bytes, _) in enumerate(images, start=1):
                     with Image.open(io.BytesIO(img_bytes)) as img:
                         img = img.convert("RGB")
@@ -762,7 +809,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     final.save(ioB, format='PNG')
                     ioB.seek(0)
                     suffix = "" if idx == 1 else f"_{idx}"
-                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png"))
+                    file = discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png")
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
+                if multi:
+                    await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -812,6 +865,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     return await ctx.send("No image found in that message.")
 
                 hex_color = COLORS_DICT[color]
+                multi = len(images) > 1
                 for idx, (img_bytes, _) in enumerate(images, start=1):
                     with Image.open(io.BytesIO(img_bytes)) as img:
                         img = img.convert("RGB")
@@ -842,7 +896,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                     bg.save(ioB, format='PNG')
                     ioB.seek(0)
                     suffix = "" if idx == 1 else f"_{idx}"
-                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}.png"))
+                    file = discord.File(fp=ioB, filename=f"{gif_name}{suffix}.png")
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
+                if multi:
+                    await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -866,18 +926,24 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
         if not images:
             return await ctx.send("You gotta give me an image or reply to one, fam.")
 
+        multi = len(images) > 1
         async with ctx.typing():
             for idx, (img_bytes, is_gif) in enumerate(images, start=1):
                 try:
                     file = await asyncio.to_thread(self._process_thisu, img_bytes, is_gif)
-                    if idx > 1:
+                    if multi:
                         suffix = f"_{idx}"
                         name, ext = file.filename.rsplit(".", 1)
                         file.filename = f"{name}{suffix}.{ext}"
-                    await ctx.reply(file=file)
+                    if multi:
+                        await ctx.send(file=file)
+                    else:
+                        await ctx.reply(file=file)
                 except Exception as e:
                     print(f"error for the thisu command on image {idx}: {e}")
                     await ctx.send(f"Something went wrong processing image {idx}.")
+            if multi:
+                await ctx.send(f"{ctx.author.mention} Done — {len(images)} images processed!")
 
     def _process_thisu(self, img_bytes: bytes, is_gif: bool) -> discord.File:
         """Synchronous CPU-bound processing for the POV mask overlay."""

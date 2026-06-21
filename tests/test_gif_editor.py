@@ -221,10 +221,12 @@ class TestGifCmdWithAttachments:
 
         await cog.gif_cmd.callback(cog, ctx)
 
-        ctx.send.assert_not_awaited()
-        # Should have sent TWO gif replies, one per attachment.
-        assert ctx.reply.await_count == 2
-        a = ctx.reply.await_args_list[0].kwargs["file"].filename
-        b = ctx.reply.await_args_list[1].kwargs["file"].filename
+        # Multi-image: uses ctx.send for each file, then one done ping
+        assert ctx.reply.await_count == 0
+        assert ctx.send.await_count == 3
+        a = ctx.send.await_args_list[0].kwargs["file"].filename
+        b = ctx.send.await_args_list[1].kwargs["file"].filename
         assert a.endswith(".gif")
         assert b.endswith(".gif")
+        # Third call is the done ping
+        assert "Done" in ctx.send.await_args_list[2].args[0]
