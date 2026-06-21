@@ -598,10 +598,10 @@ class AICog(commands.Cog, name="AI"):
     async def _cycle_status(self, status_msg: discord.Message, messages: list[str], emojis: list[str]):
         try:
             while True:
-                for msg in messages:
-                    emoji = random.choice(emojis)
-                    await status_msg.edit(content=f"{emoji} *{msg}*")
-                    await asyncio.sleep(random.uniform(5, 10))
+                msg = random.choice(messages)
+                emoji = random.choice(emojis)
+                await status_msg.edit(content=f"{emoji} *{msg}*")
+                await asyncio.sleep(random.uniform(5, 10))
         except (discord.NotFound, discord.Forbidden, asyncio.CancelledError):
             pass
 
