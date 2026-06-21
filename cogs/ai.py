@@ -601,7 +601,7 @@ class AICog(commands.Cog, name="AI"):
                 for msg in messages:
                     emoji = random.choice(emojis)
                     await status_msg.edit(content=f"{emoji} *{msg}*")
-                    await asyncio.sleep(4)
+                    await asyncio.sleep(random.uniform(5, 10))
         except (discord.NotFound, discord.Forbidden, asyncio.CancelledError):
             pass
 
