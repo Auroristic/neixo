@@ -455,7 +455,7 @@ class EchoCog(commands.Cog):
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
                         "https://api.jikan.moe/v4/anime",
-                        params={"q": query, "limit": 5},
+                        params={"q": query, "limit": 1},
                         timeout=aiohttp.ClientTimeout(total=10),
                     ) as resp:
                         if resp.status != 200:
@@ -468,17 +468,11 @@ class EchoCog(commands.Cog):
             if not results:
                 return await ctx.send(f"no results for `{query}`")
 
-            lines = []
-            for i, anime in enumerate(results[:5], 1):
-                mal_id = anime["mal_id"]
-                title = anime.get("title_english") or anime["title"]
-                year = anime.get("year") or anime.get("aired", {}).get("prop", {}).get("from", {}).get("year", "?")
-                ani_type = anime.get("type", "?")
-                score = anime.get("score", "?")
-                url = f"https://seoulities.com/watch/{mal_id}"
-                lines.append(f"`{i}.` **{title}** ({year}, {ani_type}, ⭐{score})\n{url}")
-
-            await ctx.send("\n\n".join(lines))
+            anime = results[0]
+            mal_id = anime["mal_id"]
+            title = anime.get("title_english") or anime["title"]
+            url = f"https://seoulities.com/watch/{mal_id}"
+            await ctx.send(f"**{title}**\n{url}")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(MiscCog(bot))
