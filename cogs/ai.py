@@ -8,6 +8,7 @@ import json
 import os
 import re
 import time as _time
+import random
 from collections import OrderedDict
 from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
@@ -83,6 +84,43 @@ def get_conversation_lock(key: str) -> asyncio.Lock:
     return lock
 
 MAIN_MODEL = "minimaxai/minimax-m3"
+ZEN_MODEL = "deepseek/deepseek-v4-flash-free"
+
+STATUS_EMOJIS = [
+    "<a:951270393082159194:1262739613232009227>",
+    "<a:butterfly:1413057472213680148>",
+    "<a:emoji_44:1253070278259642521>",
+    "<a:emoji_43:1253070261494878330>",
+]
+
+FAIL_EMOJIS = [
+    "<a:head_of_security:1252608842932682835>",
+    "<a:002lighter:1407954590812340270>",
+]
+
+STATUS_CYCLE = [
+    "typing...", "frying...", "cooking...", "pickling...", "doodling...",
+    "thinking...", "summoning...", "computing...", "vibing...", "marinating...",
+    "manifesting...", "yapping internally...", "scheming...", "percolating...",
+    "consulting the elders...", "googling it ngl...", "spiraling...",
+    "buffering...", "brewing...", "asking my mans real quick...", "calculating vibes...",
+]
+
+IMAGES_FAIL = [
+    "m trynna see this!", "damn these images", "vision.exe crashed",
+    "bro my eyes...", "pixels confusing me rn", "blinked and missed it",
+]
+
+VIDEO_FAIL = [
+    "damn these videos", "frame rate got me fr",
+    "buffering forever fr", "my eyes cant keep up",
+]
+
+TEXT_FAIL = [
+    "oops... gon type faster!", "oof i slipped", "hold on a sec",
+    "brain lag fr", "autocorrect betrayed me", "lost my train of thought",
+    "one sec im lagging", "fingers not cooperating rn",
+]
 
 # Strip GIF/media-host URLs that the model may try to include in its text reply
 # (we always send GIFs as a separate message via the gif_search tool).
@@ -525,6 +563,89 @@ class AICog(commands.Cog, name="AI"):
                     continue
                 raise
         raise last_error
+
+    # ── Zen / DeepSeek fallback ────────────────────────────────
+
+    def _get_zen_client(self) -> AsyncOpenAI:
+        if not hasattr(self, "_zen_client"):
+            zen_key = os.getenv("OPENCODE_ZEN_API_KEY")
+            if not zen_key:
+                raise ValueError("OPENCODE_ZEN_API_KEY not set")
+            self._zen_client = AsyncOpenAI(
+                base_url="https://opencode.ai/zen/v1",
+                api_key=zen_key,
+                timeout=60.0,
+                max_retries=0,
+            )
+        return self._zen_client
+
+    async def _deepseek_complete(self, messages_payload, max_tokens=8192, tools=None):
+        client = self._get_zen_client()
+        kwargs = dict(
+            model=ZEN_MODEL,
+            messages=messages_payload,
+            max_tokens=max_tokens,
+            temperature=1.0,
+            top_p=0.95,
+        )
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        return await client.chat.completions.create(**kwargs)
+
+    # ── Status-message system ──────────────────────────────────
+
+    async def _cycle_status(self, status_msg: discord.Message, messages: list[str], emojis: list[str]):
+        try:
+            while True:
+                for msg in messages:
+                    emoji = random.choice(emojis)
+                    await status_msg.edit(content=f"{emoji} *{msg}*")
+                    await asyncio.sleep(4)
+        except (discord.NotFound, discord.Forbidden, asyncio.CancelledError):
+            pass
+
+    async def _call_with_status(
+        self,
+        channel: discord.TextChannel | discord.DMChannel,
+        messages_payload: list,
+        tools: list | None = None,
+        has_images: bool = False,
+        has_video: bool = False,
+    ):
+        status_msg = await channel.send(f"{random.choice(STATUS_EMOJIS)} *typing...*")
+        cycle_task = asyncio.create_task(
+            self._cycle_status(status_msg, STATUS_CYCLE, STATUS_EMOJIS)
+        )
+
+        try:
+            response = await asyncio.wait_for(
+                self.nvidia_complete(messages_payload, tools=tools),
+                timeout=30.0,
+            )
+            cycle_task.cancel()
+            return response, status_msg, False
+
+        except asyncio.TimeoutError:
+            cycle_task.cancel()
+            fail_emoji = random.choice(FAIL_EMOJIS)
+
+            if has_video:
+                fail_msg = f"{fail_emoji} *{random.choice(VIDEO_FAIL)}*"
+            elif has_images:
+                fail_msg = f"{fail_emoji} *{random.choice(IMAGES_FAIL)}*"
+            else:
+                fail_msg = f"{fail_emoji} *{random.choice(TEXT_FAIL)}*"
+
+            await status_msg.edit(content=fail_msg)
+            await asyncio.sleep(0.5)
+
+            if has_images or has_video:
+                response = await self.nvidia_complete(messages_payload, tools=tools)
+            else:
+                response = await self._deepseek_complete(messages_payload, tools=tools)
+
+            return response, status_msg, True
 
     # ── Helpers ───────────────────────────────────────────────
 
@@ -1009,15 +1130,15 @@ class AICog(commands.Cog, name="AI"):
             return ""
 
     _TOOL_LABELS = {
-        "web_search":     "searching web",
-        "image_search":   "finding images",
-        "gif_search":     "grabbing gif",
-        "web_fetch":      "reading page",
-        "generate_image": "generating image",
-        "weather":        "checking weather",
-        "wikipedia":      "looking up",
-        "define":         "defining",
-        "urban_dict":     "urban dict",
+        "web_search":     "🌐 searching web",
+        "image_search":   "🖼️ finding images",
+        "gif_search":     "🎞️ grabbing gif",
+        "web_fetch":      "🌐 reading page",
+        "generate_image": "🎨 generating image",
+        "weather":        "🌤️ checking weather",
+        "wikipedia":      "🌐 looking up",
+        "define":         "📖 defining",
+        "urban_dict":     "📖 urban dict",
     }
 
     def _status_text(self, tool_details) -> str:
@@ -1769,11 +1890,16 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 else:
                     messages_payload.append({"role": "user", "content": full_text})
 
-                # ── Phase 3: call the model + handle tools ──
-                response = await self.nvidia_complete(
+                # ── Phase 3: call the model with status system + handle tools ──
+                has_images = bool(image_data and any(not i.startswith("__video__:") for i in image_data))
+                has_video = bool(image_data and any(i.startswith("__video__:") for i in image_data))
+
+                response, status_msg, _ = await self._call_with_status(
+                    message.channel,
                     messages_payload,
-                    max_tokens=350,
-                    tools=[SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL, WEATHER_TOOL, WIKIPEDIA_TOOL, DEFINE_TOOL, URBAN_DICT_TOOL]
+                    tools=[SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL, WEATHER_TOOL, WIKIPEDIA_TOOL, DEFINE_TOOL, URBAN_DICT_TOOL],
+                    has_images=has_images,
+                    has_video=has_video,
                 )
 
                 already_sent, response_text = await self._handle_tool_calls(
@@ -1783,6 +1909,9 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 response_text = re.sub(
                     r'<think>.*?</think>', '', response_text, flags=re.DOTALL
                 ).strip()
+
+                # Edit the status message with the final response
+                await status_msg.edit(content=response_text)
 
                 # ── Phase 4: persist assistant reply under the lock ──
                 # Re-load inside the lock so we don't clobber any messages
@@ -1799,9 +1928,6 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                     })
                     conversations[user_key] = conversations[user_key][-120:]
                     save_json(CONVERSATIONS_FILE, conversations)
-
-                if not already_sent:
-                    await self._send_response(message, response_text)
 
         except Exception as e:
             import traceback
@@ -1934,12 +2060,18 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 else:
                     messages_payload.append({"role": "user", "content": full_text})
 
-                # ── Phase 3: call model + handle tools ──
-                response = await self.nvidia_complete(
+                # ── Phase 3: call model with status system + handle tools ──
+                has_images = bool(image_data and any(not i.startswith("__video__:") for i in image_data))
+                has_video = bool(image_data and any(i.startswith("__video__:") for i in image_data))
+
+                response, status_msg, _ = await self._call_with_status(
+                    message.channel,
                     messages_payload,
-                    max_tokens=350,
-                    tools=[SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL, WEATHER_TOOL, WIKIPEDIA_TOOL, DEFINE_TOOL, URBAN_DICT_TOOL]
+                    tools=[SEARCH_TOOL, IMAGE_SEARCH_TOOL, GIF_SEARCH_TOOL, WEBFETCH_TOOL, WEATHER_TOOL, WIKIPEDIA_TOOL, DEFINE_TOOL, URBAN_DICT_TOOL],
+                    has_images=has_images,
+                    has_video=has_video,
                 )
+
                 already_sent, response_text = await self._handle_tool_calls(
                     response, messages_payload, message, bot_memory, mem_key
                 )
@@ -1947,6 +2079,8 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                 response_text = re.sub(
                     r'<think>.*?</think>', '', response_text, flags=re.DOTALL
                 ).strip()
+
+                await status_msg.edit(content=response_text)
 
                 # ── Phase 4: persist assistant reply under the lock ──
                 async with get_conversation_lock(user_key):
@@ -1961,9 +2095,6 @@ KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
                     })
                     conversations[user_key] = conversations[user_key][-120:]
                     save_json(CONVERSATIONS_FILE, conversations)
-
-                if not already_sent:
-                    await self._send_response(message, response_text)
 
         except Exception as e:
             import traceback
