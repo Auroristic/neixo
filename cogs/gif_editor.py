@@ -119,70 +119,132 @@ def tenor_fetch(link: str) -> str | None:
 # IMAGE FROM CONTEXT HELPER
 # ─────────────────────────────────────────────────────────────
 
-async def get_image_from_ctx(ctx) -> tuple[bytes | None, bool]:
-    """
-    Returns (img_bytes, is_gif) from the message attachment or a replied-to message.
-    Returns (None, False) if nothing found.
-    """
-    target = None
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff")
 
-    if ctx.message.attachments:
-        target = ctx.message.attachments[0]
-    elif ctx.message.reference:
+
+def _is_image_content_type(content_type: str | None) -> bool:
+    if not content_type:
+        return False
+    return content_type.startswith("image/") or content_type in {"image/gif", "image/webp"}
+
+
+def _is_image_attachment(att) -> bool:
+    if _is_image_content_type(getattr(att, "content_type", None)):
+        return True
+    name = (getattr(att, "filename", "") or "").lower()
+    name = name.split("?")[0]
+    return any(name.endswith(s) for s in _IMAGE_SUFFIXES)
+
+
+async def get_image_from_ctx(ctx, all_images: bool = False):
+    """
+    Resolve one or more images from the trigger message.
+
+    Resolution order:
+      1. Attachments on the trigger message (first takes precedence when
+         ``all_images=False``; otherwise every image attachment is returned).
+      2. A reply — its first image attachment, or the first embed image.
+
+    Returns:
+      - ``all_images=False`` (default): a single ``(img_bytes, is_gif)`` tuple,
+        or ``(None, False)`` when nothing was found.
+      - ``all_images=True``: a list of ``(img_bytes, is_gif)`` tuples (empty list
+        when nothing was found).
+    """
+    img_attachments = [a for a in ctx.message.attachments if _is_image_attachment(a)]
+
+    if img_attachments:
+        if all_images:
+            images = []
+            for att in img_attachments:
+                data = await att.read()
+                images.append((data, _attachment_is_gif(att)))
+            return images
+        att = img_attachments[0]
+        data = await att.read()
+        return data, _attachment_is_gif(att)
+
+    if ctx.message.reference:
         replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
-        if replied_msg.attachments:
-            target = replied_msg.attachments[0]
-        elif replied_msg.embeds:
-            embed = replied_msg.embeds[0]
-            image_url = None
-            if embed.image:
-                image_url = embed.image.url
-            elif embed.thumbnail:
-                image_url = embed.thumbnail.url
-            elif embed.type == "image":
-                image_url = embed.url
+        # Try image attachments on the replied message first
+        replied_images = [a for a in replied_msg.attachments if _is_image_attachment(a)]
+        if replied_images:
+            if all_images:
+                images = []
+                for att in replied_images:
+                    data = await att.read()
+                    images.append((data, _attachment_is_gif(att)))
+                return images
+            att = replied_images[0]
+            data = await att.read()
+            return data, _attachment_is_gif(att)
 
-            if image_url:
-                if "tenor.com" in image_url:
-                    if any(image_url.lower().endswith(ext) for ext in ('.gif', '.png', '.jpg', '.webp', '.mp4')):
-                        gif_attempt = _re.sub(r'\.(png|webp|jpg)$', '.gif', image_url)
-                        gif_attempt = _re.sub(r'AAAA[a-zA-Z]+', 'AAAAM', gif_attempt)
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(gif_attempt) as resp:
-                                if resp.status == 200:
-                                    return await resp.read(), True
-                            async with session.get(image_url) as resp:
-                                if resp.status == 200:
-                                    return await resp.read(), image_url.lower().endswith('.gif')
-                    else:
-                        gif_path = await asyncio.to_thread(tenor_fetch, image_url)
-                        if gif_path:
-                            try:
-                                with open(gif_path, "rb") as f:
-                                    data = f.read()
-                                return data, True
-                            finally:
-                                try:
-                                    os.unlink(gif_path)
-                                except Exception:
-                                    pass
-                else:
-                    async with aiohttp.ClientSession() as session, session.get(image_url) as resp:
-                        if resp.status == 200:
-                            return await resp.read(), (
-                                image_url.lower().endswith('.gif')
-                                or 'gif' in resp.headers.get('content-type', '').lower()
-                            )
-            return None, False
+        # Then try embeds on the replied message
+        if replied_msg.embeds:
+            images = [(_pull_from_embed(replied_msg.embeds[0]))]
+            images = [i for i in images if i[0] is not None]
+            if images:
+                return images if all_images else images[0]
+            if not all_images:
+                return None, False
+            return []
 
-    if target:
-        img_bytes = await target.read()
-        is_gif = (
-            (target.content_type and "gif" in target.content_type)
-            or target.filename.lower().endswith(".gif")
-        )
-        return img_bytes, is_gif
+    if all_images:
+        return []
+    return None, False
 
+
+def _attachment_is_gif(att) -> bool:
+    ct = (getattr(att, "content_type", "") or "").lower()
+    if "gif" in ct:
+        return True
+    name = (getattr(att, "filename", "") or "").lower().split("?")[0]
+    return name.endswith(".gif")
+
+
+async def _pull_from_embed(embed) -> tuple[bytes | None, bool]:
+    """Best-effort fetch of an image from a single embed. Returns (None, False) on failure."""
+    image_url = None
+    if embed.image:
+        image_url = embed.image.url
+    elif embed.thumbnail:
+        image_url = embed.thumbnail.url
+    elif embed.type == "image":
+        image_url = embed.url
+
+    if not image_url:
+        return None, False
+
+    if "tenor.com" in image_url:
+        if any(image_url.lower().endswith(ext) for ext in ('.gif', '.png', '.jpg', '.webp', '.mp4')):
+            gif_attempt = _re.sub(r'\.(png|webp|jpg)$', '.gif', image_url)
+            gif_attempt = _re.sub(r'AAAA[a-zA-Z]+', 'AAAAM', gif_attempt)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(gif_attempt) as resp:
+                    if resp.status == 200:
+                        return await resp.read(), True
+                async with session.get(image_url) as resp:
+                    if resp.status == 200:
+                        return await resp.read(), image_url.lower().endswith('.gif')
+        else:
+            gif_path = await asyncio.to_thread(tenor_fetch, image_url)
+            if gif_path:
+                try:
+                    with open(gif_path, "rb") as f:
+                        data = f.read()
+                    return data, True
+                finally:
+                    try:
+                        os.unlink(gif_path)
+                    except Exception:
+                        pass
+    else:
+        async with aiohttp.ClientSession() as session, session.get(image_url) as resp:
+            if resp.status == 200:
+                return await resp.read(), (
+                    image_url.lower().endswith('.gif')
+                    or 'gif' in resp.headers.get('content-type', '').lower()
+                )
     return None, False
 
 
@@ -228,32 +290,29 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.gif [name]`",
-        desc="Converts an image to a GIF. Reply to any image to use it.",
+        desc="Converts every attached image to a GIF. Attach or reply with images.",
         examples=[".gif", ".gif myanimation"],
         params=[
-            {"name": "name", "type": "str", "required": False, "desc": "Optional filename for the output GIF."},
+            {"name": "name", "type": "str", "required": False,
+             "desc": "Optional base filename; appended with _2, _3, ... for more."},
         ],
-        note="Reply to an image message. Supports PNG, JPG, WEBP input.",
+        note="Works on images attached to this message OR replies. "
+             "If multiple images are present, every image is converted and sent back.",
     )
     @commands.command(name='gif')
     async def gif_cmd(self, ctx, name: str = "You_Should_Read_Grand_Blue_Dreaming"):
         if await self._cooldown(ctx):
             return
 
-        if ctx.message.reference:
-            replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
-            if replied_msg.attachments:
-                img = replied_msg.attachments[0]
-            else:
-                return await ctx.send("the message u replied to doesn't have an image!")
-        else:
+        images = await get_image_from_ctx(ctx, all_images=True)
+        if not images:
             return await ctx.send("reply to an image to use this")
 
         async with ctx.typing():
             try:
-                image_bytes = await img.read()
-                with Image.open(io.BytesIO(image_bytes)) as img_obj:
-                    img_converted = img_obj.convert("RGBA")
+                for idx, (image_bytes, _) in enumerate(images, start=1):
+                    with Image.open(io.BytesIO(image_bytes)) as img_obj:
+                        img_converted = img_obj.convert("RGBA")
                     img_converted.thumbnail((600, 600), Image.Resampling.LANCZOS)
                     frames = [img_converted.copy()] * 2
                     b = io.BytesIO()
@@ -268,7 +327,8 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                         disposal=2,
                     )
                     b.seek(0)
-                await ctx.reply(file=discord.File(fp=b, filename=f"{name}.gif"))
+                    suffix = "" if idx == 1 else f"_{idx}"
+                    await ctx.reply(file=discord.File(fp=b, filename=f"{name}{suffix}.gif"))
             except Exception as e:
                 await ctx.send(f"error: {str(e)}")
 
@@ -277,13 +337,14 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.fadegif [color] [name]`",
-        desc="Creates a fade-in animation from a solid colour to the image.",
+        desc="Creates a fade-in animation from a solid colour to every attached image.",
         examples=[".fadegif", ".fadegif #FF0000", ".fadegif black myfade"],
         params=[
-            {"name": "color", "type": "str", "required": False, "desc": "Starting colour (hex or name). Defaults to black."},
-            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+            {"name": "color", "type": "str", "required": False,
+             "desc": "Starting colour (hex or name). Defaults to black."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional base output filename."},
         ],
-        note="Reply to an image. The animation transitions from the solid colour to the full image.",
+        note="Attach or reply with images. Multiple images produce multiple GIFs (suffixed _2, _3, ...).",
     )
     @commands.command(name='fadegif')
     async def fadegif_cmd(self, ctx, color: str = "black", name: str = "You_Should_Read_Grand_Blue_Dreaming"):
@@ -302,35 +363,35 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
 
         async with ctx.typing():
             try:
-                img_bytes, _ = await get_image_from_ctx(ctx)
-                if not img_bytes:
-                    return await ctx.send("❌ Reply to an image to create a fade GIF.")
+                images = await get_image_from_ctx(ctx, all_images=True)
+                if not images:
+                    return await ctx.send("❌ Attach or reply to an image to create a fade GIF.")
 
-                with Image.open(io.BytesIO(img_bytes)) as img:
-                    img_obj = img.convert("RGBA")
-                img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
-
-                bg_layer = Image.new("RGBA", img_obj.size, COLORS[color])
                 steps = 20
-                final_frames = []
+                for idx, (img_bytes, _) in enumerate(images, start=1):
+                    with Image.open(io.BytesIO(img_bytes)) as img:
+                        img_obj = img.convert("RGBA")
+                    img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
-                for i in range(steps):
-                    alpha = i / (steps - 1)
-                    blended = Image.blend(bg_layer, img_obj, alpha)
-                    final_frames.append(blended.convert("RGB"))
+                    bg_layer = Image.new("RGBA", img_obj.size, COLORS[color])
+                    final_frames = []
+                    for i in range(steps):
+                        alpha = i / (steps - 1)
+                        blended = Image.blend(bg_layer, img_obj, alpha)
+                        final_frames.append(blended.convert("RGB"))
+                    final_frames += [img_obj.convert("RGB")] * steps
 
-                # hold on final frame
-                final_frames += [img_obj.convert("RGB")] * steps
-
-                ioB = io.BytesIO()
-                final_frames[0].save(
-                    ioB, format='GIF', save_all=True, append_images=final_frames[1:],
-                    duration=50, loop=0, optimize=True
-                )
-                if ioB.tell() > 25 * 1024 * 1024:
-                    return await ctx.send("❌ GIF too large! Try a smaller source image.")
-                ioB.seek(0)
-                await ctx.reply(file=discord.File(fp=ioB, filename=f"{name}_{color}.gif"))
+                    ioB = io.BytesIO()
+                    final_frames[0].save(
+                        ioB, format='GIF', save_all=True, append_images=final_frames[1:],
+                        duration=50, loop=0, optimize=True
+                    )
+                    if ioB.tell() > 25 * 1024 * 1024:
+                        await ctx.send("❌ GIF too large! Try a smaller source image.")
+                        continue
+                    ioB.seek(0)
+                    suffix = "" if idx == 1 else f"_{idx}"
+                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{name}{suffix}_{color}.gif"))
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -339,12 +400,12 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.spingif [name]`",
-        desc="Creates a spinning animation from an image (45-degree steps).",
+        desc="Creates a spinning animation from every attached image (45-degree steps).",
         examples=[".spingif", ".spingif myspin"],
         params=[
-            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional base output filename."},
         ],
-        note="Reply to an image. The image rotates in 45-degree increments.",
+        note="Attach or reply with images. Multiple images produce multiple GIFs (suffixed _2, _3, ...).",
     )
     @commands.command(name='spingif')
     async def spingif_cmd(self, ctx, name: str = "spin"):
@@ -353,29 +414,34 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
 
         async with ctx.typing():
             try:
-                image_bytes, _ = await get_image_from_ctx(ctx)
-                if not image_bytes:
+                images = await get_image_from_ctx(ctx, all_images=True)
+                if not images:
                     return await ctx.send("❌ Attach or reply to an image.")
 
-                with Image.open(io.BytesIO(image_bytes)) as img:
-                    img_obj = img.convert("RGBA")
-                img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
+                for idx, (image_bytes, _) in enumerate(images, start=1):
+                    with Image.open(io.BytesIO(image_bytes)) as img:
+                        img_obj = img.convert("RGBA")
+                    img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
-                frames = []
-                for angle in [0, 45, 90, 135, 180, 225, 270, 315]:
-                    rotated = img_obj.rotate(
-                        angle, expand=False,
-                        resample=Image.Resampling.BICUBIC,
-                        fillcolor=(255, 255, 255, 0)
-                    )
-                    frames.append(rotated.convert("RGB"))
+                    frames = []
+                    for angle in [0, 45, 90, 135, 180, 225, 270, 315]:
+                        rotated = img_obj.rotate(
+                            angle, expand=False,
+                            resample=Image.Resampling.BICUBIC,
+                            fillcolor=(255, 255, 255, 0)
+                        )
+                        frames.append(rotated.convert("RGB"))
 
-                file = create_gif(frames, duration=100, filename=f"{name}.gif")
-                file.fp.seek(0, 2)
-                if file.fp.tell() > 25 * 1024 * 1024:
-                    return await ctx.send("❌ GIF too large!")
-                file.fp.seek(0)
-                await ctx.reply(file=file)
+                    file = create_gif(frames, duration=100, filename=f"{name}.gif")
+                    file.fp.seek(0, 2)
+                    if file.fp.tell() > 25 * 1024 * 1024:
+                        await ctx.send("❌ GIF too large!")
+                        continue
+                    file.fp.seek(0)
+                    suffix = "" if idx == 1 else f"_{idx}"
+                    # create_gif hardcoded the filename — patch it for suffix support.
+                    file.filename = f"{name}{suffix}.gif"
+                    await ctx.reply(file=file)
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -384,15 +450,15 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.zoomgif [in/out] [fade] [color] [name]`",
-        desc="Creates a smooth zoom-in or zoom-out animation.",
+        desc="Creates a smooth zoom-in or zoom-out animation for every attached image.",
         examples=[".zoomgif", ".zoomgif out", ".zoomgif in fade #000"],
         params=[
             {"name": "direction", "type": "str", "required": False, "desc": "`in` or `out`. Defaults to `in`."},
             {"name": "fade", "type": "str", "required": False, "desc": "Include `fade` to enable fade effect."},
             {"name": "color", "type": "str", "required": False, "desc": "Background colour (hex or name)."},
-            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional base output filename."},
         ],
-        note="Reply to an image. Supports various combinations of direction, fade, and colour.",
+        note="Attach or reply with images. Multiple images produce multiple GIFs (suffixed _2, _3, ...).",
     )
     @commands.command(name='zoomgif')
     async def zoomgif_cmd(self, ctx, type: str = "in", fade: str = "none",
@@ -403,75 +469,75 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
         if not gif_name:
             gif_name = "You_Should_Read_Grand_Blue_Dreaming"
 
+        type = type.lower()
+        fade = fade.lower()
+        fcolor = fcolor.lower()
+
         async with ctx.typing():
-            img_bytes, _ = await get_image_from_ctx(ctx)
-            if not img_bytes:
+            images = await get_image_from_ctx(ctx, all_images=True)
+            if not images:
                 return await ctx.send("Reply to an image to use this command.")
 
-            with Image.open(io.BytesIO(img_bytes)) as img:
-                so = img.convert("RGB")
-            so.thumbnail((600, 600), Image.Resampling.LANCZOS)
-            orig_w, orig_h = so.size
-
-            type = type.lower()
-            fade = fade.lower()
-            fcolor = fcolor.lower()
-
-            # build zoom frames
-            zoom_frames = []
             default_zoom, max_zoom, num_steps = 1.0, 1.2, 30
             step_size = (max_zoom - default_zoom) / num_steps
-
-            for i in range(num_steps + 1):
-                current_zoom = default_zoom + (i * step_size)
-                new_w, new_h = int(orig_w * current_zoom), int(orig_h * current_zoom)
-                resized = so.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                left, top = (new_w - orig_w) // 2, (new_h - orig_h) // 2
-                zoom_frames.append(resized.crop((left, top, left + orig_w, top + orig_h)))
-
-            if type == "out":
-                zoom_frames.reverse()
-
-            # apply fade overlay
             bg_rgb = (255, 255, 255, 255) if fcolor == "white" else (0, 0, 0, 255)
-            bg_layer = Image.new("RGBA", (orig_w, orig_h), bg_rgb)
-            total_frames = len(zoom_frames)
-            final_sequence = []
 
-            for i, frame in enumerate(zoom_frames):
-                rgba_frame = frame.convert("RGBA")
-                if fade == "in":
-                    alpha = i / (total_frames - 1)
-                elif fade == "out":
-                    alpha = 1.0 - (i / (total_frames - 1))
-                else:
-                    alpha = 1.0
+            for idx, (img_bytes, _) in enumerate(images, start=1):
+                with Image.open(io.BytesIO(img_bytes)) as img:
+                    so = img.convert("RGB")
+                so.thumbnail((600, 600), Image.Resampling.LANCZOS)
+                orig_w, orig_h = so.size
 
-                if alpha < 1.0:
-                    blended = Image.blend(bg_layer, rgba_frame, alpha)
-                    final_sequence.append(blended.convert("RGB"))
-                else:
-                    final_sequence.append(frame)
+                zoom_frames = []
+                for i in range(num_steps + 1):
+                    current_zoom = default_zoom + (i * step_size)
+                    new_w, new_h = int(orig_w * current_zoom), int(orig_h * current_zoom)
+                    resized = so.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    left, top = (new_w - orig_w) // 2, (new_h - orig_h) // 2
+                    zoom_frames.append(resized.crop((left, top, left + orig_w, top + orig_h)))
 
-            ioB = io.BytesIO()
-            final_sequence[0].save(
-                ioB, format='GIF', save_all=True, append_images=final_sequence[1:],
-                duration=50, loop=0, optimize=True
-            )
-            ioB.seek(0)
-            await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}.gif"))
+                if type == "out":
+                    zoom_frames.reverse()
+
+                bg_layer = Image.new("RGBA", (orig_w, orig_h), bg_rgb)
+                total_frames = len(zoom_frames)
+                final_sequence = []
+
+                for i, frame in enumerate(zoom_frames):
+                    rgba_frame = frame.convert("RGBA")
+                    if fade == "in":
+                        alpha = i / (total_frames - 1)
+                    elif fade == "out":
+                        alpha = 1.0 - (i / (total_frames - 1))
+                    else:
+                        alpha = 1.0
+
+                    if alpha < 1.0:
+                        blended = Image.blend(bg_layer, rgba_frame, alpha)
+                        final_sequence.append(blended.convert("RGB"))
+                    else:
+                        final_sequence.append(frame)
+
+                ioB = io.BytesIO()
+                final_sequence[0].save(
+                    ioB, format='GIF', save_all=True, append_images=final_sequence[1:],
+                    duration=50, loop=0, optimize=True
+                )
+                ioB.seek(0)
+                suffix = "" if idx == 1 else f"_{idx}"
+                await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}.gif"))
 
     # ─────────────────────────────────────────────────────────
     # .bouncegif — bounce with easing
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.bouncegif [name]`",
-        desc="Creates a bouncing animation with easing.",
+        desc="Creates a bouncing animation with easing for every attached image.",
         examples=[".bouncegif", ".bouncegif mybounce"],
         params=[
-            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional base output filename."},
         ],
-        note="Reply to an image. Uses easing for smooth bouncing motion.",
+        note="Attach or reply with images. Multiple images produce multiple GIFs (suffixed _2, _3, ...).",
     )
     @commands.command(name='bouncegif')
     async def bouncegif_cmd(self, ctx, name: str = "bounce"):
@@ -480,35 +546,38 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
 
         async with ctx.typing():
             try:
-                image_bytes, _ = await get_image_from_ctx(ctx)
-                if not image_bytes:
+                images = await get_image_from_ctx(ctx, all_images=True)
+                if not images:
                     return await ctx.send("❌ Attach or reply to an image.")
 
-                with Image.open(io.BytesIO(image_bytes)) as img:
-                    img_obj = img.convert("RGBA")
-                img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
+                for idx, (image_bytes, _) in enumerate(images, start=1):
+                    with Image.open(io.BytesIO(image_bytes)) as img:
+                        img_obj = img.convert("RGBA")
+                    img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
-                w, h = img_obj.size
-                bg = Image.new("RGBA", (w, h + 100), (255, 255, 255, 0))
-                frames = []
+                    w, h = img_obj.size
+                    bg = Image.new("RGBA", (w, h + 100), (255, 255, 255, 0))
+                    frames = []
 
-                for i in range(20):
-                    progress = i / 19
-                    # ease-in-out quadratic
-                    if progress < 0.5:
-                        offset = int(80 * (2 * progress) ** 2)
-                    else:
-                        offset = int(80 * (1 - (2 * progress - 1) ** 2))
-                    frame = bg.copy()
-                    frame.paste(img_obj, (0, offset), img_obj)
-                    frames.append(frame.crop((0, 0, w, h)).convert("RGB"))
+                    for i in range(20):
+                        progress = i / 19
+                        if progress < 0.5:
+                            offset = int(80 * (2 * progress) ** 2)
+                        else:
+                            offset = int(80 * (1 - (2 * progress - 1) ** 2))
+                        frame = bg.copy()
+                        frame.paste(img_obj, (0, offset), img_obj)
+                        frames.append(frame.crop((0, 0, w, h)).convert("RGB"))
 
-                file = create_gif(frames, duration=80, filename=f"{name}.gif")
-                file.fp.seek(0, 2)
-                if file.fp.tell() > 25 * 1024 * 1024:
-                    return await ctx.send("❌ GIF too large!")
-                file.fp.seek(0)
-                await ctx.reply(file=file)
+                    file = create_gif(frames, duration=80, filename=f"{name}.gif")
+                    file.fp.seek(0, 2)
+                    if file.fp.tell() > 25 * 1024 * 1024:
+                        await ctx.send("❌ GIF too large!")
+                        continue
+                    file.fp.seek(0)
+                    suffix = "" if idx == 1 else f"_{idx}"
+                    file.filename = f"{name}{suffix}.gif"
+                    await ctx.reply(file=file)
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -564,13 +633,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.upscale [factor] [name]`",
-        desc="Upscales an image by a given factor (1x to 6x).",
+        desc="Upscales every attached image by a given factor (1x to 6x).",
         examples=[".upscale", ".upscale 2", ".upscale 4 hq"],
         params=[
             {"name": "factor", "type": "int", "required": False, "desc": "Upscale factor (1-6, default 2)."},
-            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional base output filename."},
         ],
-        note="Reply to an image. Higher factors produce larger file sizes.",
+        note="Attach or reply with images. Multiple images produce multiple outputs (suffixed _2, _3, ...).",
     )
     @commands.command(name='upscale')
     async def upscale_cmd(self, ctx, factor: str = "2x", gif_name: str = None):
@@ -585,22 +654,25 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
 
         async with ctx.typing():
             try:
-                img_bytes, _ = await get_image_from_ctx(ctx)
-                if not img_bytes:
+                images = await get_image_from_ctx(ctx, all_images=True)
+                if not images:
                     return await ctx.send("Reply to an image to use this command.")
 
-                with Image.open(io.BytesIO(img_bytes)) as img:
-                    img = img.convert("RGB")
-                w, h = img.size
-                new_size = (w * factor_int, h * factor_int)
-                if new_size[0] > 4000 or new_size[1] > 4000:
-                    return await ctx.send("idk if i can send this image to discord bro.")
+                for idx, (img_bytes, _) in enumerate(images, start=1):
+                    with Image.open(io.BytesIO(img_bytes)) as img:
+                        img = img.convert("RGB")
+                    w, h = img.size
+                    new_size = (w * factor_int, h * factor_int)
+                    if new_size[0] > 4000 or new_size[1] > 4000:
+                        await ctx.send(f"Skipping image {idx}: too large for discord bro.")
+                        continue
 
-                upscaled = img.resize(new_size, Image.Resampling.LANCZOS)
-                ioB = io.BytesIO()
-                upscaled.save(ioB, format='PNG')
-                ioB.seek(0)
-                await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}_{factor_int}x.png"))
+                    upscaled = img.resize(new_size, Image.Resampling.LANCZOS)
+                    ioB = io.BytesIO()
+                    upscaled.save(ioB, format='PNG')
+                    ioB.seek(0)
+                    suffix = "" if idx == 1 else f"_{idx}"
+                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png"))
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -609,13 +681,13 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.downscale [factor] [name]`",
-        desc="Shrinks an image by a given factor.",
+        desc="Shrinks every attached image by a given factor.",
         examples=[".downscale", ".downscale 2", ".downscale 3 small"],
         params=[
             {"name": "factor", "type": "int", "required": False, "desc": "Downscale divisor (default 2)."},
-            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional base output filename."},
         ],
-        note="Reply to an image.",
+        note="Attach or reply with images. Multiple images produce multiple outputs.",
     )
     @commands.command(name='downscale')
     async def downscale_cmd(self, ctx, factor: str = "2x", gif_name: str = None):
@@ -630,19 +702,21 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
 
         async with ctx.typing():
             try:
-                img_bytes, _ = await get_image_from_ctx(ctx)
-                if not img_bytes:
+                images = await get_image_from_ctx(ctx, all_images=True)
+                if not images:
                     return await ctx.send("Reply to an image to use this command.")
 
-                with Image.open(io.BytesIO(img_bytes)) as img:
-                    img = img.convert("RGB")
-                w, h = img.size
-                new_size = (max(1, w // factor_int), max(1, h // factor_int))
-                downscaled = img.resize(new_size, Image.Resampling.LANCZOS)
-                ioB = io.BytesIO()
-                downscaled.save(ioB, format='PNG')
-                ioB.seek(0)
-                await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}_{factor_int}x.png"))
+                for idx, (img_bytes, _) in enumerate(images, start=1):
+                    with Image.open(io.BytesIO(img_bytes)) as img:
+                        img = img.convert("RGB")
+                    w, h = img.size
+                    new_size = (max(1, w // factor_int), max(1, h // factor_int))
+                    downscaled = img.resize(new_size, Image.Resampling.LANCZOS)
+                    ioB = io.BytesIO()
+                    downscaled.save(ioB, format='PNG')
+                    ioB.seek(0)
+                    suffix = "" if idx == 1 else f"_{idx}"
+                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png"))
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -651,13 +725,14 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.lowquality [factor] [name]`",
-        desc="Drastically reduces image quality for a cursed pixelated look.",
+        desc="Drastically reduces image quality on every attached image for a cursed pixelated look.",
         examples=[".lowquality", ".lowquality 10", ".lowquality 5 crunchy"],
         params=[
-            {"name": "factor", "type": "int", "required": False, "desc": "Quality reduction factor (default 10). Higher = worse quality."},
-            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+            {"name": "factor", "type": "int", "required": False,
+             "desc": "Quality reduction factor (default 10). Higher = worse quality."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional base output filename."},
         ],
-        note="Reply to an image. Makes the image look extremely compressed/pixelated.",
+        note="Attach or reply with images. Multiple images produce multiple outputs.",
     )
     @commands.command(name='lowquality')
     async def lowquality_cmd(self, ctx, factor: str = "4x", gif_name: str = None):
@@ -672,20 +747,22 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
 
         async with ctx.typing():
             try:
-                img_bytes, _ = await get_image_from_ctx(ctx)
-                if not img_bytes:
+                images = await get_image_from_ctx(ctx, all_images=True)
+                if not images:
                     return await ctx.send("Reply to an image to use this command.")
 
-                with Image.open(io.BytesIO(img_bytes)) as img:
-                    img = img.convert("RGB")
-                orig_size = img.size
-                small_size = (max(1, orig_size[0] // factor_int), max(1, orig_size[1] // factor_int))
-                temp_small = img.resize(small_size, Image.Resampling.BILINEAR)
-                final = temp_small.resize(orig_size, Image.Resampling.NEAREST)
-                ioB = io.BytesIO()
-                final.save(ioB, format='PNG')
-                ioB.seek(0)
-                await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}_{factor_int}x.png"))
+                for idx, (img_bytes, _) in enumerate(images, start=1):
+                    with Image.open(io.BytesIO(img_bytes)) as img:
+                        img = img.convert("RGB")
+                    orig_size = img.size
+                    small_size = (max(1, orig_size[0] // factor_int), max(1, orig_size[1] // factor_int))
+                    temp_small = img.resize(small_size, Image.Resampling.BILINEAR)
+                    final = temp_small.resize(orig_size, Image.Resampling.NEAREST)
+                    ioB = io.BytesIO()
+                    final.save(ioB, format='PNG')
+                    ioB.seek(0)
+                    suffix = "" if idx == 1 else f"_{idx}"
+                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}_{factor_int}x.png"))
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -694,15 +771,16 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.bar [type] [color] [size] [name]`",
-        desc="Adds a coloured bar or border to an image.",
+        desc="Adds a coloured bar or border to every attached image.",
         examples=[".bar", ".bar top red", ".bar bottom #FF0000 50"],
         params=[
-            {"name": "type", "type": "str", "required": False, "desc": "Bar position: `top`, `bottom`, `left`, `right`. Defaults to all sides (border)."},
+            {"name": "type", "type": "str", "required": False,
+             "desc": "Bar position: `top`, `bottom`, `left`, `right`. Defaults to all sides (border)."},
             {"name": "color", "type": "str", "required": False, "desc": "Colour (hex or name). Defaults to black."},
             {"name": "size", "type": "int", "required": False, "desc": "Bar thickness in pixels."},
-            {"name": "name", "type": "str", "required": False, "desc": "Optional output filename."},
+            {"name": "name", "type": "str", "required": False, "desc": "Optional base output filename."},
         ],
-        note="Reply to an image.",
+        note="Attach or reply with images. Multiple images produce multiple outputs.",
     )
     @commands.command(name='bar')
     async def bar_cmd(self, ctx, type: str = "horizontal", color: str = "black",
@@ -729,40 +807,42 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
 
         async with ctx.typing():
             try:
-                img_bytes, _ = await get_image_from_ctx(ctx)
-                if not img_bytes:
+                images = await get_image_from_ctx(ctx, all_images=True)
+                if not images:
                     return await ctx.send("No image found in that message.")
 
-                with Image.open(io.BytesIO(img_bytes)) as img:
-                    img = img.convert("RGB")
-                w, h = img.size
                 hex_color = COLORS_DICT[color]
+                for idx, (img_bytes, _) in enumerate(images, start=1):
+                    with Image.open(io.BytesIO(img_bytes)) as img:
+                        img = img.convert("RGB")
+                    w, h = img.size
 
-                if type == "horizontal":
-                    new_size = (w, h + (bar_size * 2))
-                    paste_coords = (0, bar_size)
-                elif type == "vertical":
-                    new_size = (w + (bar_size * 2), h)
-                    paste_coords = (bar_size, 0)
-                elif type == "top":
-                    new_size = (w, h + bar_size)
-                    paste_coords = (0, bar_size)
-                elif type == "bottom":
-                    new_size = (w, h + bar_size)
-                    paste_coords = (0, 0)
-                elif type == "left":
-                    new_size = (w + bar_size, h)
-                    paste_coords = (bar_size, 0)
-                elif type == "right":
-                    new_size = (w + bar_size, h)
-                    paste_coords = (0, 0)
+                    if type == "horizontal":
+                        new_size = (w, h + (bar_size * 2))
+                        paste_coords = (0, bar_size)
+                    elif type == "vertical":
+                        new_size = (w + (bar_size * 2), h)
+                        paste_coords = (bar_size, 0)
+                    elif type == "top":
+                        new_size = (w, h + bar_size)
+                        paste_coords = (0, bar_size)
+                    elif type == "bottom":
+                        new_size = (w, h + bar_size)
+                        paste_coords = (0, 0)
+                    elif type == "left":
+                        new_size = (w + bar_size, h)
+                        paste_coords = (bar_size, 0)
+                    elif type == "right":
+                        new_size = (w + bar_size, h)
+                        paste_coords = (0, 0)
 
-                bg = Image.new("RGB", new_size, hex_color)
-                bg.paste(img, paste_coords)
-                ioB = io.BytesIO()
-                bg.save(ioB, format='PNG')
-                ioB.seek(0)
-                await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}.png"))
+                    bg = Image.new("RGB", new_size, hex_color)
+                    bg.paste(img, paste_coords)
+                    ioB = io.BytesIO()
+                    bg.save(ioB, format='PNG')
+                    ioB.seek(0)
+                    suffix = "" if idx == 1 else f"_{idx}"
+                    await ctx.reply(file=discord.File(fp=ioB, filename=f"{gif_name}{suffix}.png"))
             except Exception as e:
                 await ctx.send(f"❌ Error: {str(e)}")
 
@@ -771,28 +851,33 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
     # ─────────────────────────────────────────────────────────
     @help_meta(
         usage="`.thisu`",
-        desc="Applies a POV overlay effect to an image or GIF.",
+        desc="Applies a POV overlay effect to every attached image or GIF.",
         examples=[".thisu"],
         params=[],
-        note="Reply to an image or GIF. Creates a first-person POV border effect.",
+        note="Attach or reply with images. Multiple images produce multiple outputs "
+             "(suffixed _2, _3, ...). Uses a first-person POV border effect.",
     )
     @commands.command(name='thisu')
     async def thisu_cmd(self, ctx):
         if await self._cooldown(ctx):
             return
 
-        img_bytes, is_gif = await get_image_from_ctx(ctx)
-        if not img_bytes:
+        images = await get_image_from_ctx(ctx, all_images=True)
+        if not images:
             return await ctx.send("You gotta give me an image or reply to one, fam.")
 
         async with ctx.typing():
-            try:
-                # Offload heavy image processing to a thread to keep the bot responsive
-                file = await asyncio.to_thread(self._process_thisu, img_bytes, is_gif)
-                await ctx.reply(file=file)
-            except Exception as e:
-                print(f"error for the thisu command: {e}")
-                await ctx.send("Something went wrong while processing the image.")
+            for idx, (img_bytes, is_gif) in enumerate(images, start=1):
+                try:
+                    file = await asyncio.to_thread(self._process_thisu, img_bytes, is_gif)
+                    if idx > 1:
+                        suffix = f"_{idx}"
+                        name, ext = file.filename.rsplit(".", 1)
+                        file.filename = f"{name}{suffix}.{ext}"
+                    await ctx.reply(file=file)
+                except Exception as e:
+                    print(f"error for the thisu command on image {idx}: {e}")
+                    await ctx.send(f"Something went wrong processing image {idx}.")
 
     def _process_thisu(self, img_bytes: bytes, is_gif: bool) -> discord.File:
         """Synchronous CPU-bound processing for the POV mask overlay."""
