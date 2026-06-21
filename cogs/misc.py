@@ -437,6 +437,49 @@ class EchoCog(commands.Cog):
         view = EchoButton()
         await ctx.send("Click below to open the echo modal:", view=view)
 
+    # ── anime ────────────────────────────────────────────────
+    @help_meta(
+        usage="`.anime <search>`",
+        desc="Search for an anime and get the seoulities.com link.",
+        examples=[".anime aot", ".anime steins gate"],
+        params=[
+            {"name": "query", "type": "str", "required": True, "desc": "Anime title to search for."},
+        ],
+    )
+    @commands.command(name="anime")
+    async def anime(self, ctx, *, query: str):
+        if not query:
+            return await ctx.send("provide an anime name")
+        async with ctx.typing():
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        "https://api.jikan.moe/v4/anime",
+                        params={"q": query, "limit": 5},
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    ) as resp:
+                        if resp.status != 200:
+                            return await ctx.send("search failed")
+                        data = await resp.json()
+            except Exception as e:
+                return await ctx.send(f"search error: {e}")
+
+            results = data.get("data", [])
+            if not results:
+                return await ctx.send(f"no results for `{query}`")
+
+            lines = []
+            for i, anime in enumerate(results[:5], 1):
+                mal_id = anime["mal_id"]
+                title = anime.get("title_english") or anime["title"]
+                year = anime.get("year") or anime.get("aired", {}).get("prop", {}).get("from", {}).get("year", "?")
+                ani_type = anime.get("type", "?")
+                score = anime.get("score", "?")
+                url = f"https://seoulities.com/watch/{mal_id}"
+                lines.append(f"`{i}.` **{title}** ({year}, {ani_type}, ⭐{score})\n{url}")
+
+            await ctx.send("\n\n".join(lines))
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(MiscCog(bot))
     await bot.add_cog(EchoCog(bot))
