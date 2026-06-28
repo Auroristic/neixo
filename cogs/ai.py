@@ -617,18 +617,39 @@ class AICog(commands.Cog, name="AI"):
         return self._zen_client
 
     async def _deepseek_complete(self, messages_payload, max_tokens=8192, tools=None):
-        client = self._get_zen_client()
-        kwargs = dict(
-            model=ZEN_MODEL,
-            messages=messages_payload,
-            max_tokens=max_tokens,
-            temperature=1.0,
-            top_p=0.95,
-        )
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
-        return await client.chat.completions.create(**kwargs)
+        last_error: Exception | None = None
+        # Try up to 3 times for the free DeepSeek/Zen model on Opencode due to potential transient / cold-start 404s
+        for attempt in range(3):
+            try:
+                client = self._get_zen_client()
+                kwargs = dict(
+                    model=ZEN_MODEL,
+                    messages=messages_payload,
+                    max_tokens=max_tokens,
+                    temperature=1.0,
+                    top_p=0.95,
+                )
+                if tools:
+                    kwargs["tools"] = tools
+                    kwargs["tool_choice"] = "auto"
+                return await client.chat.completions.create(**kwargs)
+            except Exception as e:
+                last_error = e
+                err_str = str(e).lower()
+                # Check for standard transient errors, including opencode's model_not_found/does not exist for free models
+                transient = any(
+                    s in err_str for s in (
+                        "429", "rate limit", "rate_limit", "timeout",
+                        "503", "502", "504", "overloaded", "temporarily",
+                        "does not exist", "model_not_found", "404"
+                    )
+                )
+                if transient and attempt < 2:
+                    # Exponential backoff: 0.5s, 1.5s
+                    await asyncio.sleep(0.5 * (attempt + 1) * 2)
+                    continue
+                raise
+        raise last_error
 
     # ── Status-message system ──────────────────────────────────
 
@@ -813,29 +834,60 @@ class AICog(commands.Cog, name="AI"):
                     return random.choice(v)  # noqa: S311
         return None
 
-    async def fetch_url(self, url: str) -> str:
-        """Fetch a URL and return its readable text content."""
+    async def _is_safe_url(self, url: str) -> bool:
         if not url or not url.startswith(("http://", "https://")):
-            return "invalid url"
-        # SSRF protection: reject private/reserved IPs
+            return False
         try:
             hostname = urlparse(url).hostname
-            if hostname:
-                loop = asyncio.get_event_loop()
-                addrs = await loop.getaddrinfo(hostname, None)
-                for _, _, _, _, sa in addrs:
-                    ip = ipaddress.ip_address(sa[0])
-                    if ip.is_private or ip.is_loopback or ip.is_link_local:
-                        return "blocked: this url points to an internal or private address"
+            if not hostname:
+                return False
+            loop = asyncio.get_event_loop()
+            addrs = await loop.getaddrinfo(hostname, None)
+            for _, _, _, _, sa in addrs:
+                ip = ipaddress.ip_address(sa[0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local:
+                    return False
+            return True
         except Exception:
-            return "blocked: could not verify url safety"
+            return False
+
+    async def fetch_url(self, url: str) -> str:
+        """Fetch a URL and return its readable text content, securely following redirects."""
+        redirect_limit = 5
+        current_url = url
+        
+        for _ in range(redirect_limit):
+            if not await self._is_safe_url(current_url):
+                return "blocked: URL is unsafe or points to a private/reserved IP address"
+            
+            try:
+                async with self.session.get(
+                    current_url, 
+                    timeout=aiohttp.ClientTimeout(total=15), 
+                    allow_redirects=False
+                ) as resp:
+                    if resp.status in (301, 302, 303, 307, 308):
+                        location = resp.headers.get("Location")
+                        if not location:
+                            return "failed to fetch: redirect location missing"
+                        from urllib.parse import urljoin
+                        current_url = urljoin(current_url, location)
+                        continue
+                    
+                    if resp.status != 200:
+                        return f"failed to fetch: http {resp.status}"
+                    
+                    html = await resp.text()
+                    break
+            except asyncio.TimeoutError:
+                return "request timed out"
+            except Exception as e:
+                _log(f"fetch_url error fetching {current_url}: {e}")
+                return "failed to fetch url"
+        else:
+            return "blocked: too many redirects"
+            
         try:
-            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=15), allow_redirects=False) as resp:
-                if resp.status in (301, 302, 303, 307, 308):
-                    return "blocked: redirects not allowed"
-                if resp.status != 200:
-                    return f"failed to fetch: http {resp.status}"
-                html = await resp.text()
             soup = BeautifulSoup(html, "html.parser")
             for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
                 tag.decompose()
@@ -844,11 +896,9 @@ class AICog(commands.Cog, name="AI"):
             if len(text) > 5000:
                 text = text[:5000] + "\n\n[... content truncated at 5000 chars ...]"
             return text if text else "page appears to be empty or requires javascript"
-        except asyncio.TimeoutError:
-            return "request timed out"
         except Exception as e:
-            _log(f"fetch_url error: {e}")
-            return "failed to fetch url"
+            _log(f"fetch_url parsing error: {e}")
+            return "failed to parse page content"
 
     async def weather(self, location: str, days: int = 1) -> str:
         try:
@@ -961,35 +1011,47 @@ class AICog(commands.Cog, name="AI"):
             _log(f"urban dict lookup error: {e}")
             return "urban dictionary lookup failed"
 
-    async def image_to_base64(self, url):
-        # SSRF check
-        try:
-            hostname = urlparse(url).hostname
-            if hostname:
-                loop = asyncio.get_event_loop()
-                addrs = await loop.getaddrinfo(hostname, None)
-                for _, _, _, _, sa in addrs:
-                    ip = ipaddress.ip_address(sa[0])
-                    if ip.is_private or ip.is_loopback or ip.is_link_local:
-                        return None
-        except Exception:
+    async def image_to_base64(self, url: str) -> str | None:
+        """Download an image, securely following redirects, and return its base64 representation."""
+        redirect_limit = 5
+        current_url = url
+        
+        for _ in range(redirect_limit):
+            if not await self._is_safe_url(current_url):
+                return None
+            
+            try:
+                headers = {
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                }
+                async with self.session.get(
+                    current_url, 
+                    headers=headers, 
+                    allow_redirects=False
+                ) as response:
+                    if response.status in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            return None
+                        from urllib.parse import urljoin
+                        current_url = urljoin(current_url, location)
+                        continue
+                    
+                    if response.status == 200:
+                        content = await response.read()
+                        return base64.b64encode(content).decode('utf-8')
+                    _log(f"Failed to fetch image {current_url}: {response.status}")
+                    return None
+            except Exception as e:
+                _log(f"Image fetch error on {current_url}: {e}")
+                return None
+        else:
+            _log(f"Image fetch failed: too many redirects for {url}")
             return None
-        try:
-            headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
-            }
-            async with self.session.get(url, headers=headers, allow_redirects=False) as response:
-                if response.status == 200:
-                    content = await response.read()
-                    return base64.b64encode(content).decode('utf-8')
-                _log(f"Failed to fetch image: {response.status}")
-        except Exception as e:
-            _log(f"Image error: {e}")
-        return None
 
     async def _generate_image(self, prompt: str) -> tuple[str, list]:
         """Generate an image via NVIDIA NIM (FLUX.2-klein-4b)."""
