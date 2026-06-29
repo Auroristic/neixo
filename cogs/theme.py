@@ -1187,7 +1187,8 @@ class ThemeCog(commands.Cog, name="Theme"):
                     self._collect_failure(failures, "channel", ch.id, ch.name, exc)
             done += 1
             await _edit_progress(prog, done, len(all_channels), ch.name)
-            await self._rate_limit_for_channel(ch)
+            if ch:
+                await self._rate_limit_for_channel(ch)
 
         if removing:
             gtheme["channel_prefix"] = {}
@@ -2649,9 +2650,9 @@ class ThemeCog(commands.Cog, name="Theme"):
                         )
                     except (discord.HTTPException, asyncio.TimeoutError) as exc:
                         self._collect_failure(failures, "channel", ch.id, ch.name, exc)
-                await self._rate_limit_for_channel(ch)
-            done += 1
-            await _edit_progress(prog, done, len(cat.channels), ch.name)
+                    await self._rate_limit_for_channel(ch)
+                done += 1
+                await _edit_progress(prog, done, len(cat.channels), ch.name)
             tm.save_prefix_history(ctx.guild.id, {"op": f"group_add:{name}", "channels": history_snap})
             await prog.edit(content=f"-# `{'█' * 10}` done — prefix applied")
             await self._report_failures(ctx, failures, "group add failures")

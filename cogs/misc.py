@@ -12,6 +12,7 @@ import wavelink
 from discord.ext import commands
 
 from utils import (
+    CREATOR_ID,
     SEOULITIES_SERVER_ID,
     check_gif_cooldown,
     get_config,
@@ -399,8 +400,21 @@ class EchoModal(discord.ui.Modal, title="Echo Message"):
             )
 
 class EchoButton(discord.ui.View):
-    def __init__(self):
+    def __init__(self, requester_id: int):
         super().__init__(timeout=60)
+        self.requester_id = requester_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            return False
+        allowed = (
+            interaction.user.id == self.requester_id
+            or interaction.user.id == CREATOR_ID
+            or interaction.user.guild_permissions.administrator
+        )
+        if not allowed:
+            await interaction.response.send_message("admin only", ephemeral=True)
+        return allowed
 
     @discord.ui.button(label="Open Echo Modal", style=discord.ButtonStyle.primary, custom_id="echo_modal_trigger")
     async def echo_modal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -434,7 +448,7 @@ class EchoCog(commands.Cog):
             await ctx.send("admin only")
             return
 
-        view = EchoButton()
+        view = EchoButton(ctx.author.id)
         await ctx.send("Click below to open the echo modal:", view=view)
 
     # ── anime ────────────────────────────────────────────────

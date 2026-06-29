@@ -54,6 +54,15 @@ _stats_conn: _sql.Connection | None = None
 _react_conn_ro: _sql.Connection | None = None
 _stats_write_lock = asyncio.Lock()
 
+
+def _matching_reaction_count(reactions, star_emoji: str) -> int:
+    return sum(
+        getattr(r, 'count', 0) or 0
+        for r in reactions
+        if str(getattr(r, 'emoji', '')) == star_emoji
+        or getattr(getattr(r, 'emoji', None), 'name', None) == star_emoji
+    )
+
 def _get_conn() -> _sql.Connection:
     global _stats_conn
     if _stats_conn is None:
@@ -653,10 +662,7 @@ class ServerStatsCog(commands.Cog):
         except Exception:
             return
 
-        star_count = sum(
-            1 for r in msg.reactions
-            if str(r.emoji) == star_emoji or getattr(r.emoji, 'name', None) == star_emoji
-        )
+        star_count = _matching_reaction_count(msg.reactions, star_emoji)
         if star_count < threshold:
             return
 
@@ -695,7 +701,7 @@ class ServerStatsCog(commands.Cog):
         )
         embed.set_footer(text=f"{star_emoji} {star_count} \u00b7 {msg.author.id}")
 
-        await star_channel.send(embed=embed)
+        await star_channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
     @help_meta(
         usage="`.starboard #channel [emoji] [threshold]`\n`.starboard emoji 😭`\n`.starboard threshold 5`",

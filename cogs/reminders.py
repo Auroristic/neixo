@@ -142,6 +142,8 @@ class RemindersCog(commands.Cog, name="Reminders"):
         self.bot = bot
         self._last_scan: dict[int, dict[int, str]] = {}  # guild_id → {1: "∞・", 2: "🔥"}
         self.task: asyncio.Task | None = None
+        self._reminders_lock = asyncio.Lock()
+        self._birthdays_lock = asyncio.Lock()
 
     async def cog_load(self):
         self.task = asyncio.create_task(self._scheduler())
@@ -174,14 +176,18 @@ class RemindersCog(commands.Cog, name="Reminders"):
     async def _tick(self):
         now = _now_utc()
         # ── reminders ────
-        state = _load_reminders()
-        due, kept = [], []
-        for it in state["items"]:
-            try:
-                trig = datetime.fromisoformat(it["trigger_iso"])
-            except Exception:
-                continue
-            (due if trig <= now else kept).append(it)
+        async with self._reminders_lock:
+            state = _load_reminders()
+            due, kept = [], []
+            for it in state["items"]:
+                try:
+                    trig = datetime.fromisoformat(it["trigger_iso"])
+                except Exception:
+                    continue
+                (due if trig <= now else kept).append(it)
+            if due:
+                state["items"] = kept
+                _save_reminders(state)
         failed = []
         if due:
             for it in due:
@@ -202,8 +208,11 @@ class RemindersCog(commands.Cog, name="Reminders"):
                     )
                 except discord.HTTPException:
                     failed.append(it)
-            state["items"] = kept + failed
-            _save_reminders(state)
+            if failed:
+                async with self._reminders_lock:
+                    state = _load_reminders()
+                    state["items"].extend(failed)
+                    _save_reminders(state)
 
         # ── birthdays ────
         bs = _load_birthdays()
@@ -295,17 +304,18 @@ class RemindersCog(commands.Cog, name="Reminders"):
         if trig <= _now_utc():
             return await ctx.send("-# that time is in the past")
 
-        state = _load_reminders()
-        rid = state["next_id"]
-        state["next_id"] = rid + 1
-        state["items"].append({
-            "id": rid,
-            "user_id": ctx.author.id,
-            "trigger_iso": trig.isoformat(),
-            "text": text.strip()[:500],
-            "created_iso": _now_utc().isoformat(),
-        })
-        _save_reminders(state)
+        async with self._reminders_lock:
+            state = _load_reminders()
+            rid = state["next_id"]
+            state["next_id"] = rid + 1
+            state["items"].append({
+                "id": rid,
+                "user_id": ctx.author.id,
+                "trigger_iso": trig.isoformat(),
+                "text": text.strip()[:500],
+                "created_iso": _now_utc().isoformat(),
+            })
+            _save_reminders(state)
         delta = trig - _now_utc()
         await ctx.send(f"-# got u — DMing in **{_format_delta(delta)}** (`#{rid}`)")
 
@@ -319,7 +329,8 @@ class RemindersCog(commands.Cog, name="Reminders"):
     )
     @remind.command(name="list")
     async def remind_list(self, ctx):
-        state = _load_reminders()
+        async with self._reminders_lock:
+            state = _load_reminders()
         my = sorted(
             (it for it in state["items"] if it["user_id"] == ctx.author.id),
             key=lambda x: x["trigger_iso"],
@@ -355,15 +366,16 @@ class RemindersCog(commands.Cog, name="Reminders"):
     )
     @remind.command(name="cancel", aliases=["rm", "del", "delete"])
     async def remind_cancel(self, ctx, rid: int):
-        state = _load_reminders()
-        before = len(state["items"])
-        state["items"] = [
-            it for it in state["items"]
-            if not (it["id"] == rid and it["user_id"] == ctx.author.id)
-        ]
-        if len(state["items"]) == before:
-            return await ctx.send(f"-# no reminder `#{rid}` of urs")
-        _save_reminders(state)
+        async with self._reminders_lock:
+            state = _load_reminders()
+            before = len(state["items"])
+            state["items"] = [
+                it for it in state["items"]
+                if not (it["id"] == rid and it["user_id"] == ctx.author.id)
+            ]
+            if len(state["items"]) == before:
+                return await ctx.send(f"-# no reminder `#{rid}` of urs")
+            _save_reminders(state)
         await ctx.send(f"-# cancelled `#{rid}`")
 
     # ── .bday ──────────────────────────────────────────────
@@ -392,24 +404,25 @@ class RemindersCog(commands.Cog, name="Reminders"):
 
         target_id, target_name = _resolve_target(self.bot, target, ctx.author)
 
-        bs = _load_birthdays()
-        # remove any existing entry for this (creator, target) so re-setting
-        # overwrites instead of duplicating
-        bs["items"] = [
-            it for it in bs["items"]
-            if not (it["creator_id"] == ctx.author.id
-                    and it["target_id"] == target_id
-                    and (target_id != 0 or it.get("target_name") == target_name))
-        ]
-        bs["items"].append({
-            "creator_id": ctx.author.id,
-            "target_id": target_id,
-            "target_name": target_name,
-            "month_day": md,
-            "last_notified_year": 0,
-            "last_pre_notified_year": 0,
-        })
-        _save_birthdays(bs)
+        async with self._birthdays_lock:
+            bs = _load_birthdays()
+            # remove any existing entry for this (creator, target) so re-setting
+            # overwrites instead of duplicating
+            bs["items"] = [
+                it for it in bs["items"]
+                if not (it["creator_id"] == ctx.author.id
+                        and it["target_id"] == target_id
+                        and (target_id != 0 or it.get("target_name") == target_name))
+            ]
+            bs["items"].append({
+                "creator_id": ctx.author.id,
+                "target_id": target_id,
+                "target_name": target_name,
+                "month_day": md,
+                "last_notified_year": 0,
+                "last_pre_notified_year": 0,
+            })
+            _save_birthdays(bs)
         await ctx.send(
             f"-# saved — i'll DM u every year on `{md}` for **{target_name}**"
         )
@@ -424,7 +437,8 @@ class RemindersCog(commands.Cog, name="Reminders"):
     )
     @bday.command(name="list")
     async def bday_list(self, ctx):
-        bs = _load_birthdays()
+        async with self._birthdays_lock:
+            bs = _load_birthdays()
         my = sorted(
             (it for it in bs["items"] if it["creator_id"] == ctx.author.id),
             key=lambda x: x["month_day"],
@@ -452,17 +466,18 @@ class RemindersCog(commands.Cog, name="Reminders"):
     @bday.command(name="remove", aliases=["rm", "del", "delete"])
     async def bday_remove(self, ctx, *, target: str = None):
         target_id, target_name = _resolve_target(self.bot, target, ctx.author)
-        bs = _load_birthdays()
-        before = len(bs["items"])
-        bs["items"] = [
-            it for it in bs["items"]
-            if not (it["creator_id"] == ctx.author.id
-                    and it["target_id"] == target_id
-                    and (target_id != 0 or it.get("target_name") == target_name))
-        ]
-        if len(bs["items"]) == before:
-            return await ctx.send(f"-# no birthday saved for **{target_name}**")
-        _save_birthdays(bs)
+        async with self._birthdays_lock:
+            bs = _load_birthdays()
+            before = len(bs["items"])
+            bs["items"] = [
+                it for it in bs["items"]
+                if not (it["creator_id"] == ctx.author.id
+                        and it["target_id"] == target_id
+                        and (target_id != 0 or it.get("target_name") == target_name))
+            ]
+            if len(bs["items"]) == before:
+                return await ctx.send(f"-# no birthday saved for **{target_name}**")
+            _save_birthdays(bs)
         await ctx.send(f"-# removed birthday for **{target_name}**")
 
 

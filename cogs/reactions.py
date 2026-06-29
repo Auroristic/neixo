@@ -58,8 +58,11 @@ def _rc_upsert(guild_id, user_id, emoji_str, delta):
     conn.commit()
 
 def _emoji_str(emoji):
-    if isinstance(emoji, (discord.PartialEmoji, discord.Emoji)):
-        return f"<:{emoji.name}:{emoji.id}>"
+    emoji_id = getattr(emoji, 'id', None)
+    emoji_name = getattr(emoji, 'name', None)
+    if emoji_id and emoji_name:
+        prefix = 'a' if getattr(emoji, 'animated', False) else ''
+        return f"<{prefix}:{emoji_name}:{emoji_id}>"
     return str(emoji)
 
 
@@ -491,6 +494,24 @@ class ReactionsCog(commands.Cog, name="Reactions"):
         if user.bot or not reaction.message.guild:
             return
         _rc_upsert(reaction.message.guild.id, user.id, _emoji_str(reaction.emoji), -1)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        if payload.guild_id is None or payload.user_id == self.bot.user.id:
+            return
+        member = payload.member or self.bot.get_user(payload.user_id)
+        if getattr(member, 'bot', False):
+            return
+        _rc_upsert(payload.guild_id, payload.user_id, _emoji_str(payload.emoji), 1)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
+        if payload.guild_id is None or payload.user_id == self.bot.user.id:
+            return
+        user = self.bot.get_user(payload.user_id)
+        if getattr(user, 'bot', False):
+            return
+        _rc_upsert(payload.guild_id, payload.user_id, _emoji_str(payload.emoji), -1)
 
     @help_meta(
         usage="`.rc [@user] [emoji]`",

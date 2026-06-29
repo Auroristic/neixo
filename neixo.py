@@ -174,54 +174,44 @@ class Neixo(commands.Bot):
         # Target keys:
         # 1) command-specific meta key
         # 2) category meta key
-        from utils import get_cmd_channel_rule, get_cmd_channel_rules
+        from utils import get_cmd_channel_rule
 
-        # command-specific override
-        cmd_rule = get_cmd_channel_rule(ctx.guild.id, qualified)
-        if cmd_rule:
-            mode = (cmd_rule.get("mode") or "").lower()
-            channels = set(str(c) for c in (cmd_rule.get("channels") or []))
-            if not channels:
-                return True
-
-            allowed = None
+        async def _apply_rule(rule: dict, denied_msg: str) -> bool | None:
+            if not rule:
+                return None
+            mode = (rule.get("mode") or "").lower()
+            channels = set(str(c) for c in (rule.get("channels") or []))
             if mode == "allow":
                 allowed = str(ctx.channel.id) in channels
             elif mode == "deny":
                 allowed = str(ctx.channel.id) not in channels
-
-            if allowed is False:
+            else:
+                logging.warning("invalid command-channel rule mode %r for %r", mode, ctx.command.qualified_name)
+                return False
+            if not allowed:
                 try:
-                    await ctx.send(f"-# `.{ctx.command.qualified_name}` is disabled in this channel.")
+                    await ctx.send(denied_msg)
                 except discord.HTTPException:
                     pass
                 return False
-
             return True
+
+        # command-specific override
+        cmd_allowed = await _apply_rule(
+            get_cmd_channel_rule(ctx.guild.id, qualified),
+            f"-# `.{ctx.command.qualified_name}` is disabled in this channel.",
+        )
+        if cmd_allowed is not None:
+            return cmd_allowed
 
         cat_id = self._cmd_to_category.get(qualified)
         if cat_id:
-            cat_rule = get_cmd_channel_rule(ctx.guild.id, cat_id)
-            if cat_rule:
-                mode = (cat_rule.get("mode") or "").lower()
-                channels = set(str(c) for c in (cat_rule.get("channels") or []))
-                if not channels:
-                    return True
-
-                allowed = None
-                if mode == "allow":
-                    allowed = str(ctx.channel.id) in channels
-                elif mode == "deny":
-                    allowed = str(ctx.channel.id) not in channels
-
-                if allowed is False:
-                    try:
-                        await ctx.send(f"-# this command is restricted to other channels.")
-                    except discord.HTTPException:
-                        pass
-                    return False
-
-                return True
+            cat_allowed = await _apply_rule(
+                get_cmd_channel_rule(ctx.guild.id, cat_id),
+                "-# this command is restricted to other channels.",
+            )
+            if cat_allowed is not None:
+                return cat_allowed
 
         return True
 
@@ -253,10 +243,13 @@ class Neixo(commands.Bot):
 
         # ── Register persistent views ─────────────────────────
         if not self.persistent_views_added:
-            from cogs.confessions import ConfessionButtons
-            self.add_view(ConfessionButtons(self, 0))
-            self.persistent_views_added = True
-            logging.info("Persistent views registered")
+            try:
+                from cogs.confessions import ConfessionButtons
+                self.add_view(ConfessionButtons(self, 0))
+                self.persistent_views_added = True
+                logging.info("Persistent views registered")
+            except Exception:
+                logging.exception("failed to register persistent confession views")
 
         # ── Sync slash commands (rate-limited by Discord, handle 429 gracefully) ──
         try:
@@ -564,14 +557,16 @@ async def play_slash(interaction: discord.Interaction, query: str):
     if bot_vc and bot_vc.channel != user_vc:
         return await _music_err(interaction, f"you need to be in {bot_vc.channel.mention} to use this.")
     await interaction.response.defer()
-    temp = await interaction.channel.send(f".play {query}")
-    ctx = await bot.get_context(temp)
-    ctx.author = interaction.user
-    await bot.invoke(ctx)
+    temp = await interaction.channel.send(f".play {query.replace(chr(10), ' ')}")
     try:
-        await temp.delete()
-    except discord.HTTPException:
-        pass
+        ctx = await bot.get_context(temp)
+        ctx.author = interaction.user
+        await bot.invoke(ctx)
+    finally:
+        try:
+            await temp.delete()
+        except discord.HTTPException:
+            pass
 
 
 @bot.tree.command(name="skip", description="Skip the current track")
@@ -643,13 +638,15 @@ async def queue_slash(interaction: discord.Interaction):
         return await _music_err(interaction, "not connected to voice.")
     await interaction.response.defer()
     temp = await interaction.channel.send(".queue")
-    ctx = await bot.get_context(temp)
-    ctx.author = interaction.user
-    await bot.invoke(ctx)
     try:
-        await temp.delete()
-    except discord.HTTPException:
-        pass
+        ctx = await bot.get_context(temp)
+        ctx.author = interaction.user
+        await bot.invoke(ctx)
+    finally:
+        try:
+            await temp.delete()
+        except discord.HTTPException:
+            pass
 
 
 @bot.tree.command(name="nowplaying", description="Show the currently playing track")
@@ -664,13 +661,15 @@ async def nowplaying_slash(interaction: discord.Interaction):
         return await _music_err(interaction, "nothing is playing rn.")
     await interaction.response.defer()
     temp = await interaction.channel.send(".nowplaying")
-    ctx = await bot.get_context(temp)
-    ctx.author = interaction.user
-    await bot.invoke(ctx)
     try:
-        await temp.delete()
-    except discord.HTTPException:
-        pass
+        ctx = await bot.get_context(temp)
+        ctx.author = interaction.user
+        await bot.invoke(ctx)
+    finally:
+        try:
+            await temp.delete()
+        except discord.HTTPException:
+            pass
 
 
 @bot.tree.command(name="help", description="Browse all commands or get help with a specific one")
@@ -678,13 +677,15 @@ async def nowplaying_slash(interaction: discord.Interaction):
 async def help_slash(interaction: discord.Interaction, command: str = None):
     await interaction.response.defer(ephemeral=True)
     temp = await interaction.channel.send(f".help {command}" if command else ".help")
-    ctx = await bot.get_context(temp)
-    ctx.author = interaction.user
-    await bot.invoke(ctx)
     try:
-        await temp.delete()
-    except discord.HTTPException:
-        pass
+        ctx = await bot.get_context(temp)
+        ctx.author = interaction.user
+        await bot.invoke(ctx)
+    finally:
+        try:
+            await temp.delete()
+        except discord.HTTPException:
+            pass
 
 
 # ── Cog loader ──────────────────────────────────────────────────

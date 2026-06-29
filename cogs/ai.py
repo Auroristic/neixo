@@ -72,13 +72,24 @@ COG_META = {
 _conversation_locks: dict[str, asyncio.Lock] = {}
 _conversation_locks_last_access: dict[str, float] = {}
 _conversations_file_lock = asyncio.Lock()
+_bot_memory_file_lock = asyncio.Lock()
+
+
+def _sanitize_memory_note(note: str) -> str | None:
+    note = re.sub(r'\s+', ' ', (note or '').strip())[:300]
+    if not note or _INJECTION_PATTERNS.search(note):
+        return None
+    return note
 
 def get_conversation_lock(key: str) -> asyncio.Lock:
     lock = _conversation_locks.setdefault(key, asyncio.Lock())
     _conversation_locks_last_access[key] = _time.time()
     if len(_conversation_locks) > 1000:
         cutoff = _time.time() - 3600
-        stale = [k for k, t in _conversation_locks_last_access.items() if t < cutoff]
+        stale = [
+            k for k, t in _conversation_locks_last_access.items()
+            if t < cutoff and not _conversation_locks.get(k, asyncio.Lock()).locked()
+        ]
         for k in stale:
             _conversation_locks.pop(k, None)
             _conversation_locks_last_access.pop(k, None)
@@ -767,7 +778,7 @@ class AICog(commands.Cog, name="AI"):
     async def search_web(self, query: str) -> str:
         # ── built‑in date/time queries ─────────────────
         q = query.lower().strip()
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.now(timezone.utc)
         date_queries = [
             "current date", "today's date", "what's the date",
             "date today", "today date", "what day is it",
@@ -947,7 +958,7 @@ class AICog(commands.Cog, name="AI"):
                     "format": "json",
                 }
                 async with self.session.get(
-                    "https://en.wikipedia.org/api/w/api.php", params=summary_params,
+                    "https://en.wikipedia.org/w/api.php", params=summary_params,
                     timeout=aiohttp.ClientTimeout(total=10)
                 ) as summ_resp:
                     summ_data = await summ_resp.json()
@@ -1031,7 +1042,8 @@ class AICog(commands.Cog, name="AI"):
                 async with self.session.get(
                     current_url, 
                     headers=headers, 
-                    allow_redirects=False
+                    allow_redirects=False,
+                    timeout=aiohttp.ClientTimeout(total=15),
                 ) as response:
                     if response.status in (301, 302, 303, 307, 308):
                         location = response.headers.get("Location")
@@ -1042,7 +1054,18 @@ class AICog(commands.Cog, name="AI"):
                         continue
                     
                     if response.status == 200:
-                        content = await response.read()
+                        max_bytes = 10 * 1024 * 1024
+                        content_length = response.headers.get('Content-Length')
+                        if content_length and int(content_length) > max_bytes:
+                            return None
+                        chunks = []
+                        total = 0
+                        async for chunk in response.content.iter_chunked(64 * 1024):
+                            total += len(chunk)
+                            if total > max_bytes:
+                                return None
+                            chunks.append(chunk)
+                        content = b''.join(chunks)
                         return base64.b64encode(content).decode('utf-8')
                     _log(f"Failed to fetch image {current_url}: {response.status}")
                     return None
@@ -1091,15 +1114,18 @@ class AICog(commands.Cog, name="AI"):
             print(f"[_generate_image] error: {e}")
             return "image gen error", []
 
-    def _handle_remember(self, response_text: str, bot_memory: dict, mem_key: str):
+    async def _handle_remember(self, response_text: str, bot_memory: dict, mem_key: str):
         match = re.search(r'\[REMEMBER:(.*?)\]', response_text, re.IGNORECASE | re.DOTALL)
         if match:
-            note = match.group(1).strip()
-            if mem_key not in bot_memory:
-                bot_memory[mem_key] = {"notes": []}
-            bot_memory[mem_key]["notes"].append(note)
-            bot_memory[mem_key]["notes"] = bot_memory[mem_key]["notes"][-20:]
-            save_json(BOT_MEMORY_FILE, bot_memory)
+            note = _sanitize_memory_note(match.group(1))
+            if note:
+                async with _bot_memory_file_lock:
+                    bot_memory = load_json(BOT_MEMORY_FILE)
+                    if mem_key not in bot_memory:
+                        bot_memory[mem_key] = {"notes": []}
+                    bot_memory[mem_key]["notes"].append(note)
+                    bot_memory[mem_key]["notes"] = bot_memory[mem_key]["notes"][-20:]
+                    save_json(BOT_MEMORY_FILE, bot_memory)
             response_text = re.sub(
                 r'\s*\[REMEMBER:.*?\]\s*', ' ',
                 response_text, flags=re.IGNORECASE
@@ -1465,7 +1491,7 @@ class AICog(commands.Cog, name="AI"):
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
             text = _strip_name_prefix(text)
             text = _strip_media_urls(text)
-            text = self._handle_remember(text, bot_memory, mem_key)
+            text = await self._handle_remember(text, bot_memory, mem_key)
             if status_msg:
                 primary = text[:2000]
                 remainder = text[2000:]
@@ -1575,7 +1601,7 @@ class AICog(commands.Cog, name="AI"):
         text = _strip_media_urls(text)
         # Strip [REMEMBER:...] tag (and save the note) BEFORE sending so the
         # tag never leaks into the visible reply.
-        text = self._handle_remember(text, bot_memory, mem_key)
+        text = await self._handle_remember(text, bot_memory, mem_key)
 
         # ── Fallback: if we have neither text nor any media, say something
         # so the bot isn't silent. Without this the user would see no reply.
@@ -1661,7 +1687,7 @@ class AICog(commands.Cog, name="AI"):
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
         text = _strip_name_prefix(text)
         text = _strip_media_urls(text)
-        text = self._handle_remember(text, bot_memory, mem_key)
+        text = await self._handle_remember(text, bot_memory, mem_key)
 
         history_text = await self._send_tool_response(text, gifs, images, reply_to, status_msg)
         return True, history_text
@@ -1925,7 +1951,8 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
                     history = list(conversations[user_key])
 
                 # ── Phase 2: build payload (no lock) ──
-                bot_memory   = load_json(BOT_MEMORY_FILE)
+                async with _bot_memory_file_lock:
+                    bot_memory = load_json(BOT_MEMORY_FILE)
                 memory_notes = bot_memory.get(mem_key, {}).get("notes", [])
                 memory_str   = "\n".join(f"- {n}" for n in memory_notes) if memory_notes else "none"
 
@@ -2019,7 +2046,7 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
             err_str = str(e).lower()
             if "400" in err_str or "bad request" in err_str:
                 try:
-                    async with get_conversation_lock(user_key):
+                    async with get_conversation_lock(user_key), _conversations_file_lock:
                         convs = load_json(CONVERSATIONS_FILE)
                         if user_key in convs and len(convs[user_key]) > 1:
                             convs[user_key] = convs[user_key][-1:]

@@ -59,12 +59,16 @@ class NowPlayingView(View):
             prev_track = history[-1]
             history.pop()
 
-            self.cog._prev_pressed.add(player.guild.id)
-
             if player.current:
                 player.queue.put_at(0, player.current)
 
-            await player.play(prev_track, replace=True)
+            self.cog._prev_pressed.add(player.guild.id)
+            try:
+                await player.play(prev_track, replace=True)
+            except Exception:
+                self.cog._prev_pressed.discard(player.guild.id)
+                history.append(prev_track)
+                raise
         finally:
             self._skip_in_progress = False
 

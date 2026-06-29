@@ -26,6 +26,8 @@ URL_RE = re.compile(
     re.IGNORECASE
 )
 
+_confessions_lock = asyncio.Lock()
+
 COG_META = {
     "category": "staff",
     "label": "Staff",
@@ -73,8 +75,6 @@ class ConfessionModal(discord.ui.Modal, title="Submit Anonymous Confession"):
                     )
                     return
 
-            cooldowns[user_id] = now + timedelta(seconds=15)
-
             config = load_json(CONFIG_FILE)
             guild_config = config.get(str(interaction.guild_id), {})
             confession_channel_id = guild_config.get('confession_channel')
@@ -94,34 +94,37 @@ class ConfessionModal(discord.ui.Modal, title="Submit Anonymous Confession"):
                 )
                 return
 
-            confessions = load_json(CONFESSIONS_FILE)
-            confession_id = get_next_confession_id(interaction.guild_id)
+            async with _confessions_lock:
+                confessions = load_json(CONFESSIONS_FILE)
+                confession_id = get_next_confession_id(interaction.guild_id)
 
-            embed = discord.Embed(
+                embed = discord.Embed(
                     title="Anonymous Confession",
                     description=self.confession_text.value,
                     color=get_embed_color(interaction.guild_id),
                     timestamp=datetime.now(timezone.utc)
                 )
-            embed.set_footer(text=f"Confession #{confession_id:03d}")
+                embed.set_footer(text=f"Confession #{confession_id:03d}")
 
-            view = ConfessionButtons(self.bot, confession_id)
-            message = await channel.send(embed=embed, view=view)
+                view = ConfessionButtons(self.bot, confession_id)
+                message = await channel.send(embed=embed, view=view)
 
-            confession_key = f"{interaction.guild_id}_{confession_id}"
-            # WARNING: user_id stored in plaintext for staff .cid lookups.
-            # This means confession authorship is permanently recorded.
-            confessions[confession_key] = {
-                'id': confession_id,
-                'guild_id': str(interaction.guild_id),
-                'user_id': str(user_id),
-                'text': self.confession_text.value,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'message_id': str(message.id),
-                'channel_id': str(channel.id),
-                'replies': []
-            }
-            save_json(CONFESSIONS_FILE, confessions)
+                confession_key = f"{interaction.guild_id}_{confession_id}"
+                # WARNING: user_id stored in plaintext for staff .cid lookups.
+                # This means confession authorship is permanently recorded.
+                confessions[confession_key] = {
+                    'id': confession_id,
+                    'guild_id': str(interaction.guild_id),
+                    'user_id': str(user_id),
+                    'text': self.confession_text.value,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'message_id': str(message.id),
+                    'channel_id': str(channel.id),
+                    'replies': []
+                }
+                save_json(CONFESSIONS_FILE, confessions)
+
+            cooldowns[user_id] = now + timedelta(seconds=15)
 
             await interaction.response.send_message(
                 "No one will know what u posted not even staff, so please be careful what you say",
@@ -181,9 +184,10 @@ class ReplyModal(discord.ui.Modal, title="Reply Anonymously"):
 
             cooldowns[user_id] = now + timedelta(seconds=15)
 
-            confessions = load_json(CONFESSIONS_FILE)
-            confession_key = f"{self.guild_id}_{self.confession_id}"
-            confession = confessions.get(confession_key)
+            async with _confessions_lock:
+                confessions = load_json(CONFESSIONS_FILE)
+                confession_key = f"{self.guild_id}_{self.confession_id}"
+                confession = confessions.get(confession_key)
 
             if not confession:
                 await interaction.response.send_message("Confession not found.", ephemeral=True)
@@ -227,11 +231,11 @@ class ReplyModal(discord.ui.Modal, title="Reply Anonymously"):
                     )
                     return
 
-            reply_count = sum(
-                len(c.get('replies', [])) for c in confessions.values()
-                if c.get('guild_id') == str(interaction.guild_id)
-            )
-            reply_id = reply_count + 1
+            async with _confessions_lock:
+                confessions = load_json(CONFESSIONS_FILE)
+                confession = confessions.get(confession_key, confession)
+                reply_count = len(confession.get('replies', []))
+                reply_id = reply_count + 1
 
             reply_embed = discord.Embed(
                 description=f"{self.reply_text.value}",
@@ -250,11 +254,14 @@ class ReplyModal(discord.ui.Modal, title="Reply Anonymously"):
                 'message_id': str(reply_message.id)
             }
 
-            if 'replies' not in confession:
-                confession['replies'] = []
-            confession['replies'].append(reply_data)
-            confessions[confession_key] = confession
-            save_json(CONFESSIONS_FILE, confessions)
+            async with _confessions_lock:
+                confessions = load_json(CONFESSIONS_FILE)
+                confession = confessions.get(confession_key, confession)
+                if 'replies' not in confession:
+                    confession['replies'] = []
+                confession['replies'].append(reply_data)
+                confessions[confession_key] = confession
+                save_json(CONFESSIONS_FILE, confessions)
 
             await interaction.response.send_message(
                 "done.",
@@ -287,7 +294,15 @@ class ConfessionButtons(discord.ui.View):
 
     @discord.ui.button(label="Reply", style=discord.ButtonStyle.blurple, custom_id="reply_button")
     async def reply_anonymous(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = ReplyModal(self.bot, self.confession_id, interaction.guild_id)
+        confession_id = self.confession_id
+        if not confession_id and interaction.message and interaction.message.embeds:
+            footer = interaction.message.embeds[0].footer.text or ''
+            match = re.search(r'#(\d+)', footer)
+            if match:
+                confession_id = int(match.group(1))
+        if not confession_id:
+            return await interaction.response.send_message('Confession not found.', ephemeral=True)
+        modal = ReplyModal(self.bot, confession_id, interaction.guild_id)
         await interaction.response.send_modal(modal)
 
 class ConfessionsCog(commands.Cog, name="Confessions"):

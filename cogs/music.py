@@ -748,7 +748,6 @@ class Music(commands.Cog):
             return player
         try:
             saved_queue = list(player.queue)
-            player.queue.clear()
             vc = ctx.voice_client
             if vc:
                 await vc.disconnect(force=True)
