@@ -808,7 +808,7 @@ class Music(commands.Cog):
                         return
                     self._disconnecting.add(guild_id)
                     try:
-                        await asyncio.sleep(180)  # wait 3 minutes
+                        await asyncio.sleep(15)  # wait 15 seconds
                         # re-check after sleep — someone may have rejoined
                         vc = guild.voice_client
                         if vc and vc.channel == before.channel:
