@@ -71,6 +71,7 @@ async def test_guild_avatars_setavatar_query_parameters(monkeypatch):
     ctx.guild.name = "Test Guild"
     ctx.author.id = 456
     ctx.message.attachments = []
+    ctx.message.add_reaction = AsyncMock()
     ctx.send = AsyncMock()
     
     # Test valid image URL with query params
@@ -78,11 +79,8 @@ async def test_guild_avatars_setavatar_query_parameters(monkeypatch):
     url_with_params = "https://cdn.discordapp.com/attachments/123/456/avatar.png?ex=64abcde&is=64abcde&hm=xyz"
     await cog.setavatar.callback(cog, ctx, image_url=url_with_params)
     
-    # Assert ctx.send was called with an embed, meaning it passed validation!
-    ctx.send.assert_called_once()
-    args, kwargs = ctx.send.call_args
-    embed = kwargs.get('embed') or args[0]
-    assert embed.title == "✅ Avatar Updated!"
+    # Assert it reacted with the success emoji, meaning it passed validation!
+    ctx.message.add_reaction.assert_called_once_with("<:7079verifiedblacksimplified:1255031445806780467>")
 
     # Test invalid extension with query params
     ctx_invalid = MagicMock()

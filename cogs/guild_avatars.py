@@ -67,15 +67,7 @@ class GuildAvatars(commands.Cog):
 
         # Save to database
         set_guild_avatar(ctx.guild.id, ctx.author.id, image_url)
-
-        embed = discord.Embed(
-            title="✅ Avatar Updated!",
-            description=f"Your custom avatar has been set for **{ctx.guild.name}**.",
-            color=discord.Color(get_embed_color(ctx.guild.id))
-        )
-        embed.set_image(url=image_url)
-        embed.set_footer(text="Use .removeavatar to reset to your global avatar")
-        await ctx.send(embed=embed)
+        await ctx.message.add_reaction("<:7079verifiedblacksimplified:1255031445806780467>")
 
     @commands.command(aliases=["clearavatar"])
     @help_meta(
@@ -91,19 +83,9 @@ class GuildAvatars(commands.Cog):
         removed = remove_guild_avatar(ctx.guild.id, ctx.author.id)
 
         if removed:
-            embed = discord.Embed(
-                title="✅ Avatar Removed",
-                description="Your custom avatar has been removed. You'll now use your global avatar.",
-                color=discord.Color(get_embed_color(ctx.guild.id))
-            )
+            await ctx.message.add_reaction("<:7079verifiedblacksimplified:1255031445806780467>")
         else:
-            embed = discord.Embed(
-                title="ℹ️ No Custom Avatar",
-                description="You don't have a custom avatar set for this server.",
-                color=discord.Color(get_embed_color(ctx.guild.id))
-            )
-
-        await ctx.send(embed=embed)
+            await ctx.send("-# you don't have a custom avatar set for this server")
 
     @commands.command(aliases=["pfps"])
     @help_meta(
