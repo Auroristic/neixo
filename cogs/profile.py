@@ -457,7 +457,7 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Server Owner / Bot Creator only. Discord rate-limits apply.",
     )
-    @commands.command(name="setavatar", aliases=["serveravatar", "guildavatar"])
+    @commands.command(name="setavatar")
     @commands.guild_only()
     @commands.check(is_owner_or_creator)
     @commands.cooldown(2, 600, commands.BucketType.default)
@@ -491,20 +491,20 @@ class ProfileCog(commands.Cog, name="Profile"):
         await self.setavatar(ctx, source="reset")
 
     @help_meta(
-        usage="`.serverbanner [url|attachment|reset]`",
+        usage="`.setbanner [url|attachment|reset]`",
         desc="Changes the bot's server-specific banner.",
         owner=True,
-        examples=[".serverbanner https://i.imgur.com/abc.png", ".serverbanner reset"],
+        examples=[".setbanner https://i.imgur.com/abc.png", ".setbanner reset"],
         params=[
             {"name": "source", "type": "str", "required": False, "desc": "Image URL, attachment, or `reset` to clear."},
         ],
         note="Server Owner / Bot Creator only. Discord rate-limits apply.",
     )
-    @commands.command(name="serverbanner", aliases=["setbanner"])
+    @commands.command(name="setbanner")
     @commands.guild_only()
     @commands.check(is_owner_or_creator)
     @commands.cooldown(2, 600, commands.BucketType.default)
-    async def serverbanner(self, ctx, *, source: str = None):
+    async def setbanner(self, ctx, *, source: str = None):
         if source and source.lower() == "reset":
             try:
                 route = discord.http.Route('PATCH', '/guilds/{guild_id}/members/@me', guild_id=ctx.guild.id)
