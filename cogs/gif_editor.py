@@ -181,7 +181,7 @@ async def get_image_from_ctx(ctx, all_images: bool = False):
 
         # Then try embeds on the replied message
         if replied_msg.embeds:
-            images = [(_pull_from_embed(replied_msg.embeds[0]))]
+            images = [(await _pull_from_embed(replied_msg.embeds[0]))]
             images = [i for i in images if i[0] is not None]
             if images:
                 return images if all_images else images[0]
