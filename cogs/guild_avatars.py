@@ -55,7 +55,8 @@ class GuildAvatars(commands.Cog):
             return
 
         # Validate it's an image
-        if not any(image_url.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
+        clean_url = image_url.split('?')[0].split('#')[0]
+        if not any(clean_url.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
             await ctx.send("That doesn't look like a valid image URL!")
             return
 
