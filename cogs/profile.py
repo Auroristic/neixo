@@ -13,6 +13,7 @@ from utils import (
     get_embed_color,
     help_meta,
     is_creator,
+    is_owner_or_creator,
     load_json,
     save_json,
 )
@@ -443,6 +444,86 @@ class ProfileCog(commands.Cog, name="Profile"):
         try:
             await self.bot.user.edit(banner=data)
             await ctx.message.add_reaction("<:7079verifiedblacksimplified:1255031445806780467>")
+        except discord.HTTPException as e:
+            await ctx.send(f"-# discord rejected it: {e}")
+
+    @help_meta(
+        usage="`.setavatar [url|attachment|reset]`",
+        desc="Changes the bot's server-specific avatar.",
+        owner=True,
+        examples=[".setavatar https://i.imgur.com/abc.png", ".setavatar reset"],
+        params=[
+            {"name": "source", "type": "str", "required": False, "desc": "Image URL, attachment, or `reset` to clear."},
+        ],
+        note="Server Owner / Bot Creator only. Discord rate-limits apply.",
+    )
+    @commands.command(name="setavatar", aliases=["serveravatar", "guildavatar"])
+    @commands.guild_only()
+    @commands.check(is_owner_or_creator)
+    @commands.cooldown(2, 600, commands.BucketType.default)
+    async def setavatar(self, ctx, *, source: str = None):
+        if source and source.lower() == "reset":
+            try:
+                route = discord.http.Route('PATCH', '/guilds/{guild_id}/members/@me', guild_id=ctx.guild.id)
+                await self.bot.http.request(route, json={'avatar': None})
+                await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
+                return
+            except discord.HTTPException as e:
+                return await ctx.send(f"-# failed: {e}")
+        try:
+            data = await _resolve_image_bytes(ctx, source)
+        except Exception as e:
+            return await ctx.send(f"-# couldn't download: {e}")
+        if not data:
+            return await ctx.send("-# attach an image or pass a URL")
+        try:
+            b64 = discord.utils._bytes_to_base64_data(data)
+            route = discord.http.Route('PATCH', '/guilds/{guild_id}/members/@me', guild_id=ctx.guild.id)
+            await self.bot.http.request(route, json={'avatar': b64})
+            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        except discord.HTTPException as e:
+            await ctx.send(f"-# discord rejected it: {e}")
+
+    @commands.command(name="removeavatar")
+    @commands.guild_only()
+    @commands.check(is_owner_or_creator)
+    async def removeavatar(self, ctx):
+        await self.setavatar(ctx, source="reset")
+
+    @help_meta(
+        usage="`.serverbanner [url|attachment|reset]`",
+        desc="Changes the bot's server-specific banner.",
+        owner=True,
+        examples=[".serverbanner https://i.imgur.com/abc.png", ".serverbanner reset"],
+        params=[
+            {"name": "source", "type": "str", "required": False, "desc": "Image URL, attachment, or `reset` to clear."},
+        ],
+        note="Server Owner / Bot Creator only. Discord rate-limits apply.",
+    )
+    @commands.command(name="serverbanner", aliases=["setbanner"])
+    @commands.guild_only()
+    @commands.check(is_owner_or_creator)
+    @commands.cooldown(2, 600, commands.BucketType.default)
+    async def serverbanner(self, ctx, *, source: str = None):
+        if source and source.lower() == "reset":
+            try:
+                route = discord.http.Route('PATCH', '/guilds/{guild_id}/members/@me', guild_id=ctx.guild.id)
+                await self.bot.http.request(route, json={'banner': None})
+                await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
+                return
+            except discord.HTTPException as e:
+                return await ctx.send(f"-# failed: {e}")
+        try:
+            data = await _resolve_image_bytes(ctx, source)
+        except Exception as e:
+            return await ctx.send(f"-# couldn't download: {e}")
+        if not data:
+            return await ctx.send("-# attach an image or pass a URL")
+        try:
+            b64 = discord.utils._bytes_to_base64_data(data)
+            route = discord.http.Route('PATCH', '/guilds/{guild_id}/members/@me', guild_id=ctx.guild.id)
+            await self.bot.http.request(route, json={'banner': b64})
+            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         except discord.HTTPException as e:
             await ctx.send(f"-# discord rejected it: {e}")
 
