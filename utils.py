@@ -74,15 +74,6 @@ def _ensure_db():
         )
     """)
 
-    # NEW: Per-guild avatars table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS guild_avatars (
-            guild_id TEXT NOT NULL,
-            user_id TEXT NOT NULL,
-            avatar_url TEXT NOT NULL,
-            PRIMARY KEY (guild_id, user_id)
-        )
-    """)
 
     # NEW: Music playlists table
     conn.execute("""
@@ -839,38 +830,6 @@ def get_help_meta(cmd) -> dict | None:
         callback = getattr(cmd, "callback", None)
         meta = getattr(callback, "help_meta", None) if callback else None
     return meta
-
-
-# ── NEW: Per-Guild Avatar Helpers ──────────────────────────────────────
-
-def set_guild_avatar(guild_id: int | str, user_id: int | str, avatar_url: str) -> None:
-    """Set a custom avatar for a user in a specific guild."""
-    with _db() as conn:
-        conn.execute(
-            "INSERT INTO guild_avatars (guild_id, user_id, avatar_url) VALUES (?, ?, ?) "
-            "ON CONFLICT(guild_id, user_id) DO UPDATE SET avatar_url = excluded.avatar_url",
-            (str(guild_id), str(user_id), avatar_url)
-        )
-
-
-def get_guild_avatar(guild_id: int | str, user_id: int | str) -> str | None:
-    """Get custom avatar for a user in a specific guild. Returns None if not set."""
-    with _db() as conn:
-        row = conn.execute(
-            "SELECT avatar_url FROM guild_avatars WHERE guild_id = ? AND user_id = ?",
-            (str(guild_id), str(user_id))
-        ).fetchone()
-    return row[0] if row else None
-
-
-def remove_guild_avatar(guild_id: int | str, user_id: int | str) -> bool:
-    """Remove custom avatar for a user in a specific guild. Returns True if removed."""
-    with _db() as conn:
-        cursor = conn.execute(
-            "DELETE FROM guild_avatars WHERE guild_id = ? AND user_id = ?",
-            (str(guild_id), str(user_id))
-        )
-        return cursor.rowcount > 0
 
 
 # ── NEW: Music Playlist Helpers ──────────────────────────────────────
