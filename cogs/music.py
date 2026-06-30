@@ -56,6 +56,45 @@ COG_META = {
 
 log = logging.getLogger(__name__)
 
+PLAYBACK_RETRY_LIMIT = 2
+PLAYBACK_RETRY_BASE_DELAY = 1.5
+_RETRYABLE_PLAYBACK_ERROR_MARKERS = (
+    "allclientsfailedexception",
+    "read timed out",
+    "sign in to confirm",
+    "not a bot",
+    "requires login",
+    "video requires login",
+)
+
+
+def _playback_error_text(error: object) -> str:
+    if error is None:
+        return ""
+    if isinstance(error, dict):
+        try:
+            return json.dumps(error, ensure_ascii=False)
+        except TypeError:
+            return str(error)
+    return str(error)
+
+
+def _is_retryable_playback_error(error: object) -> bool:
+    text = _playback_error_text(error).lower()
+    return any(marker in text for marker in _RETRYABLE_PLAYBACK_ERROR_MARKERS)
+
+
+def _is_failed_track_end_reason(reason: object) -> bool:
+    return str(reason).lower() in {"loadfailed", "load_failed"}
+
+
+def _track_retry_key(track: object) -> str:
+    return (
+        getattr(track, "uri", None)
+        or getattr(track, "identifier", None)
+        or f"{getattr(track, 'title', '')}|{getattr(track, 'author', '')}"
+    )
+
 
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
@@ -72,6 +111,8 @@ class Music(commands.Cog):
         self._prev_pressed: set[int] = set()
         self._session_stats: dict[int, dict] = {}
         self._disconnecting: set[int] = set()
+        self._playback_retries: dict[int, dict[str, int]] = {}
+        self._pending_playback_retries: dict[int, str] = {}
 
     async def cog_load(self) -> None:
         """Initialize HTTP session when cog loads"""
@@ -828,6 +869,8 @@ class Music(commands.Cog):
                                 self._track_locks.pop(guild_id, None)
                                 self._prev_pressed.discard(guild_id)
                                 self._session_stats.pop(guild_id, None)
+                                self._playback_retries.pop(guild_id, None)
+                                self._pending_playback_retries.pop(guild_id, None)
                                 self._live_msgs.pop(guild_id, None)
                                 home = getattr(player, "home", None)
                                 await player.disconnect()
@@ -853,6 +896,8 @@ class Music(commands.Cog):
             self._track_locks.pop(guild_id, None)
             self._prev_pressed.discard(guild_id)
             self._session_stats.pop(guild_id, None)
+            self._playback_retries.pop(guild_id, None)
+            self._pending_playback_retries.pop(guild_id, None)
             self._live_msgs.pop(guild_id, None)
 
     @commands.Cog.listener()
@@ -867,6 +912,13 @@ class Music(commands.Cog):
             player._skip_initiator = None
 
         guild_id = player.guild.id
+        retries = self._playback_retries.get(guild_id)
+        if retries:
+            retries.pop(_track_retry_key(track), None)
+            if not retries:
+                self._playback_retries.pop(guild_id, None)
+        self._pending_playback_retries.pop(guild_id, None)
+
         stats = self._session_stats.setdefault(guild_id, {"tracks": 0, "total_ms": 0, "requesters": {}})
         stats["tracks"] += 1
         stats["total_ms"] += track.length or 0
@@ -894,11 +946,27 @@ class Music(commands.Cog):
             return
         track = payload.track
         title = getattr(track, "title", "unknown")
+        error = getattr(payload, "exception", None) or getattr(payload, "error", None)
         log.warning(
             "track exception: %s — %s",
             title,
-            getattr(payload, "exception", None) or getattr(payload, "error", None),
+            error,
         )
+        guild_id = player.guild.id
+        retry_key = _track_retry_key(track)
+        retry_count = self._playback_retries.setdefault(guild_id, {}).get(retry_key, 0)
+        if track is not None and retry_count < PLAYBACK_RETRY_LIMIT and _is_retryable_playback_error(error):
+            self._playback_retries[guild_id][retry_key] = retry_count + 1
+            self._pending_playback_retries[guild_id] = retry_key
+            log.warning(
+                "retrying transient playback failure for %s (%d/%d)",
+                title,
+                retry_count + 1,
+                PLAYBACK_RETRY_LIMIT,
+            )
+            return
+
+        self._pending_playback_retries.pop(guild_id, None)
         home = getattr(player, "home", None)
         if home:
             try:
@@ -942,6 +1010,7 @@ class Music(commands.Cog):
 
         track = payload.track
         guild_id = player.guild.id
+        failed_end = _is_failed_track_end_reason(getattr(payload, "reason", ""))
 
         # If this end was caused by the ⏮ (prev) button replacing the track,
         # don't run the normal auto-advance / history logic. prev_btn already
@@ -962,11 +1031,31 @@ class Music(commands.Cog):
         async with self._track_locks[guild_id]:
             queue = player.queue
 
-            if queue.mode == wavelink.QueueMode.loop and track is not None:
+            if track is not None and self._pending_playback_retries.get(guild_id) == _track_retry_key(track):
+                retry_count = self._playback_retries.get(guild_id, {}).get(_track_retry_key(track), 0)
+                delay = PLAYBACK_RETRY_BASE_DELAY * retry_count
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                try:
+                    await player.play(track)
+                    return
+                except Exception as e:
+                    log.warning("retry playback command failed: %s", e)
+                finally:
+                    self._pending_playback_retries.pop(guild_id, None)
+
+            if failed_end and track is not None:
+                retries = self._playback_retries.get(guild_id)
+                if retries:
+                    retries.pop(_track_retry_key(track), None)
+                    if not retries:
+                        self._playback_retries.pop(guild_id, None)
+
+            if not failed_end and queue.mode == wavelink.QueueMode.loop and track is not None:
                 # repeat the same track
                 next_track = track
             else:
-                if track is not None:
+                if track is not None and not failed_end:
                     self._get_history(guild_id).append(track)
                     if queue.mode == wavelink.QueueMode.loop_all:
                         queue.put(track)
@@ -1139,6 +1228,8 @@ class Music(commands.Cog):
         self._prev_pressed.discard(guild_id)
         self._live_msgs.pop(guild_id, None)
         self._session_stats.pop(guild_id, None)
+        self._playback_retries.pop(guild_id, None)
+        self._pending_playback_retries.pop(guild_id, None)
         await player.disconnect()
         await ctx.send(embed=_ok_embed("disconnected.", ctx))
 
