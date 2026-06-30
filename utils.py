@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 # Command/channel allow/deny rules (guild only)
 # Stored in SQLite via the existing kv+JSON layer, keyed by this "filepath".
 CMD_CHANNEL_RULES_FILE = f"{DATA_DIR}/cmd_channel_rules.json"
+BAIT_CONFIG_FILE       = f"{DATA_DIR}/bait_config.json"
 
 # ── Legacy path constants (kept so every cog import still works) ─
 CONFESSIONS_FILE          = f"{DATA_DIR}/confessions.json"
@@ -516,6 +517,289 @@ def clear_cmd_channel_rules(guild_id: int | str) -> None:
 
 def get_cmd_channel_rule(guild_id: int | str, target_key: str) -> dict | None:
     return get_guild_cmd_rule_targets(guild_id).get(target_key)
+
+# ── Bait moderation config (guild only) ───────────────────────────
+
+BAIT_DEFAULT_DELAY_SECONDS = 12 * 60 * 60
+BAIT_MIN_DELAY_SECONDS = 60
+BAIT_MAX_DELAY_SECONDS = 28 * 24 * 60 * 60
+BAIT_ACTIONS = frozenset({"jail", "timeout"})
+
+
+def _empty_bait_settings() -> dict:
+    return {
+        "enabled": False,
+        "channel_id": None,
+        "logs_channel_id": None,
+        "jailed_role_id": None,
+        "delay_seconds": BAIT_DEFAULT_DELAY_SECONDS,
+        "action": "jail",
+        "exempt_role_ids": [],
+        "pending": {},
+        "banned": {},
+    }
+
+
+def _get_bait_config() -> dict:
+    return load_json(BAIT_CONFIG_FILE) or {}
+
+
+def _save_bait_config(config: dict) -> None:
+    save_json(BAIT_CONFIG_FILE, config)
+
+
+def parse_bait_delay(value: str | None) -> int:
+    if not value:
+        return BAIT_DEFAULT_DELAY_SECONDS
+
+    raw = str(value).strip().lower()
+    if len(raw) < 2:
+        raise ValueError("delay must look like 30m, 12h, or 1d")
+
+    unit = raw[-1]
+    try:
+        amount = int(raw[:-1])
+    except ValueError as exc:
+        raise ValueError("delay must look like 30m, 12h, or 1d") from exc
+
+    multipliers = {"m": 60, "h": 60 * 60, "d": 24 * 60 * 60}
+    if unit not in multipliers:
+        raise ValueError("delay unit must be m, h, or d")
+
+    seconds = amount * multipliers[unit]
+    if seconds < BAIT_MIN_DELAY_SECONDS or seconds > BAIT_MAX_DELAY_SECONDS:
+        raise ValueError("delay must be between 1m and 28d")
+    return seconds
+
+
+def format_bait_delay(seconds: int | str | None) -> str:
+    try:
+        total = int(seconds or BAIT_DEFAULT_DELAY_SECONDS)
+    except (TypeError, ValueError):
+        total = BAIT_DEFAULT_DELAY_SECONDS
+    if total % 86400 == 0:
+        return f"{total // 86400}d"
+    if total % 3600 == 0:
+        return f"{total // 3600}h"
+    if total % 60 == 0:
+        return f"{total // 60}m"
+    return f"{total}s"
+
+
+def get_bait_settings(guild_id: int | str) -> dict:
+    settings = _empty_bait_settings()
+    stored = _get_bait_config().get(str(guild_id), {})
+    if isinstance(stored, dict):
+        settings.update(stored)
+    settings["exempt_role_ids"] = [str(r) for r in settings.get("exempt_role_ids") or []]
+    settings["pending"] = settings.get("pending") or {}
+    settings["banned"] = settings.get("banned") or {}
+    return settings
+
+
+def save_bait_settings(guild_id: int | str, settings: dict) -> None:
+    config = _get_bait_config()
+    config[str(guild_id)] = settings
+    _save_bait_config(config)
+
+
+def set_bait_settings(
+    guild_id: int | str,
+    *,
+    channel_id: int | str,
+    delay_seconds: int = BAIT_DEFAULT_DELAY_SECONDS,
+    action: str = "jail",
+) -> dict:
+    action = (action or "jail").lower().strip()
+    if action not in BAIT_ACTIONS:
+        raise ValueError("bait action must be 'jail' or 'timeout'")
+    if int(delay_seconds) < BAIT_MIN_DELAY_SECONDS or int(delay_seconds) > BAIT_MAX_DELAY_SECONDS:
+        raise ValueError("delay must be between 1m and 28d")
+
+    settings = get_bait_settings(guild_id)
+    settings.update({
+        "enabled": True,
+        "channel_id": str(channel_id),
+        "delay_seconds": int(delay_seconds),
+        "action": action,
+    })
+    save_bait_settings(guild_id, settings)
+    return settings
+
+
+def clear_bait_settings(guild_id: int | str) -> dict:
+    settings = get_bait_settings(guild_id)
+    settings["enabled"] = False
+    settings["channel_id"] = None
+    settings["pending"] = {}
+    settings["failed"] = {}
+    save_bait_settings(guild_id, settings)
+    return settings
+
+
+def set_bait_logs_channel(guild_id: int | str, channel_id: int | str) -> dict:
+    settings = get_bait_settings(guild_id)
+    settings["logs_channel_id"] = str(channel_id)
+    save_bait_settings(guild_id, settings)
+    return settings
+
+
+def set_bait_jailed_role(guild_id: int | str, role_id: int | str) -> dict:
+    settings = get_bait_settings(guild_id)
+    settings["jailed_role_id"] = str(role_id)
+    save_bait_settings(guild_id, settings)
+    return settings
+
+
+def add_bait_exempt_role(guild_id: int | str, role_id: int | str) -> dict:
+    settings = get_bait_settings(guild_id)
+    roles = list(settings.get("exempt_role_ids") or [])
+    rid = str(role_id)
+    if rid not in roles:
+        roles.append(rid)
+    settings["exempt_role_ids"] = roles
+    save_bait_settings(guild_id, settings)
+    return settings
+
+
+def remove_bait_exempt_role(guild_id: int | str, role_id: int | str) -> bool:
+    settings = get_bait_settings(guild_id)
+    roles = list(settings.get("exempt_role_ids") or [])
+    rid = str(role_id)
+    if rid not in roles:
+        return False
+    settings["exempt_role_ids"] = [r for r in roles if r != rid]
+    save_bait_settings(guild_id, settings)
+    return True
+
+
+def _bait_pending_key(user_id: int | str) -> str:
+    return str(user_id)
+
+
+def add_pending_bait_ban(
+    guild_id: int | str,
+    *,
+    user_id: int | str,
+    channel_id: int | str,
+    message_id: int | str,
+    action: str,
+    triggered_at: str,
+    ban_at: str,
+    applied_role_id: int | str | None = None,
+) -> dict:
+    settings = get_bait_settings(guild_id)
+    pending = settings.get("pending") or {}
+    key = _bait_pending_key(user_id)
+    if key in pending:
+        return pending[key]
+
+    entry = {
+        "user_id": str(user_id),
+        "channel_id": str(channel_id),
+        "message_id": str(message_id),
+        "action": action,
+        "triggered_at": triggered_at,
+        "ban_at": ban_at,
+    }
+    if applied_role_id is not None:
+        entry["applied_role_id"] = str(applied_role_id)
+    pending[key] = entry
+    settings["pending"] = pending
+    save_bait_settings(guild_id, settings)
+    return entry
+
+
+def get_pending_bait_bans(guild_id: int | str) -> list[dict]:
+    pending = get_bait_settings(guild_id).get("pending") or {}
+    return sorted(pending.values(), key=lambda entry: entry.get("ban_at", ""))
+
+
+def remove_pending_bait_ban(guild_id: int | str, user_id: int | str) -> dict | None:
+    settings = get_bait_settings(guild_id)
+    pending = settings.get("pending") or {}
+    removed = pending.pop(_bait_pending_key(user_id), None)
+    settings["pending"] = pending
+    save_bait_settings(guild_id, settings)
+    return removed
+
+
+def mark_bait_banned(guild_id: int | str, user_id: int | str, *, banned_at: str) -> dict | None:
+    settings = get_bait_settings(guild_id)
+    pending = settings.get("pending") or {}
+    entry = pending.pop(_bait_pending_key(user_id), None)
+    if not entry:
+        return None
+    entry = dict(entry)
+    entry["banned_at"] = banned_at
+    banned = settings.get("banned") or {}
+    banned[_bait_pending_key(user_id)] = entry
+    settings["pending"] = pending
+    settings["banned"] = banned
+    save_bait_settings(guild_id, settings)
+    return entry
+
+
+def get_bait_banned(guild_id: int | str) -> list[dict]:
+    banned = get_bait_settings(guild_id).get("banned") or {}
+    return sorted(banned.values(), key=lambda entry: entry.get("banned_at", ""), reverse=True)
+
+
+def mark_bait_failed(
+    guild_id: int | str,
+    user_id: int | str,
+    *,
+    failed_at: str,
+    reason: str,
+) -> dict | None:
+    settings = get_bait_settings(guild_id)
+    pending = settings.get("pending") or {}
+    entry = pending.pop(_bait_pending_key(user_id), None)
+    if not entry:
+        return None
+    entry = dict(entry)
+    entry["failed_at"] = failed_at
+    entry["failed_reason"] = reason
+    failed = settings.get("failed") or {}
+    failed[_bait_pending_key(user_id)] = entry
+    settings["pending"] = pending
+    settings["failed"] = failed
+    save_bait_settings(guild_id, settings)
+    return entry
+
+
+def get_bait_failed(guild_id: int | str) -> list[dict]:
+    failed = get_bait_settings(guild_id).get("failed") or {}
+    return sorted(failed.values(), key=lambda entry: entry.get("failed_at", ""), reverse=True)
+
+
+def forgive_bait_user(guild_id: int | str, user_id: int | str) -> dict | None:
+    settings = get_bait_settings(guild_id)
+    key = _bait_pending_key(user_id)
+    pending = settings.get("pending") or {}
+    banned = settings.get("banned") or {}
+    failed = settings.get("failed") or {}
+
+    if key in pending:
+        entry = pending.pop(key)
+        entry = dict(entry)
+        entry["status"] = "pending"
+    elif key in banned:
+        entry = banned.pop(key)
+        entry = dict(entry)
+        entry["status"] = "banned"
+    elif key in failed:
+        entry = failed.pop(key)
+        entry = dict(entry)
+        entry["status"] = "failed"
+    else:
+        return None
+
+    settings["pending"] = pending
+    settings["banned"] = banned
+    settings["failed"] = failed
+    save_bait_settings(guild_id, settings)
+    return entry
 
 def help_meta(
     *,

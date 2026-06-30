@@ -1,5 +1,6 @@
 
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -209,6 +210,131 @@ class TestCmdChannelRules:
             set_cmd_channel_rule('guild1', 'x', 'invalid', [])
 
 
+class TestBaitConfig:
+    def test_parse_bait_delay_accepts_minutes_hours_days(self):
+        from utils import parse_bait_delay
+
+        assert parse_bait_delay('30m') == 1800
+        assert parse_bait_delay('12h') == 43200
+        assert parse_bait_delay('1d') == 86400
+
+    def test_parse_bait_delay_rejects_invalid_or_out_of_range_values(self):
+        from utils import parse_bait_delay
+
+        with pytest.raises(ValueError):
+            parse_bait_delay('30s')
+        with pytest.raises(ValueError):
+            parse_bait_delay('0m')
+        with pytest.raises(ValueError):
+            parse_bait_delay('29d')
+
+    def test_set_get_and_clear_bait_settings(self):
+        from utils import clear_bait_settings, get_bait_settings, set_bait_settings
+
+        set_bait_settings('guild1', channel_id='111', delay_seconds=43200, action='jail')
+
+        settings = get_bait_settings('guild1')
+        assert settings['enabled'] is True
+        assert settings['channel_id'] == '111'
+        assert settings['delay_seconds'] == 43200
+        assert settings['action'] == 'jail'
+
+        clear_bait_settings('guild1')
+        assert get_bait_settings('guild1')['enabled'] is False
+
+    def test_set_bait_settings_rejects_invalid_action(self):
+        from utils import set_bait_settings
+
+        with pytest.raises(ValueError):
+            set_bait_settings('guild1', channel_id='111', delay_seconds=43200, action='both')
+
+    def test_bait_exempt_roles_round_trip(self):
+        from utils import add_bait_exempt_role, get_bait_settings, remove_bait_exempt_role
+
+        add_bait_exempt_role('guild1', 'role1')
+        add_bait_exempt_role('guild1', 'role2')
+        add_bait_exempt_role('guild1', 'role1')
+
+        assert get_bait_settings('guild1')['exempt_role_ids'] == ['role1', 'role2']
+        assert remove_bait_exempt_role('guild1', 'role1') is True
+        assert remove_bait_exempt_role('guild1', 'missing') is False
+        assert get_bait_settings('guild1')['exempt_role_ids'] == ['role2']
+
+    def test_pending_bait_ban_can_move_to_banned_and_be_forgiven(self):
+        from utils import (
+            add_pending_bait_ban,
+            forgive_bait_user,
+            get_bait_banned,
+            get_pending_bait_bans,
+            mark_bait_banned,
+        )
+
+        add_pending_bait_ban(
+            'guild1',
+            user_id='user1',
+            channel_id='111',
+            message_id='msg1',
+            action='jail',
+            triggered_at='2026-06-30T00:00:00+00:00',
+            ban_at='2026-06-30T12:00:00+00:00',
+        )
+
+        pending = get_pending_bait_bans('guild1')
+        assert len(pending) == 1
+        assert pending[0]['user_id'] == 'user1'
+
+        assert mark_bait_banned('guild1', 'user1', banned_at='2026-06-30T12:00:01+00:00') is not None
+        assert get_pending_bait_bans('guild1') == []
+        assert get_bait_banned('guild1')[0]['user_id'] == 'user1'
+
+        forgiven = forgive_bait_user('guild1', 'user1')
+        assert forgiven['status'] == 'banned'
+        assert get_bait_banned('guild1') == []
+
+    def test_pending_bait_ban_stores_applied_role_id(self):
+        from utils import add_pending_bait_ban, get_pending_bait_bans
+
+        add_pending_bait_ban(
+            'guild1',
+            user_id='user1',
+            channel_id='111',
+            message_id='msg1',
+            action='jail',
+            triggered_at='2026-06-30T00:00:00+00:00',
+            ban_at='2026-06-30T12:00:00+00:00',
+            applied_role_id='role-a',
+        )
+
+        assert get_pending_bait_bans('guild1')[0]['applied_role_id'] == 'role-a'
+
+    def test_pending_bait_ban_can_move_to_failed_and_be_forgiven(self):
+        from utils import add_pending_bait_ban, forgive_bait_user, get_bait_failed, mark_bait_failed
+
+        add_pending_bait_ban(
+            'guild1',
+            user_id='user1',
+            channel_id='111',
+            message_id='msg1',
+            action='jail',
+            triggered_at='2026-06-30T00:00:00+00:00',
+            ban_at='2026-06-30T12:00:00+00:00',
+            applied_role_id='role-a',
+        )
+
+        failed = mark_bait_failed(
+            'guild1',
+            'user1',
+            failed_at='2026-06-30T12:00:01+00:00',
+            reason='missing ban permissions',
+        )
+
+        assert failed['failed_reason'] == 'missing ban permissions'
+        assert get_bait_failed('guild1')[0]['user_id'] == 'user1'
+        forgiven = forgive_bait_user('guild1', 'user1')
+        assert forgiven['status'] == 'failed'
+        assert get_bait_failed('guild1') == []
+
+
 class TestGifCooldown:
     def test_cooldown_first_call_returns_none(self):
         from utils import check_gif_cooldown
@@ -245,3 +371,15 @@ class TestHelpMeta:
 
         meta = get_help_meta(ping_cmd)
         assert meta['examples'] == ['.ping']
+
+    def test_bait_help_metadata_is_static_exportable(self):
+        from print_all_help import parse_cog
+
+        parsed = parse_cog(Path('cogs/admin.py'))
+        commands = {cmd['name']: cmd for cmd in parsed['commands']}
+
+        assert commands['bait']['admin'] is True
+        assert commands['set']['group'] == 'bait'
+        assert commands['pending']['desc'] == 'Lists users waiting for delayed bait bans.'
+        assert commands['banned']['desc'] == 'Lists users banned by the bait system.'
+        assert commands['forgive']['desc'] == 'Cancels a pending bait ban or unbans a user already banned by bait.'
