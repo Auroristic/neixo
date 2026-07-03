@@ -55,44 +55,82 @@ This is one of the few Discord music bots with true timestamp-accurate synced ly
 - Vanity URL detection and moderation
 - Help system with categorized command index
 
-## Requirements
-- **Python 3.10+**
-- Discord bot token
+## Quick Start
+
+### Requirements
+- Python 3.10+
+- Discord bot token (from [Discord Developer Portal](https://discord.com/developers/applications))
 - Lavalink server + Java 17 (for music)
 
-## Quick start
-
-```env
-# .env
-DISCORD_TOKEN=your_token_here
-```
+### 1. Clone & enter
 
 ```bash
+git clone https://github.com/Auroristic/neixo.git
+cd neixo
+```
+
+### 2. Set up Python environment
+
+```bash
+python -m venv venv
+source venv/bin/activate   # Linux/macOS
+# .\venv\Scripts\activate  # Windows
 pip install -r requirements.txt
+```
+
+### 3. Configure
+
+```bash
+cp .env.example .env
+# then edit .env with your Discord bot token and any API keys
+```
+
+### 4. Run
+
+```bash
 python neixo.py
 ```
 
-On first run the bot creates `data/bot.db` (SQLite) and migrates any legacy JSON files automatically.
+On first run the bot creates `data/bot.db` (SQLite) and migrates legacy JSON files automatically.
 
-### Optional env vars
-```env
-CREATOR_ID=your_discord_user_id_here
-LAVALINK_URI=http://localhost:2333
-LAVALINK_PASS=youshallnotpass
-```
+---
+
+## Ubuntu Server Deployment
+
+See **[SETUP.md](SETUP.md)** for a complete step-by-step guide covering:
+- System dependencies (Python, Java 17, venv)
+- Lavalink installation with PM2
+- Bot PM2 process management
+- Fonts for music card generation
+- Firewall & troubleshooting
+
+---
 
 ## Configuration
 
-`neixoset.toml` controls branding (emojis, embed colors). Falls back to safe defaults if missing.
+`neixoset.toml` controls branding (emojis, embed colors, custom GIFs). Falls back to safe defaults if missing.
+
+`.env.example` documents all available environment variables. Required vars:
+
+| Variable | Description |
+|---|---|
+| `DISCORD_TOKEN` | Your Discord bot token |
+| `LAVALINK_URI` | Lavalink server address (default: `http://localhost:2333`) |
+| `LAVALINK_PASS` | Lavalink password (default: `youshallnotpass`) |
+| `CREATOR_ID` | Your Discord user ID for admin commands |
+| `SPOTIFY_CLIENT_ID` | Spotify API credentials (for music) |
+| `GENIUS_ACCESS_TOKEN` | Genius API token (for lyrics) |
+| `NVIDIA_API_KEY_1` | NVIDIA NIM API key (for AI) |
 
 ## Storage
 
-All persistent data lives in `data/bot.db` (SQLite key/value store via `utils.py`). Legacy JSON files are migrated once on first run.
+All persistent data lives in `data/bot.db` (SQLite). Legacy JSON files in `data/` are migrated once on first run.
 
 ## Lavalink
 - Default URI: `http://localhost:2333`
 - Default password: `youshallnotpass`
 - Music commands require a running Lavalink instance
+- Install via [Lavalink releases](https://github.com/lavalink-devs/Lavalink/releases)
 
 ## Notes
 - Uses `.` as prefix (configurable via `get_prefix` in `neixo.py`)

@@ -1,14 +1,14 @@
-discord.py>=2.4.0
-wavelink>=3.4.0
-python-dotenv
-openai
-duckduckgo_search
-aiohttp
-Pillow
-curl_cffi
-beautifulsoup4
-aiosqlite
-syncedlyrics
+discord.py>=2.5.0
+wavelink>=3.4.1
+python-dotenv>=1.0.0
+openai>=2.0.0
+duckduckgo_search>=8.0.0
+aiohttp>=3.9.0
+Pillow>=10.0.0
+curl_cffi>=0.15.0
+beautifulsoup4>=4.12.0
+aiosqlite>=0.20.0
+syncedlyrics>=1.0.0
 
 # dev
 pytest>=8.0
