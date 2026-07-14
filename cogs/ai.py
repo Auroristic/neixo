@@ -176,6 +176,16 @@ def _parse_xml_tool_calls(text: str) -> list[tuple[str, dict]]:
             calls.append((name, params))
     return calls
 
+
+def _strip_xml_tool_markup(text: str) -> str:
+    """Remove raw tool-call protocol text before sending a reply to Discord."""
+    text = re.sub(r"<tool_calls>.*?</tool_calls>", "", text, flags=re.DOTALL).strip()
+    text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.DOTALL).strip()
+    text = re.sub(r"<invoke.*?</invoke>", "", text, flags=re.DOTALL).strip()
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    return text
+
+
 def _strip_media_urls(text: str) -> str:
     if not text:
         return text
@@ -1450,6 +1460,32 @@ class AICog(commands.Cog, name="AI"):
             history_text = "*responded*"
         return history_text
 
+    def _convert_raw_xml_tool_calls(self, msg):
+        """Convert raw XML tool calls to structured tool_calls on the message object."""
+        content = msg.content or ""
+        if not content:
+            return
+        
+        xml_tools = _parse_xml_tool_calls(content)
+        if xml_tools:
+            from types import SimpleNamespace
+            tool_calls = []
+            for i, (name, params) in enumerate(xml_tools):
+                tc = SimpleNamespace()
+                tc.id = f"xml_call_{int(_time.time())}_{i}"
+                tc.type = "function"
+                tc.function = SimpleNamespace()
+                tc.function.name = name
+                tc.function.arguments = json.dumps(params)
+                tool_calls.append(tc)
+            
+            msg.tool_calls = tool_calls
+            # Strip the tool call XML block from content
+            content = re.sub(r"<tool_calls>.*?</tool_calls>", "", content, flags=re.DOTALL)
+            content = re.sub(r"<tool_call>.*?</tool_call>", "", content, flags=re.DOTALL)
+            content = re.sub(r"<invoke.*?</invoke>", "", content, flags=re.DOTALL)
+            msg.content = content.strip() or None
+
     async def _handle_tool_calls(
         self,
         response,
@@ -1470,23 +1506,16 @@ class AICog(commands.Cog, name="AI"):
 
         Optimizations:
         * No "thinking..." status message — the typing indicator is enough.
-        * Skips the follow-up NVIDIA call entirely if ONLY gif_search ran (saves ~1-3s).
-        * Follow-up call uses race mode (parallel keys) for speed.
+        * Skips the follow-up call entirely if ONLY gif_search ran (saves ~1-3s).
+        * Follow-up call uses primary_complete.
         """
         choice = response.choices[0]
+        self._convert_raw_xml_tool_calls(choice.message)
 
         # No tool used — finalize into status_msg with chunking
-        if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
+        if not getattr(choice.message, "tool_calls", None):
             text = (choice.message.content or "").strip()
-            # Check for raw XML tool calls (zen free models output these
-            # instead of structured finish_reason="tool_calls")
-            xml_tools = _parse_xml_tool_calls(text)
-            if xml_tools:
-                return await self._handle_raw_tool_calls(
-                    xml_tools, text, messages_payload,
-                    reply_to, bot_memory, mem_key, status_msg=status_msg,
-                )
-            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            text = _strip_xml_tool_markup(text)
             text = _strip_name_prefix(text)
             text = _strip_media_urls(text)
             text = await self._handle_remember(text, bot_memory, mem_key)
@@ -1514,7 +1543,8 @@ class AICog(commands.Cog, name="AI"):
 
         for round_num in range(max_rounds):
             msg = response.choices[0].message
-            tool_calls = msg.tool_calls or []
+            self._convert_raw_xml_tool_calls(msg)
+            tool_calls = getattr(msg, "tool_calls", None) or []
 
             # No more tools — final text
             if not tool_calls:
@@ -1568,7 +1598,7 @@ class AICog(commands.Cog, name="AI"):
 
             # ── Optimization: skip follow-up call when only gif_search ran ──
             # The model already chose the gif; we don't need it to write text.
-            # Saves a full NVIDIA round-trip (~1-3s).
+            # Saves a full round-trip (~1-3s).
             only_gif = all(tc.function.name == "gif_search" for tc in tool_calls)
             if only_gif and gifs:
                 text = (msg.content or "").strip()  # whatever (if any) text the model wrote inline
@@ -1578,7 +1608,6 @@ class AICog(commands.Cog, name="AI"):
             is_last = round_num >= max_rounds - 1
             await self._update_status(status_msg, None)  # "thinking..."
             try:
-                # No `model=` arg → uses race mode (parallel keys) for speed
                 response = await self.primary_complete(
                     messages_payload,
                     max_tokens=300,
@@ -1594,7 +1623,7 @@ class AICog(commands.Cog, name="AI"):
             # Hit max_rounds without breaking — pull final text from last response
             text = (response.choices[0].message.content or "").strip()
 
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        text = _strip_xml_tool_markup(text)
         text = _strip_name_prefix(text)
         text = _strip_media_urls(text)
         # Strip [REMEMBER:...] tag (and save the note) BEFORE sending so the
@@ -1605,88 +1634,6 @@ class AICog(commands.Cog, name="AI"):
         # so the bot isn't silent. Without this the user would see no reply.
         if not text and not gifs and not images:
             text = "uhh my brain blanked lol mb"
-
-        history_text = await self._send_tool_response(text, gifs, images, reply_to, status_msg)
-        return True, history_text
-
-    async def _handle_raw_tool_calls(
-        self,
-        xml_tools: list[tuple[str, dict]],
-        raw_text: str,
-        messages_payload: list,
-        reply_to: discord.Message,
-        bot_memory: dict,
-        mem_key: str,
-        status_msg: discord.Message | None = None,
-    ) -> tuple[bool, str]:
-        """Handle raw XML tool calls from models that don't support structured tool_calls."""
-        gifs: list[str] = []
-        images: list[str] = []
-        text = raw_text
-
-        for round_num in range(2):
-            if not xml_tools:
-                break
-
-            if status_msg is None:
-                status_msg = await self._send_status(reply_to, xml_tools)
-            else:
-                await self._update_status(status_msg, xml_tools)
-
-            text = re.sub(r"<tool_calls>.*?</tool_calls>", "", text, flags=re.DOTALL).strip()
-            text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.DOTALL).strip()
-            text = re.sub(r"<invoke.*?</invoke>", "", text, flags=re.DOTALL).strip()
-            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-
-            # Execute all tools in parallel
-            async def _exec_one(item: tuple[str, dict]) -> tuple[str, list]:
-                from types import SimpleNamespace
-                name, raw_params = item
-                tc = SimpleNamespace()
-                tc.id = "xml"
-                tc.function = SimpleNamespace()
-                tc.function.name = name
-                tc.function.arguments = json.dumps(raw_params)
-                return await self._run_single_tool(tc)
-
-            results = await asyncio.gather(*[_exec_one(t) for t in xml_tools], return_exceptions=True)
-
-            for i, ((name, _params), res) in enumerate(zip(xml_tools, results, strict=True)):
-                if isinstance(res, Exception):
-                    content_str, urls = f"tool error: {res}", []
-                else:
-                    content_str, urls = res
-                messages_payload.append({
-                    "role": "tool",
-                    "tool_call_id": f"xml_call_{round_num}_{i}",
-                    "content": content_str,
-                })
-                if urls:
-                    if name in ("image_search", "generate_image"):
-                        images.extend(urls)
-                    else:
-                        gifs.extend(urls)
-
-            await self._update_status(status_msg, None)
-            try:
-                response = await self.primary_complete(
-                    messages_payload,
-                    max_tokens=300,
-                    tools=None,
-                )
-                text = (response.choices[0].message.content or "").strip()
-            except Exception as e:
-                print(f"Raw tool follow-up failed: {e}")
-                if not gifs and not images:
-                    text = "ngl that froze me lol mb"
-                break
-
-            xml_tools = _parse_xml_tool_calls(text)
-
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-        text = _strip_name_prefix(text)
-        text = _strip_media_urls(text)
-        text = await self._handle_remember(text, bot_memory, mem_key)
 
         history_text = await self._send_tool_response(text, gifs, images, reply_to, status_msg)
         return True, history_text
