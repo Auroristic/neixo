@@ -716,4 +716,5 @@ async def main() -> None:
         await bot.start(token)
 
 
-asyncio.run(main())
+if __name__ == '__main__':
+    asyncio.run(main())
