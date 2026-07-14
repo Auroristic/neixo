@@ -9,6 +9,7 @@ os.environ.setdefault("DISCORD_TOKEN", "mock_token")
 
 # Add current path to sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 import discord
 from discord.ext import commands
@@ -181,7 +182,7 @@ async def main():
     }
 
     target_xo = "/home/retro/retroisticx/projects/nei/xo/commands.json"
-    target_local = "./commands.json"
+    target_local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands.json")
 
     print(f"Writing to {target_xo}...")
     os.makedirs(os.path.dirname(target_xo), exist_ok=True)
@@ -193,6 +194,8 @@ async def main():
         json.dump(output, f, indent=2, ensure_ascii=False)
 
     print(f"Successfully generated {total_cmds} commands across {len(categories)} categories!")
+    sys.stdout.flush()
+    sys.stderr.flush()
     os._exit(0)
 
 if __name__ == "__main__":
