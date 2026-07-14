@@ -150,9 +150,14 @@ _MEDIA_FILE_URL_RE = re.compile(
 _XML_TOOL_CALL_RE = re.compile(r'<invoke\s+name="([^"]+)"(.*?)</invoke>', re.DOTALL)
 _XML_PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)"\s+string="True">(.*?)</parameter>', re.DOTALL)
 
+# mimo-style: <tool_call>\n<function=name>\n<parameter=key>value</parameter>\n</function>\n</tool_call>
+_MIMO_TOOL_CALL_RE = re.compile(r'<tool_call>\s*<function=(\w+)>(.*?)</function>\s*</tool_call>', re.DOTALL)
+_MIMO_PARAM_RE = re.compile(r'<parameter=(\w+)>(.*?)</parameter>', re.DOTALL)
+
 def _parse_xml_tool_calls(text: str) -> list[tuple[str, dict]]:
     """Parse raw XML tool calls that some models output instead of structured tool_calls."""
     calls = []
+    # Format 1: <invoke name="..."> (older models)
     for m in _XML_TOOL_CALL_RE.finditer(text):
         name = m.group(1)
         body = m.group(2)
@@ -160,6 +165,15 @@ def _parse_xml_tool_calls(text: str) -> list[tuple[str, dict]]:
         for p in _XML_PARAM_RE.finditer(body):
             params[p.group(1)] = p.group(2).strip()
         calls.append((name, params))
+    # Format 2: <tool_call><function=name> (mimo-style)
+    if not calls:
+        for m in _MIMO_TOOL_CALL_RE.finditer(text):
+            name = m.group(1)
+            body = m.group(2)
+            params = {}
+            for p in _MIMO_PARAM_RE.finditer(body):
+                params[p.group(1)] = p.group(2).strip()
+            calls.append((name, params))
     return calls
 
 def _strip_media_urls(text: str) -> str:
@@ -1620,6 +1634,7 @@ class AICog(commands.Cog, name="AI"):
                 await self._update_status(status_msg, xml_tools)
 
             text = re.sub(r"<tool_calls>.*?</tool_calls>", "", text, flags=re.DOTALL).strip()
+            text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.DOTALL).strip()
             text = re.sub(r"<invoke.*?</invoke>", "", text, flags=re.DOTALL).strip()
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
