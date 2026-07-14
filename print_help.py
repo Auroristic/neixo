@@ -3,6 +3,11 @@ import os
 import sys
 import json
 import asyncio
+from unittest.mock import MagicMock
+
+# Mock missing modules to allow offline cog loading without external dependencies
+for module_name in ["spotify_scraper", "ddgs"]:
+    sys.modules[module_name] = MagicMock()
 
 # Mock environment token before importing neixo
 os.environ.setdefault("DISCORD_TOKEN", "mock_token")
