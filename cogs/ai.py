@@ -95,8 +95,8 @@ def get_conversation_lock(key: str) -> asyncio.Lock:
             _conversation_locks_last_access.pop(k, None)
     return lock
 
-MAIN_MODEL = "minimaxai/minimax-m3"
-ZEN_MODEL = "deepseek-v4-flash-free"
+MAIN_MODEL = "mimo-v2.5-free"
+FALLBACK_MODEL = "deepseek-v4-flash-free"
 
 STATUS_EMOJIS = [
     "<a:951270393082159194:1262739613232009227>",
@@ -543,10 +543,13 @@ class AICog(commands.Cog, name="AI"):
             os.getenv("NVIDIA_API_KEY_3"),
         ]
         self._nvidia_keys = [k for k in nvidia_keys if k]
-        if not self._nvidia_keys:
-            raise ValueError("No NVIDIA API keys found — set NVIDIA_API_KEY_1 in .env")
-        self._keys_list = list(self._nvidia_keys)
-        self.key_cycle = itertools.cycle(self._keys_list)
+        if self._nvidia_keys:
+            self._keys_list = list(self._nvidia_keys)
+            self.key_cycle = itertools.cycle(self._keys_list)
+        else:
+            self._keys_list = []
+            self.key_cycle = None
+            print("⚠️ No NVIDIA API keys — image generation will be unavailable")
 
         self.session: aiohttp.ClientSession | None = None
 
@@ -565,52 +568,22 @@ class AICog(commands.Cog, name="AI"):
             await self.session.close()
         print("\u274c AI cog unloaded")
 
-    # ── Core API call (race) ──────────────────────────────────
+    # ── Core API call (mimo primary) ───────────────────────────
 
-    def _get_client(self, api_key: str) -> AsyncOpenAI:
-        if not hasattr(self, "_clients"):
-            self._clients: dict[str, AsyncOpenAI] = {}
-        cache_key = f"{hash(api_key)}_nvidia"
-        if cache_key not in self._clients:
-            self._clients[cache_key] = AsyncOpenAI(
-                base_url="https://integrate.api.nvidia.com/v1",
-                api_key=api_key,
-                timeout=60.0,
-                max_retries=0,
-            )
-        return self._clients[cache_key]
-
-    async def nvidia_complete(self, messages_payload, max_tokens=8192, tools=None):
-        """Single-model call to minimaxai/minimax-m3 with key rotation on transient errors."""
-        last_error: Exception | None = None
-        for attempt in range(len(self._keys_list)):
-            client = self._get_client(next(self.key_cycle))
-            kwargs = dict(
-                model=MAIN_MODEL,
-                messages=messages_payload,
-                max_tokens=max_tokens,
-                temperature=1.0,
-                top_p=0.95,
-            )
-            if tools:
-                kwargs["tools"] = tools
-                kwargs["tool_choice"] = "auto"
-            try:
-                return await client.chat.completions.create(**kwargs)
-            except Exception as e:
-                last_error = e
-                err_str = str(e).lower()
-                transient = any(
-                    s in err_str for s in (
-                        "429", "rate limit", "rate_limit", "timeout",
-                        "503", "502", "504", "overloaded", "temporarily"
-                    )
-                )
-                if transient and attempt < len(self._keys_list) - 1:
-                    await asyncio.sleep(0.2)
-                    continue
-                raise
-        raise last_error
+    async def primary_complete(self, messages_payload, max_tokens=8192, tools=None):
+        """Primary model call to mimo-v2.5-free via Zen API."""
+        client = self._get_zen_client()
+        kwargs = dict(
+            model=MAIN_MODEL,
+            messages=messages_payload,
+            max_tokens=max_tokens,
+            temperature=1.0,
+            top_p=0.95,
+        )
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        return await client.chat.completions.create(**kwargs)
 
     # ── Zen / DeepSeek fallback ────────────────────────────────
 
@@ -627,15 +600,29 @@ class AICog(commands.Cog, name="AI"):
             )
         return self._zen_client
 
-    async def _deepseek_complete(self, messages_payload, max_tokens=8192, tools=None):
+    @staticmethod
+    def _strip_vision_content(messages_payload):
+        """Strip image_url/video_url blocks for models without vision support."""
+        import copy
+        stripped = copy.deepcopy(messages_payload)
+        for msg in stripped:
+            content = msg.get("content")
+            if isinstance(content, list):
+                text_parts = [p.get("text", "") for p in content if p.get("type") == "text"]
+                msg["content"] = " ".join(text_parts) or "(image was sent)"
+        return stripped
+
+    async def _fallback_complete(self, messages_payload, max_tokens=8192, tools=None):
+        """Fallback to deepseek-v4-flash-free. Strips vision content since DeepSeek doesn't support it."""
+        # Strip any image/video content — DeepSeek is text-only
+        clean_payload = self._strip_vision_content(messages_payload)
         last_error: Exception | None = None
-        # Try up to 3 times for the free DeepSeek/Zen model on Opencode due to potential transient / cold-start 404s
         for attempt in range(3):
             try:
                 client = self._get_zen_client()
                 kwargs = dict(
-                    model=ZEN_MODEL,
-                    messages=messages_payload,
+                    model=FALLBACK_MODEL,
+                    messages=clean_payload,
                     max_tokens=max_tokens,
                     temperature=1.0,
                     top_p=0.95,
@@ -647,7 +634,6 @@ class AICog(commands.Cog, name="AI"):
             except Exception as e:
                 last_error = e
                 err_str = str(e).lower()
-                # Check for standard transient errors, including opencode's model_not_found/does not exist for free models
                 transient = any(
                     s in err_str for s in (
                         "429", "rate limit", "rate_limit", "timeout",
@@ -656,7 +642,6 @@ class AICog(commands.Cog, name="AI"):
                     )
                 )
                 if transient and attempt < 2:
-                    # Exponential backoff: 0.5s, 1.5s
                     await asyncio.sleep(0.5 * (attempt + 1) * 2)
                     continue
                 raise
@@ -690,7 +675,7 @@ class AICog(commands.Cog, name="AI"):
 
         try:
             response = await asyncio.wait_for(
-                self.nvidia_complete(messages_payload, tools=tools, max_tokens=max_tokens),
+                self.primary_complete(messages_payload, tools=tools, max_tokens=max_tokens),
                 timeout=30.0,
             )
             cycle_task.cancel()
@@ -699,7 +684,7 @@ class AICog(commands.Cog, name="AI"):
         except Exception as e:
             is_timeout = isinstance(e, asyncio.TimeoutError)
             if not is_timeout:
-                print(f"_call_with_status error: {e}")
+                print(f"_call_with_status primary (mimo) error: {e}")
             cycle_task.cancel()
             fail_emoji = random.choice(FAIL_EMOJIS)  # noqa: S311
 
@@ -713,10 +698,7 @@ class AICog(commands.Cog, name="AI"):
             await status_msg.edit(content=fail_msg)
             await asyncio.sleep(0.5)
 
-            if has_images or has_video:
-                response = await self.nvidia_complete(messages_payload, tools=tools, max_tokens=max_tokens)
-            else:
-                response = await self._deepseek_complete(messages_payload, tools=tools, max_tokens=max_tokens)
+            response = await self._fallback_complete(messages_payload, tools=tools, max_tokens=max_tokens)
 
             return response, status_msg, True
 
@@ -1078,6 +1060,8 @@ class AICog(commands.Cog, name="AI"):
 
     async def _generate_image(self, prompt: str) -> tuple[str, list]:
         """Generate an image via NVIDIA NIM (FLUX.2-klein-4b)."""
+        if not self.key_cycle:
+            return "image gen unavailable (no NVIDIA keys)", []
         key = next(self.key_cycle)
         headers = {
             "Authorization": f"Bearer {key}",
@@ -1581,7 +1565,7 @@ class AICog(commands.Cog, name="AI"):
             await self._update_status(status_msg, None)  # "thinking..."
             try:
                 # No `model=` arg → uses race mode (parallel keys) for speed
-                response = await self.nvidia_complete(
+                response = await self.primary_complete(
                     messages_payload,
                     max_tokens=300,
                     tools=None if is_last else all_tools,
@@ -1670,7 +1654,7 @@ class AICog(commands.Cog, name="AI"):
 
             await self._update_status(status_msg, None)
             try:
-                response = await self.nvidia_complete(
+                response = await self.primary_complete(
                     messages_payload,
                     max_tokens=300,
                     tools=None,
