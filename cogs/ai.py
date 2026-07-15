@@ -15,7 +15,7 @@ import re
 import time as _time
 from collections import OrderedDict
 from datetime import datetime, timezone
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import aiohttp
 import discord
@@ -592,13 +592,13 @@ class AICog(commands.Cog, name="AI"):
             await self.session.close()
         print("\u274c AI cog unloaded")
 
-    # ── Core API call (mimo primary) ───────────────────────────
+    # ── Core API call ──────────────────────────────────────────
 
-    async def primary_complete(self, messages_payload, max_tokens=8192, tools=None):
-        """Primary model call to mimo-v2.5-free via Zen API."""
+    async def primary_complete(self, messages_payload, max_tokens=8192, tools=None, model=None):
+        """Primary model call via Zen API. Defaults to MAIN_MODEL if no model override."""
         client = self._get_zen_client()
         kwargs = dict(
-            model=MAIN_MODEL,
+            model=model or MAIN_MODEL,
             messages=messages_payload,
             max_tokens=max_tokens,
             temperature=1.0,
@@ -691,7 +691,14 @@ class AICog(commands.Cog, name="AI"):
         has_images: bool = False,
         has_video: bool = False,
         max_tokens: int = 350,
+        is_dm: bool = False,
     ):
+        # In DMs: use DeepSeek (faster for text), switch to mimo only for images/video
+        if is_dm and not has_images and not has_video:
+            primary_model = FALLBACK_MODEL  # deepseek-v4-flash-free
+        else:
+            primary_model = None  # default (MAIN_MODEL / mimo)
+
         status_msg = await channel.send(f"{random.choice(STATUS_EMOJIS)} *typing...*")  # noqa: S311
         cycle_task = asyncio.create_task(
             self._cycle_status(status_msg, STATUS_CYCLE, STATUS_EMOJIS)
@@ -699,7 +706,7 @@ class AICog(commands.Cog, name="AI"):
 
         try:
             response = await asyncio.wait_for(
-                self.primary_complete(messages_payload, tools=tools, max_tokens=max_tokens),
+                self.primary_complete(messages_payload, tools=tools, max_tokens=max_tokens, model=primary_model),
                 timeout=30.0,
             )
             cycle_task.cancel()
@@ -708,7 +715,7 @@ class AICog(commands.Cog, name="AI"):
         except Exception as e:
             is_timeout = isinstance(e, asyncio.TimeoutError)
             if not is_timeout:
-                print(f"_call_with_status primary (mimo) error: {e}")
+                print(f"_call_with_status primary error: {e}")
             cycle_task.cancel()
             fail_emoji = random.choice(FAIL_EMOJIS)  # noqa: S311
 
@@ -851,51 +858,80 @@ class AICog(commands.Cog, name="AI"):
                     return random.choice(v)  # noqa: S311
         return None
 
+    async def _resolve_safe_ip(self, hostname: str):
+        """Resolve a hostname once and return the first address, or None if it is
+        missing or resolves to a private/loopback/link-local/reserved/multicast/unspecified
+        address. Used to pin the connection and prevent DNS-rebinding SSRF."""
+        if not hostname:
+            return None
+        loop = asyncio.get_event_loop()
+        try:
+            addrs = await loop.getaddrinfo(hostname, None)
+        except Exception:
+            return None
+        for _, _, _, _, sa in addrs:
+            ip = ipaddress.ip_address(sa[0])
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                return None
+        return addrs[0][4][0]
+
     async def _is_safe_url(self, url: str) -> bool:
         if not url or not url.startswith(("http://", "https://")):
             return False
-        try:
-            hostname = urlparse(url).hostname
-            if not hostname:
-                return False
-            loop = asyncio.get_event_loop()
-            addrs = await loop.getaddrinfo(hostname, None)
-            for _, _, _, _, sa in addrs:
-                ip = ipaddress.ip_address(sa[0])
-                if ip.is_private or ip.is_loopback or ip.is_link_local:
-                    return False
-            return True
-        except Exception:
-            return False
+        return await self._resolve_safe_ip(urlparse(url).hostname) is not None
 
     async def fetch_url(self, url: str) -> str:
-        """Fetch a URL and return its readable text content, securely following redirects."""
+        """Fetch a URL and return its readable text content, securely following redirects.
+
+        DNS is resolved once per hop and the connection is pinned to that IP via a
+        custom resolver, preventing DNS-rebinding SSRF (a domain resolving to a public
+        IP at check time but an internal IP at connect time).
+        """
+        from aiohttp import TCPConnector, ThreadedResolver
+
+        class _PinnedResolver(ThreadedResolver):
+            def __init__(self, pinned):
+                super().__init__()
+                self._pinned = pinned
+
+            async def resolve(self, host, port=0, family=0):
+                return await super().resolve(self._pinned, port, family)
+
         redirect_limit = 5
         current_url = url
-        
+
         for _ in range(redirect_limit):
-            if not await self._is_safe_url(current_url):
+            ip = await self._resolve_safe_ip(urlparse(current_url).hostname)
+            if ip is None:
                 return "blocked: URL is unsafe or points to a private/reserved IP address"
-            
+
+            connector = TCPConnector(resolver=_PinnedResolver(ip))
             try:
-                async with self.session.get(
-                    current_url, 
-                    timeout=aiohttp.ClientTimeout(total=15), 
-                    allow_redirects=False
-                ) as resp:
-                    if resp.status in (301, 302, 303, 307, 308):
-                        location = resp.headers.get("Location")
-                        if not location:
-                            return "failed to fetch: redirect location missing"
-                        from urllib.parse import urljoin
-                        current_url = urljoin(current_url, location)
-                        continue
-                    
-                    if resp.status != 200:
-                        return f"failed to fetch: http {resp.status}"
-                    
-                    html = await resp.text()
-                    break
+                async with aiohttp.ClientSession(connector=connector) as session:
+                    async with session.get(
+                        current_url,
+                        timeout=aiohttp.ClientTimeout(total=15),
+                        allow_redirects=False,
+                    ) as resp:
+                        if resp.status in (301, 302, 303, 307, 308):
+                            location = resp.headers.get("Location")
+                            if not location:
+                                return "failed to fetch: redirect location missing"
+                            current_url = urljoin(current_url, location)
+                            continue
+
+                        if resp.status != 200:
+                            return f"failed to fetch: http {resp.status}"
+
+                        html = await resp.text()
+                        break
             except asyncio.TimeoutError:
                 return "request timed out"
             except Exception as e:
@@ -903,7 +939,7 @@ class AICog(commands.Cog, name="AI"):
                 return "failed to fetch url"
         else:
             return "blocked: too many redirects"
-            
+
         try:
             soup = BeautifulSoup(html, "html.parser")
             for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
@@ -1956,6 +1992,7 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
                 has_images = bool(image_data and any(not i.startswith("__video__:") for i in image_data))
                 has_video = bool(image_data and any(i.startswith("__video__:") for i in image_data))
 
+                is_dm = isinstance(message.channel, discord.DMChannel)
                 response, status_msg, _ = await self._call_with_status(
                     message.channel,
                     messages_payload,
@@ -1966,6 +2003,7 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
                     ],
                     has_images=has_images,
                     has_video=has_video,
+                    is_dm=is_dm,
                 )
 
                 already_sent, response_text = await self._handle_tool_calls(
