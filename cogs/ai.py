@@ -45,6 +45,33 @@ from utils import (
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+
+def _format_relative_time(ts_raw: str) -> str:
+    if not ts_raw:
+        return ""
+    try:
+        dt = datetime.fromisoformat(ts_raw)
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        diff_sec = int(diff.total_seconds())
+        if diff_sec < 0:
+            return " (just now)"
+        if diff_sec < 60:
+            return f" ({diff_sec}s ago)"
+        diff_min = diff_sec // 60
+        if diff_min < 60:
+            return f" ({diff_min}m ago)"
+        diff_hour = diff_min // 60
+        if diff_hour < 24:
+            return f" ({diff_hour}h ago)"
+        diff_day = diff_hour // 24
+        if diff_day < 7:
+            return f" ({diff_day}d ago)"
+        return f" ({dt.strftime('%b %d')})"
+    except Exception:
+        return ""
+
+
 logger = logging.getLogger(__name__)
 
 AI_CONFIG_FILE = f"{DATA_DIR}/ai_config.json"
@@ -1812,12 +1839,12 @@ personal notes about the user:
 {get_current_date_line()}
 
 time awareness:
-- u know the current time and date (shown above)
-- messages in conversation history have timestamps like (2:30 PM) so u know WHEN things were said
+- u know the current time and date (shown above in UTC)
+- messages in conversation history have relative timestamps like (2m ago) or (3h ago) so u know WHEN things were said relative to right now
 - use this naturally — if someone said something hours ago u can say "wait that was ages ago" or "u been up since then?"
-- if its late at night u can be like "bro its 3am go sleep" or if its morning "gm" etc
-- dont mention timestamps mechanically. just vibe with the time naturally like a real person would
-- if someone asks "what time is it" u actually know
+- since users are in different timezones, if they ask what time it is, tell them the current UTC time but ask what timezone they are in (e.g. "its 10 AM UTC for me, what timezone are u in?")
+- dont mention relative timestamps mechanically. just use them to vibe with the flow/time difference naturally like a real person would
+- if someone asks "what time is it" u actually know in UTC
 
 KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
 
@@ -2036,15 +2063,8 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
                     role    = msg.get("role", "user")
                     content = msg.get("content", "")
                     display = _sanitize_name(msg.get("display_name") or msg.get("username", ""))
-                    # Format timestamp if available
-                    ts_str = ""
-                    ts_raw = msg.get("timestamp")
-                    if ts_raw:
-                        try:
-                            ts_dt = datetime.fromisoformat(ts_raw)
-                            ts_str = f" ({ts_dt.strftime('%I:%M %p')})"
-                        except (ValueError, TypeError):
-                            pass
+                    # Format relative timestamp
+                    ts_str = _format_relative_time(msg.get("timestamp"))
                     if role == "user" and display:
                         reply_ctx = msg.get("reply_to")
                         text = f"[{display}]{ts_str}: {content}"
