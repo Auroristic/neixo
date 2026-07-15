@@ -110,12 +110,40 @@ FAIL_EMOJIS = [
     "<a:002lighter:1407954590812340270>",
 ]
 
-STATUS_CYCLE = [
-    "typing...", "frying...", "cooking...", "pickling...", "doodling...",
-    "thinking...", "summoning...", "computing...", "vibing...", "marinating...",
-    "manifesting...", "yapping internally...", "scheming...", "percolating...",
-    "consulting the elders...", "googling it ngl...", "spiraling...",
-    "buffering...", "brewing...", "asking my mans real quick...", "calculating vibes...",
+# Phase 1: quick initial messages (shown during the first few seconds)
+STATUS_PHASE_1 = [
+    "typing...", "thinking...", "hmm...", "one sec...", "uhh...",
+]
+
+# Phase 2: casual/funny mid-wait messages
+STATUS_PHASE_2 = [
+    "cooking...", "frying...", "vibing...", "scheming...", "brewing...",
+    "marinating...", "manifesting...", "yapping internally...",
+    "calculating vibes...", "doodling...",
+]
+
+# Phase 3: longer wait messages (if it takes a while)
+STATUS_PHASE_3 = [
+    "consulting the elders...", "asking my mans real quick...",
+    "googling it ngl...", "percolating...", "spiraling...",
+    "buffering...", "summoning...", "computing...", "pickling...",
+    "this ones tough hold on...", "still here dw...",
+]
+
+# Context-specific status messages
+STATUS_IMAGES = [
+    "looking at this...", "squinting...", "analyzing the pixels...",
+    "processing the visuals...", "ooh lemme see...",
+]
+
+STATUS_VIDEO = [
+    "watching this...", "buffering the vid...", "loading frames...",
+    "my eyes r working overtime...",
+]
+
+STATUS_TOOL_USE = [
+    "searching stuff...", "looking it up...", "digging around...",
+    "doing some research rq...", "on it...",
 ]
 
 IMAGES_FAIL = [
@@ -673,13 +701,54 @@ class AICog(commands.Cog, name="AI"):
 
     # ── Status-message system ──────────────────────────────────
 
-    async def _cycle_status(self, status_msg: discord.Message, messages: list[str], emojis: list[str]):
+    async def _cycle_status(
+        self,
+        status_msg: discord.Message,
+        emojis: list[str],
+        has_images: bool = False,
+        has_video: bool = False,
+    ):
+        """Progressive typing indicator with phased timing and context-aware messages."""
         try:
-            while True:
-                msg = random.choice(messages)  # noqa: S311
+            # Phase 1: fast initial updates (1.5-3s apart)
+            # Use context-specific messages if applicable
+            if has_video:
+                phase1_pool = STATUS_VIDEO
+            elif has_images:
+                phase1_pool = STATUS_IMAGES
+            else:
+                phase1_pool = STATUS_PHASE_1
+
+            for _ in range(3):
+                msg = random.choice(phase1_pool)  # noqa: S311
                 emoji = random.choice(emojis)  # noqa: S311
                 await status_msg.edit(content=f"{emoji} *{msg}*")
-                await asyncio.sleep(random.uniform(5, 10))  # noqa: S311
+                await asyncio.sleep(random.uniform(1.5, 3.0))  # noqa: S311
+
+            # Phase 2: medium pace (3-5s apart)
+            for _ in range(4):
+                msg = random.choice(STATUS_PHASE_2)  # noqa: S311
+                emoji = random.choice(emojis)  # noqa: S311
+                await status_msg.edit(content=f"{emoji} *{msg}*")
+                await asyncio.sleep(random.uniform(3.0, 5.0))  # noqa: S311
+
+            # Phase 3: slow/longer wait messages (5-8s apart, loops until cancelled)
+            while True:
+                msg = random.choice(STATUS_PHASE_3)  # noqa: S311
+                emoji = random.choice(emojis)  # noqa: S311
+                await status_msg.edit(content=f"{emoji} *{msg}*")
+                await asyncio.sleep(random.uniform(5.0, 8.0))  # noqa: S311
+        except (discord.NotFound, discord.Forbidden, asyncio.CancelledError):
+            pass
+
+    async def _cycle_tool_status(self, status_msg: discord.Message, emojis: list[str]):
+        """Status cycle specifically for when tools are being executed."""
+        try:
+            while True:
+                msg = random.choice(STATUS_TOOL_USE)  # noqa: S311
+                emoji = random.choice(emojis)  # noqa: S311
+                await status_msg.edit(content=f"{emoji} *{msg}*")
+                await asyncio.sleep(random.uniform(2.0, 4.0))  # noqa: S311
         except (discord.NotFound, discord.Forbidden, asyncio.CancelledError):
             pass
 
@@ -701,7 +770,7 @@ class AICog(commands.Cog, name="AI"):
 
         status_msg = await channel.send(f"{random.choice(STATUS_EMOJIS)} *typing...*")  # noqa: S311
         cycle_task = asyncio.create_task(
-            self._cycle_status(status_msg, STATUS_CYCLE, STATUS_EMOJIS)
+            self._cycle_status(status_msg, STATUS_EMOJIS, has_images=has_images, has_video=has_video)
         )
 
         try:
@@ -1742,6 +1811,14 @@ personal notes about the user:
 
 {get_current_date_line()}
 
+time awareness:
+- u know the current time and date (shown above)
+- messages in conversation history have timestamps like (2:30 PM) so u know WHEN things were said
+- use this naturally — if someone said something hours ago u can say "wait that was ages ago" or "u been up since then?"
+- if its late at night u can be like "bro its 3am go sleep" or if its morning "gm" etc
+- dont mention timestamps mechanically. just vibe with the time naturally like a real person would
+- if someone asks "what time is it" u actually know
+
 KEEP IT SHORT AND CASUAL. sound like a real person(female) texting not an ai"""
 
     def _guild_system_prompt(self, creator_name: str, creator_id: int,
@@ -1959,9 +2036,18 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
                     role    = msg.get("role", "user")
                     content = msg.get("content", "")
                     display = _sanitize_name(msg.get("display_name") or msg.get("username", ""))
+                    # Format timestamp if available
+                    ts_str = ""
+                    ts_raw = msg.get("timestamp")
+                    if ts_raw:
+                        try:
+                            ts_dt = datetime.fromisoformat(ts_raw)
+                            ts_str = f" ({ts_dt.strftime('%I:%M %p')})"
+                        except (ValueError, TypeError):
+                            pass
                     if role == "user" and display:
                         reply_ctx = msg.get("reply_to")
-                        text = f"[{display}]: {content}"
+                        text = f"[{display}]{ts_str}: {content}"
                         if reply_ctx:
                             text += f" [replying to @{reply_ctx['author']}: \"{reply_ctx['content']}\"]"
                         extra = msg.get("extra")
