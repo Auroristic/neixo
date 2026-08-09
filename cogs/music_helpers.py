@@ -7,9 +7,11 @@ import logging
 import os
 import re
 import time
+from urllib.parse import urlparse
 
 import aiohttp
 import discord
+from ddgs import DDGS
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from spotify_scraper import SpotifyClient as SpotifyScraper
 
@@ -57,6 +59,8 @@ SPOTIFY_TRACK_RE = re.compile(r"spotify\.com/track/([A-Za-z0-9]+)")
 SPOTIFY_PLAYLIST_RE = re.compile(r"spotify\.com/playlist/([A-Za-z0-9]+)")
 SPOTIFY_ALBUM_RE = re.compile(r"spotify\.com/album/([A-Za-z0-9]+)")
 SOUNDCLOUD_RE = re.compile(r"soundcloud\.com/")
+BANDCAMP_RE = re.compile(r"(?:https?://)?(?:[\w-]+\.)?bandcamp\.com/(?:track|album)/", re.IGNORECASE)
+SPOTIFY_URL_RE = re.compile(r"spotify\.com/(?:track|album|playlist)/[A-Za-z0-9]+", re.IGNORECASE)
 
 GENIUS_ACCESS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN", "")
 GENIUS_API_BASE = "https://api.genius.com"
@@ -143,6 +147,74 @@ def _is_track_allowed(track) -> tuple[bool, str]:
             f"max is {_fmt_time(MAX_TRACK_DURATION_MS)}."
         )
     return True, ""
+
+
+def _is_bandcamp_url(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value.strip())
+    host = (parsed.hostname or "").lower().rstrip(".")
+    path = parsed.path.lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and (host == "bandcamp.com" or host.endswith(".bandcamp.com"))
+        and (path.startswith("/track/") or path.startswith("/album/"))
+        and parsed.username is None
+        and parsed.password is None
+        and port is None
+    )
+
+
+def _is_spotify_url(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value.strip())
+    host = (parsed.hostname or "").lower().rstrip(".")
+    path = parsed.path.lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and (host == "spotify.com" or host.endswith(".spotify.com"))
+        and (
+            path.startswith("/track/")
+            or path.startswith("/album/")
+            or path.startswith("/playlist/")
+        )
+        and parsed.username is None
+        and parsed.password is None
+        and port is None
+    )
+
+
+async def _search_bandcamp(query: str) -> str | None:
+    query = " ".join((query or "").split())[:200]
+    if not query:
+        return None
+
+    search_query = f"site:bandcamp.com/track OR site:bandcamp.com/album {query}"
+    try:
+        results = await asyncio.to_thread(
+            lambda: list(DDGS().text(search_query, max_results=5))
+        )
+    except Exception as e:
+        log.warning("Bandcamp search failed: %s", e)
+        return None
+
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        for key in ("href", "url"):
+            candidate = result.get(key)
+            if _is_bandcamp_url(candidate):
+                return candidate.split("#", 1)[0]
+    return None
 
 # ── SPOTIFY CLIENT ────────────────────────────────────────────
 

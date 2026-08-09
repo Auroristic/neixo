@@ -160,7 +160,7 @@ class SCRetryView(View):
         self.ctx = ctx
         self.query = query
 
-    @discord.ui.button(label="↺ Retry with SoundCloud", style=discord.ButtonStyle.gray)
+    @discord.ui.button(emoji="☁️", style=discord.ButtonStyle.gray)
     async def retry_btn(self, interaction: discord.Interaction, button: Button) -> None:
         if interaction.user.id != self.ctx.author.id:
             return await interaction.response.send_message("Not your command.", ephemeral=True)
@@ -176,6 +176,43 @@ class SCRetryView(View):
         if not player.playing:
             await player.play(player.queue.get())
         await interaction.followup.send(embed=_ok_embed(f"added **{track.title}** via SoundCloud.", self.ctx), ephemeral=True)
+        self.stop()
+
+    @discord.ui.button(emoji="🅱️", style=discord.ButtonStyle.gray)
+    async def bandcamp_btn(self, interaction: discord.Interaction, button: Button) -> None:
+        if interaction.user.id != self.ctx.author.id:
+            return await interaction.response.send_message("Not your command.", ephemeral=True)
+        await interaction.response.defer()
+        player: wavelink.Player = cast(wavelink.Player, self.ctx.voice_client)
+        if player is None or not getattr(player, "guild", None):
+            await interaction.followup.send(
+                embed=_err_embed("voice connection changed. try `.playbc <query>` again.", self.ctx),
+                ephemeral=True,
+            )
+            self.stop()
+            return
+        tracks = await self.cog._resolve_bandcamp(self.query)
+        if not tracks:
+            await interaction.followup.send(
+                embed=_err_embed("bandcamp also came up empty.", self.ctx),
+                ephemeral=True,
+            )
+            self.stop()
+            return
+        try:
+            await self.cog._queue_tracks(
+                self.ctx,
+                player,
+                tracks,
+                source_label="Bandcamp",
+                send=interaction.followup.send,
+            )
+        except Exception:
+            log.warning("Bandcamp retry button failed", exc_info=True)
+            await interaction.followup.send(
+                embed=_err_embed("bandcamp could not be queued. try again.", self.ctx),
+                ephemeral=True,
+            )
         self.stop()
 
 # ─────────────────────────────────────────────────────────────

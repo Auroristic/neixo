@@ -27,10 +27,13 @@ from cogs.music_helpers import (
     _err_embed,
     _fmt_time,
     _gen_music_card,
+    _is_bandcamp_url,
+    _is_spotify_url,
     _is_track_allowed,
     _ok_embed,
     _parse_lrc,
     _scrape_spotify_playlist,
+    _search_bandcamp,
     _spotify,
 )
 from cogs.music_views import (
@@ -43,13 +46,20 @@ from cogs.music_views import (
     SimilarView,
 )
 from neixoconfig import Neixocolor, Neixoemojis
-from utils import help_meta
+from utils import help_meta, is_owner_or_creator
 
 # ── cogs/music.py ───────────────────────────────────────────────
+# Music is CLOSED to everyone except the bot owner/creator and the
+# server owner while the feature is still in development (YouTube
+# playback is currently IP-flagged and partially broken). Flip
+# MUSIC_LOCKED to False to reopen.
+MUSIC_LOCKED = True
+
 COG_META = {
     "category": "music",
     "label": "Music",
-    "desc": "Music playback, queue controls, and audio filters."
+    "desc": "Music playback, queue controls, and audio filters.",
+    "owner": True,
 }
 
 
@@ -113,6 +123,19 @@ class Music(commands.Cog):
         self._disconnecting: set[int] = set()
         self._playback_retries: dict[int, dict[str, int]] = {}
         self._pending_playback_retries: dict[int, str] = {}
+
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Lock music behind owner/creator/server-owner while in development."""
+        if ctx.guild is None:
+            await ctx.send("this command only works in servers.")
+            return False
+        if MUSIC_LOCKED and not is_owner_or_creator(ctx):
+            await ctx.send(
+                "🔒 music is **locked** — still in development. "
+                "only the bot owner, creator, or server owner can use it right now."
+            )
+            return False
+        return True
 
     async def cog_load(self) -> None:
         """Initialize HTTP session when cog loads"""
@@ -601,13 +624,12 @@ class Music(commands.Cog):
             log.warning("_send_now_playing card gen failed: %s", e)
 
 
-    async def _play_core(self, ctx: commands.Context, query: str) -> None:
-        if not await self._check_vc(ctx):
-            return
-
+    async def _connect_player(self, ctx: commands.Context) -> wavelink.Player | None:
+        """Get or create the wavelink player for this guild. Returns None (with error sent) on failure."""
         vc = ctx.voice_client
         if isinstance(vc, discord.VoiceClient) and not isinstance(vc, wavelink.Player):
-            return await ctx.send(embed=_err_embed("something else is using the vc. use `.disconnect` first.", ctx))
+            await ctx.send(embed=_err_embed("something else is using the vc. use `.disconnect` first.", ctx))
+            return None
 
         player: wavelink.Player = cast(wavelink.Player, vc)
         if not player:
@@ -619,12 +641,105 @@ class Music(commands.Cog):
                     await channel.edit(bitrate=max_bitrate)
                 except discord.Forbidden:
                     log.warning("no permission to edit channel bitrate")
-            except (AttributeError, discord.ClientException):
-                return
+            except (AttributeError, discord.ClientException, wavelink.ChannelTimeoutException):
+                return None
 
         player.autoplay = wavelink.AutoPlayMode.disabled
         if not hasattr(player, "home"):
             player.home = ctx.channel
+        return player
+
+    async def _play_sc_core(self, ctx: commands.Context, query: str) -> None:
+        """SoundCloud-first playback. Used by `.playsc` and as a YouTube fallback."""
+        if not await self._check_vc(ctx):
+            return
+
+        player = await self._connect_player(ctx)
+        if player is None:
+            return
+
+        tracks = await self._yt_search_with_retry(query, source="scsearch")
+        if not tracks:
+            return await ctx.send(
+                embed=_err_embed(
+                    "couldn't find anything on SoundCloud. try `.play <query>` for YouTube or a Spotify link.",
+                    ctx,
+                )
+            )
+        await self._queue_tracks(ctx, player, tracks, source_label="SoundCloud")
+
+    async def _play_bandcamp_core(
+        self,
+        ctx: commands.Context,
+        query: str,
+        player: wavelink.Player | None = None,
+    ) -> None:
+        """Bandcamp playback for direct URLs and best-effort text search."""
+        if player is None:
+            if not await self._check_vc(ctx):
+                return
+            player = await self._connect_player(ctx)
+            if player is None:
+                return
+
+        tracks = await self._resolve_bandcamp(query)
+        if not tracks:
+            return await ctx.send(
+                embed=_err_embed(
+                    "couldn't find anything on Bandcamp. try a Bandcamp link or `.playbc <query>`.",
+                    ctx,
+                )
+            )
+
+        await self._queue_tracks(ctx, player, tracks, source_label="Bandcamp")
+
+    async def _resolve_bandcamp(self, query: str):
+        target = query.strip() if _is_bandcamp_url(query) else await _search_bandcamp(query)
+        if not target:
+            return None
+        return await self._yt_search_with_retry(target, source="bandcamp")
+
+    async def _play_spotify_core(
+        self,
+        ctx: commands.Context,
+        query: str,
+        player: wavelink.Player | None = None,
+    ) -> None:
+        """Spotify playback for direct URLs via Lavalink's spotify source (LavaSrc mirror)."""
+        if player is None:
+            if not await self._check_vc(ctx):
+                return
+            player = await self._connect_player(ctx)
+            if player is None:
+                return
+
+        tracks = await self._resolve_spotify_direct(query)
+        if not tracks:
+            return await ctx.send(
+                embed=_err_embed(
+                    "couldn't find anything on Spotify. try a Spotify link or `.playsc <query>`.",
+                    ctx,
+                )
+            )
+
+        await self._queue_tracks(ctx, player, tracks, source_label="Spotify")
+
+    async def _resolve_spotify_direct(self, query: str):
+        return await self._yt_search_with_retry(query.strip(), source="spotify")
+
+    async def _play_core(self, ctx: commands.Context, query: str) -> None:
+        if not await self._check_vc(ctx):
+            return
+
+        player = await self._connect_player(ctx)
+        if player is None:
+            return
+
+        if _is_bandcamp_url(query.strip()):
+            return await self._play_bandcamp_core(ctx, query, player=player)
+
+        if _is_spotify_url(query.strip()):
+            return await self._play_spotify_core(ctx, query, player=player)
 
         is_spotify = (
             "spotify.com" in query
@@ -712,7 +827,9 @@ class Music(commands.Cog):
         if SOUNDCLOUD_RE.search(query):
             tracks = await self._yt_search_with_retry(query, source="scsearch")
             if not tracks:
-                return await ctx.send(embed=_err_embed("couldn't find anything on SoundCloud.", ctx))
+                return await ctx.send(
+                    embed=_err_embed("couldn't find anything on SoundCloud. try `.playsc <query>`.", ctx)
+                )
             await self._queue_tracks(ctx, player, tracks, source_label="SoundCloud")
             return
 
@@ -721,7 +838,14 @@ class Music(commands.Cog):
             tracks = await self._yt_search_with_retry(query, source="ytsearch")
         if not tracks:
             view = SCRetryView(self, ctx, query)
-            await ctx.send(embed=_err_embed("couldn't find anything on YouTube.", ctx), view=view)
+            await ctx.send(
+                embed=_err_embed(
+                    "couldn't find anything on YouTube. "
+                    "try `.playsc <query>` (SoundCloud) or `.playbc <query>` (Bandcamp).",
+                    ctx,
+                ),
+                view=view,
+            )
             return
 
         if isinstance(tracks, list) and len(tracks) > 1:
@@ -736,7 +860,9 @@ class Music(commands.Cog):
         tracks,
         *,
         source_label: str = "",
+        send=None,
     ) -> None:
+        sender = send or ctx.send
         src = f" [{source_label}]" if source_label else ""
         if isinstance(tracks, wavelink.Playlist):
             added = 0
@@ -749,22 +875,22 @@ class Music(commands.Cog):
                 await player.queue.put_wait(t)
                 added += 1
             if added == 0:
-                return await ctx.send(
+                return await sender(
                     embed=_err_embed(f"every track in **{tracks.name}** was filtered out (too long / live).", ctx)
                 )
             extra = f" {rejected} skipped (too long or live)." if rejected else ""
-            await ctx.send(
+            await sender(
                 embed=_ok_embed(f"added playlist **{tracks.name}** ({added} songs){src}.{extra}", ctx)
             )
         else:
             track = tracks[0]
             ok, reason = _is_track_allowed(track)
             if not ok:
-                return await ctx.send(embed=_err_embed(reason, ctx))
+                return await sender(embed=_err_embed(reason, ctx))
             pos = player.queue.count + 1
             await player.queue.put_wait(track)
             ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(pos, f"{pos}th")
-            await ctx.send(
+            await sender(
                 embed=_ok_embed(f"added **{track.title}** to {ordinal} in the queue{src}.", ctx)
             )
 
@@ -971,7 +1097,11 @@ class Music(commands.Cog):
         if home:
             try:
                 await home.send(
-                    embed=_err_embed(f"playback error on **{title}** — skipping.", player.guild.id)
+                    embed=_err_embed(
+                        f"playback error on **{title}** — skipping. "
+                        f"if YouTube is acting up, try `.playsc {title}` or `.playbc {title}`.",
+                        player.guild.id,
+                    )
                 )
             except discord.HTTPException:
                 pass
@@ -1111,11 +1241,21 @@ class Music(commands.Cog):
 
     @help_meta(
         usage="`.play <query>`",
-        desc="Plays a song or playlist. Auto-detects YouTube, Spotify, and SoundCloud links.",
+        desc="Plays a song or playlist. Auto-detects YouTube, Spotify, SoundCloud, and Bandcamp links.",
         section="Playback",
-        examples=[".play never gonna give you up", ".play https://youtu.be/dQw4w9WgXcQ", ".play https://open.spotify.com/track/..."],
+        examples=[
+            ".play never gonna give you up",
+            ".play https://youtu.be/dQw4w9WgXcQ",
+            ".play https://open.spotify.com/track/...",
+            ".play https://artist.bandcamp.com/track/...",
+        ],
         params=[
-            {"name": "query", "type": "str", "required": True, "desc": "Song name or URL. Supports YouTube, Spotify, and SoundCloud links."},
+            {
+                "name": "query",
+                "type": "str",
+                "required": True,
+                "desc": "Song name or URL. Supports YouTube, Spotify, SoundCloud, and Bandcamp links.",
+            },
         ],
         note="Join a voice channel first. You can queue multiple songs. Spotify playlists are auto-scraped.",
     )
@@ -1124,6 +1264,43 @@ class Music(commands.Cog):
         if not query:
             return await ctx.send(embed=_err_embed("gimme something to play. `.play <query>`", ctx))
         await self._play_core(ctx, query)
+
+    @help_meta(
+        usage="`.playsc <query>`",
+        desc="Plays a song directly from SoundCloud (good fallback when YouTube is blocked).",
+        section="Playback",
+        examples=[".playsc lofi beats", ".playsc https://soundcloud.com/..."],
+        params=[
+            {"name": "query", "type": "str", "required": True, "desc": "Song name or SoundCloud URL."},
+        ],
+        note="Join a voice channel first. Searches SoundCloud directly, bypassing YouTube.",
+    )
+    @commands.command(aliases=["sc"])
+    async def playsc(self, ctx: commands.Context, *, query: str = None) -> None:
+        if not query:
+            return await ctx.send(embed=_err_embed("gimme something to play. `.playsc <query>`", ctx))
+        await self._play_sc_core(ctx, query)
+
+    @help_meta(
+        usage="`.playbc <query>`",
+        desc="Plays a song directly from Bandcamp without touching YouTube.",
+        section="Playback",
+        examples=[".playbc undertale soundtrack", ".playbc https://artist.bandcamp.com/track/..."],
+        params=[
+            {
+                "name": "query",
+                "type": "str",
+                "required": True,
+                "desc": "Bandcamp search text or a Bandcamp track/album URL.",
+            },
+        ],
+        note="Join a voice channel first. Direct links are preferred when Bandcamp search is unavailable.",
+    )
+    @commands.command(aliases=["bc"])
+    async def playbc(self, ctx: commands.Context, *, query: str = None) -> None:
+        if not query:
+            return await ctx.send(embed=_err_embed("gimme something to play. `.playbc <query>`", ctx))
+        await self._play_bandcamp_core(ctx, query)
 
     async def _handle_skip(self, ctx: commands.Context, *, vote_initiator: discord.Member = None) -> None:
         player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)

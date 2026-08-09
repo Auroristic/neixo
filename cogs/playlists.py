@@ -4,13 +4,26 @@ import discord
 from discord.ext import commands
 
 from cogs.music_helpers import _is_track_allowed
-from utils import delete_playlist, get_embed_color, help_meta, list_playlists, load_playlist, save_playlist
+from utils import (
+    delete_playlist,
+    get_embed_color,
+    help_meta,
+    is_owner_or_creator,
+    list_playlists,
+    load_playlist,
+    save_playlist,
+)
 
 logger = logging.getLogger(__name__)
 
+# Music playlists are part of the music feature, which is CLOSED while in
+# development. Flip MUSIC_LOCKED in cogs/music.py to False to reopen.
+from cogs.music import MUSIC_LOCKED
+
 COG_META = {
     "category": "music",
-    "commands": ["playlist"]
+    "commands": ["playlist"],
+    "owner": True,
 }
 
 
@@ -23,6 +36,12 @@ class Playlists(commands.Cog):
     async def cog_check(self, ctx):
         if ctx.guild is None:
             await ctx.send("This command only works in servers.")
+            return False
+        if MUSIC_LOCKED and not is_owner_or_creator(ctx):
+            await ctx.send(
+                "🔒 music is **locked** — still in development. "
+                "only the bot owner, creator, or server owner can use it right now."
+            )
             return False
         return True
 

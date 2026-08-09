@@ -186,7 +186,7 @@ async def main():
         "categories": categories
     }
 
-    target_xo = "/home/retro/retroisticx/projects/nei/xo/commands.json"
+    target_xo = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "xo", "commands.json"))
     target_local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands.json")
 
     print(f"Writing to {target_xo}...")
