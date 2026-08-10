@@ -164,18 +164,12 @@ class Translate(commands.Cog):
         note="replying with no args translates the replied message to english. reply + `.translate <lang>` goes to that language (auto-detects the source).",
     )
     async def translate(self, ctx: commands.Context, *, args: str = None):
-        if not args:
-            return await ctx.send("-# usage: `.translate <language> <text>` or `.translate from <language> <text>`")
-
-        if args.strip().lower() == "langs":
-            names = ", ".join(sorted(set(DISPLAY.values())))
-            return await ctx.send(f"-# supported: {names}")
-
         key = _get_key()
         if not key:
             return await ctx.send("-# no nvidia key set. can't translate rn")
 
         # ── replying to a message: translate THAT message ──
+        # resolved BEFORE the usage guard so bare `.translate` on a reply works
         replied = await self._resolved_reply_content(ctx.message)
         if replied:
             if not args:
@@ -210,6 +204,13 @@ class Translate(commands.Cog):
             footer = replied[:120] + ("…" if len(replied) > 120 else "")
             embed.set_footer(text=footer)
             return await ctx.send(embed=embed)
+
+        if not args:
+            return await ctx.send("-# usage: `.translate <language> <text>` · `.translate from <language> <text>` · or reply to a message + `.translate`")
+
+        if args.strip().lower() == "langs":
+            names = ", ".join(sorted(set(DISPLAY.values())))
+            return await ctx.send(f"-# supported: {names}")
 
         # ── normal text translation ──
         parts = args.strip().split(None, 1)
