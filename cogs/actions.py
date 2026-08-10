@@ -15,6 +15,12 @@ from utils import get_embed_color, help_meta
 
 log = logging.getLogger(__name__)
 
+COG_META = {
+    "category": "fun",
+    "label": "Fun",
+    "desc": "Anime action gifs.",
+}
+
 _UA = "Neixo (https://github.com/Auroristic/neixo)"
 NEKOS_API = "https://nekos.best/api/v2/{}"
 GIFUKAI_API = "https://api.gifukai.com/v1/{}"
