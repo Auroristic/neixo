@@ -158,10 +158,9 @@ class Actions(commands.Cog):
 
 async def setup(bot: commands.Bot):
     cog = Actions(bot)
-    # register dynamically so print_help + the command system see them
-    for name, verb in _ACTIONS:
-        command = _build_command(name, verb)
-        command.cog = cog
-        cog.__cog_commands__ = tuple(list(cog.__cog_commands__) + [command])
-        bot.add_command(command)
+    # register dynamically: add_cog registers everything in __cog_commands__
+    # and _inject binds command.cog — do NOT also call bot.add_command (that
+    # double-registers and raises CommandRegistrationError)
+    extra = tuple(_build_command(name, verb) for name, verb in _ACTIONS)
+    cog.__cog_commands__ = tuple(list(cog.__cog_commands__) + list(extra))
     await bot.add_cog(cog)
