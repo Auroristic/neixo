@@ -1204,6 +1204,47 @@ class ServerStatsCog(commands.Cog):
         file = await view.render_file()
         view.message = await ctx.send(file=file, view=view)
 
+    @help_meta(
+        usage="`.lb birthdays`",
+        desc="Shows birthdays coming up this month in the server.",
+        section="Leaderboards",
+        examples=[".lb birthdays"],
+        params=[],
+        note="from the birthday registry (.bday).",
+    )
+    @leaderboard.command(name="birthdays", aliases=["bdays", "bdaylb"])
+    async def lb_birthdays(self, ctx: commands.Context):
+        from datetime import datetime
+        from cogs.reminders import BIRTHDAYS_FILE
+        from utils import load_json
+
+        now = datetime.now()
+        month = now.strftime("%m")
+        rows = []
+        for it in (load_json(BIRTHDAYS_FILE) or {}).get("items", []):
+            md = str(it.get("month_day", ""))
+            if len(md) != 5 or md[2] != "-":
+                continue
+            if md[:2] != month:
+                continue
+            try:
+                label = datetime.strptime(md, "%m-%d").strftime("%b %d")
+            except ValueError:
+                continue
+            rows.append((int(it["user_id"]), label))
+        if not rows:
+            return await ctx.send("-# no birthdays this month. check back later.")
+        rows.sort(key=lambda x: x[1])
+        view = LBPageView(
+            self.bot, ctx, rows,
+            title="Birthdays This Month",
+            subtitle=f"upcoming birthdays in /{ctx.guild.name}",
+            unit="",
+        )
+        await view.fetch_assets()
+        file = await view.render_file()
+        view.message = await ctx.send(file=file, view=view)
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ServerStatsCog(bot))

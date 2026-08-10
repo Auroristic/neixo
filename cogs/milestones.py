@@ -1,0 +1,193 @@
+"""
+cogs/milestones.py  —  member count milestone cards
+"""
+
+import asyncio
+import io
+import logging
+
+import aiohttp
+import discord
+from discord.ext import commands
+
+from utils import DATA_DIR, help_meta, is_owner_or_creator, load_json, save_json
+
+log = logging.getLogger(__name__)
+
+MILESTONES_FILE = f"{DATA_DIR}/milestones.json"
+
+# milestone targets to celebrate
+MILESTONES = [50, 100, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000]
+
+COG_META = {
+    "category": "general",
+    "label": "General",
+    "desc": "Member milestone celebration cards.",
+}
+
+
+def _render_milestone_card(
+    icon_bytes: bytes | None,
+    guild_name: str,
+    count: int,
+) -> io.BytesIO:
+    from PIL import Image, ImageDraw, ImageFilter
+    from cogs.serverstats import _load_font
+
+    W, H = 900, 500
+    if icon_bytes:
+        try:
+            base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
+        except Exception:
+            base = Image.new("RGB", (W, H), (30, 30, 40))
+    else:
+        base = Image.new("RGB", (W, H), (30, 30, 40))
+    bg = base.resize((W, H), Image.Resampling.LANCZOS)
+    bg = bg.filter(ImageFilter.GaussianBlur(45))
+    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
+
+    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    for y in range(H):
+        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(70 * (y / H))))
+    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    draw = ImageDraw.Draw(bg)
+
+    title_font = _load_font(64, bold=True)
+    sub_font = _load_font(26, bold=False)
+
+    draw.text((W // 2, 170), f"{count:,}", font=title_font, fill=(255, 255, 255, 255), anchor="mm")
+    draw.text((W // 2, 250), "members!", font=sub_font, fill=(255, 255, 255, 200), anchor="mm")
+    draw.text((W // 2, 320), guild_name[:45], font=sub_font, fill=(255, 255, 255, 140), anchor="mm")
+
+    buf = io.BytesIO()
+    bg.convert("RGB").save(buf, format="PNG", quality=92)
+    buf.seek(0)
+    return buf
+
+
+class Milestones(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    async def _admin(self, ctx) -> bool:
+        if ctx.guild is None:
+            return False
+        if is_owner_or_creator(ctx):
+            return True
+        perms = getattr(ctx.author, "guild_permissions", None)
+        return bool(perms and perms.administrator)
+
+    @commands.group(name="milestone", aliases=["milestones"], invoke_without_command=True)
+    @help_meta(
+        usage="`.milestone <#channel>`  ·  `.milestone off`  ·  `.milestone status`",
+        desc="Posts an image card when the server hits member milestones (100, 250, 500...).",
+        section="General",
+        examples=[".milestone #announcements", ".milestone status"],
+        params=[{"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "Channel to post milestone cards to (turns it on)."}],
+        note="admin only.",
+    )
+    async def milestone(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        if channel is not None:
+            return await self.milestone_set(ctx, channel)
+        await ctx.send("-# milestone commands: `.milestone <#channel>` · `.milestone off` · `.milestone status`")
+
+    @milestone.command(name="off")
+    @help_meta(
+        usage="`.milestone off`",
+        desc="Turns milestone cards off.",
+        section="General",
+        examples=[".milestone off"],
+        params=[],
+        note="admin only.",
+    )
+    async def milestone_off(self, ctx: commands.Context):
+        if not await self._admin(ctx):
+            return await ctx.send("-# admin only")
+        state = load_json(MILESTONES_FILE) or {}
+        if state.pop(str(ctx.guild.id), None):
+            save_json(MILESTONES_FILE, state)
+        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+
+    @milestone.command(name="status")
+    @help_meta(
+        usage="`.milestone status`",
+        desc="Shows whether milestone cards are on and where they post.",
+        section="General",
+        examples=[".milestone status"],
+        params=[],
+        note="anyone can check.",
+    )
+    async def milestone_status(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        conf = (load_json(MILESTONES_FILE) or {}).get(str(ctx.guild.id))
+        if not conf:
+            return await ctx.send("-# milestone cards are off. `.milestone #channel` to turn on.")
+        ch = ctx.guild.get_channel(int(conf["channel_id"]))
+        await ctx.send(f"-# milestone cards on in {ch.mention if ch else conf['channel_id']}.")
+
+    @milestone.command(name="set", aliases=["on"])
+    @help_meta(
+        usage="`.milestone <#channel>`",
+        desc="Turns milestone cards on for a channel.",
+        section="General",
+        examples=[".milestone #announcements"],
+        params=[{"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "Channel to post milestone cards to."}],
+        note="admin only.",
+    )
+    async def milestone_set(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        if not await self._admin(ctx):
+            return await ctx.send("-# admin only")
+        if channel is None:
+            return await ctx.send("-# usage: `.milestone #channel`")
+        state = load_json(MILESTONES_FILE) or {}
+        state[str(ctx.guild.id)] = {
+            "channel_id": str(channel.id),
+            "last": 0,
+        }
+        save_json(MILESTONES_FILE, state)
+        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        conf = (load_json(MILESTONES_FILE) or {}).get(str(member.guild.id))
+        if not conf:
+            return
+        channel = member.guild.get_channel(int(conf["channel_id"]))
+        if channel is None:
+            return
+        count = member.guild.member_count or len(member.guild.members)
+        last = conf.get("last", 0)
+        hit = None
+        for m in MILESTONES:
+            if count >= m and m > last:
+                hit = m
+        if hit is None:
+            return
+        conf["last"] = hit
+        state = load_json(MILESTONES_FILE) or {}
+        state[str(member.guild.id)] = conf
+        save_json(MILESTONES_FILE, state)
+
+        icon_bytes = None
+        try:
+            if member.guild.icon:
+                async with aiohttp.ClientSession() as s:
+                    async with s.get(member.guild.icon.url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                        if r.status == 200:
+                            icon_bytes = await r.read()
+        except Exception:
+            pass
+        buf = await asyncio.to_thread(_render_milestone_card, icon_bytes, member.guild.name, hit)
+        try:
+            await channel.send(
+                f"we hit **{hit:,}** members!",
+                file=discord.File(fp=buf, filename="milestone.png"),
+            )
+        except discord.HTTPException:
+            pass
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Milestones(bot))

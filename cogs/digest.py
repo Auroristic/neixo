@@ -275,7 +275,10 @@ class Digest(commands.Cog):
         params=[],
         note="admin only. shows top chatters, vc time, bumps, and member growth for the week.",
     )
-    async def digest(self, ctx: commands.Context):
+    async def digest(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        if channel is not None:
+            # `.digest #channel` turns it on directly (same as `.digest set`)
+            return await self.digest_set(ctx, channel)
         await ctx.send("-# digest commands: `.digest <#channel>` · `.digest off` · `.digest status`")
 
     async def _admin(self, ctx) -> bool:

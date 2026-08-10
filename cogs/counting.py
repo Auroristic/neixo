@@ -28,6 +28,8 @@ class Counting(commands.Cog):
 
     async def cog_load(self):
         self._state = load_json(COUNTING_FILE) or {}
+        for g in self._state.values():
+            g.setdefault("scores", {})
 
     def _save(self):
         save_json(COUNTING_FILE, self._state)
@@ -68,6 +70,37 @@ class Counting(commands.Cog):
         self._save()
         await ctx.send(f"-# counting game on in {channel.mention}. start at **1**.")
 
+    @commands.command(name="top")
+    @help_meta(
+        usage="`.counting top`",
+        desc="Shows the top counters from the counting channel.",
+        section="Fun",
+        examples=[".counting top"],
+        params=[],
+        note="counts correct numbers only.",
+    )
+    async def counting_top(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        gid = str(ctx.guild.id)
+        conf = self._state.get(gid)
+        if not conf:
+            return await ctx.send("-# no counting channel set.")
+        scores = conf.get("scores", {})
+        if not scores:
+            return await ctx.send("-# nobody has counted correctly yet. start at **1**.")
+        rows = sorted(((int(uid), n) for uid, n in scores.items()), key=lambda x: -x[1])
+        from cogs.serverstats import LBPageView
+        view = LBPageView(
+            self.bot, ctx, rows,
+            title="Counting Leaderboard",
+            subtitle=f"most correct counts in /{ctx.guild.name}",
+            unit=" counts",
+        )
+        await view.fetch_assets()
+        file = await view.render_file()
+        view.message = await ctx.send(file=file, view=view)
+
     @commands.command(name="countingoff", hidden=True)
     @help_meta(
         usage="`.countingoff`",
@@ -101,6 +134,8 @@ class Counting(commands.Cog):
         if n == conf["current"] + 1 and conf.get("last_user") != message.author.id:
             conf["current"] = n
             conf["last_user"] = message.author.id
+            scores = conf.setdefault("scores", {})
+            scores[str(message.author.id)] = scores.get(str(message.author.id), 0) + 1
             self._save()
             try:
                 await message.add_reaction("<:pinklotus:1263556545686405170>")
