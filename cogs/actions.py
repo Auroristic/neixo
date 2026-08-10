@@ -86,10 +86,10 @@ async def _fetch_gif(action: str) -> str | None:
         return cached[0]
     headers = {"User-Agent": _UA}
     async with aiohttp.ClientSession() as s:
-        # nekos.best first, gifukai as fallback
+        # gifukai first (latest, pairing-aware), nekos.best as fallback
         for api, pick in (
-            (NEKOS_API.format(action), lambda d: (d.get("results") or [{}])[0].get("url")),
             (GIFUKAI_API.format(action), lambda d: d.get("url")),
+            (NEKOS_API.format(action), lambda d: (d.get("results") or [{}])[0].get("url")),
         ):
             try:
                 async with s.get(api, headers=headers, timeout=aiohttp.ClientTimeout(total=12)) as r:
@@ -102,23 +102,7 @@ async def _fetch_gif(action: str) -> str | None:
             except Exception:
                 continue
     return None
-def _action_command(name: str, verb: str):
-    @help_meta(
-        usage=f".{name} [@user]",
-        desc=f"Anime gif — {verb} someone.",
-        section="Fun",
-        examples=[f".{name} @someone"],
-        params=[
-            {
-                "name": "user",
-                "type": "discord.Member",
-                "required": False,
-                "desc": "Who to do it to. Leave empty for the void.",
-            },
-        ],
-        note="anime gifs via waifu.pics.",
-    )
-    @commands.command(name=name)
+def _action_func(name: str, verb: str):
     async def cmd(self, ctx: commands.Context, user: discord.Member = None):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")
@@ -137,12 +121,34 @@ def _action_command(name: str, verb: str):
         )
         if gif:
             embed.set_image(url=gif)
-            embed.set_footer(text=f"/{name} · anime gif")
+            embed.set_footer(text=f"/{name} \u00b7 anime gif")
         else:
             embed.set_footer(text="gif fetch failed, use your imagination")
         await ctx.send(embed=embed)
 
+    cmd.__name__ = name
+    cmd.__qualname__ = f"Actions.{name}"
     return cmd
+
+
+def _build_command(name: str, verb: str) -> commands.Command:
+    func = _action_func(name, verb)
+    help_meta(
+        usage=f".{name} [@user]",
+        desc=f"Anime gif — {verb} someone.",
+        section="Fun",
+        examples=[f".{name} @someone"],
+        params=[
+            {
+                "name": "user",
+                "type": "discord.Member",
+                "required": False,
+                "desc": "Who to do it to. Leave empty for the void.",
+            },
+        ],
+        note="anime gifs via gifukai (gender-paired) with nekos.best fallback.",
+    )(func)
+    return commands.Command(func, name=name)
 
 
 class Actions(commands.Cog):
@@ -150,9 +156,12 @@ class Actions(commands.Cog):
         self.bot = bot
 
 
-for _name, _verb in _ACTIONS:
-    setattr(Actions, _name, _action_command(_name, _verb))
-
-
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Actions(bot))
+    cog = Actions(bot)
+    # register dynamically so print_help + the command system see them
+    for name, verb in _ACTIONS:
+        command = _build_command(name, verb)
+        command.cog = cog
+        cog.__cog_commands__ = tuple(list(cog.__cog_commands__) + [command])
+        bot.add_command(command)
+    await bot.add_cog(cog)
