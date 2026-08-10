@@ -18,6 +18,12 @@ log = logging.getLogger(__name__)
 GIVEAWAYS_FILE = f"{DATA_DIR}/giveaways.json"
 ENTRY_EMOJI = "\U0001f389"  # 🎉
 
+COG_META = {
+    "category": "fun",
+    "label": "Fun",
+    "desc": "Reaction-based giveaways.",
+}
+
 
 def _load_giveaways() -> dict:
     return load_json(GIVEAWAYS_FILE) or {}

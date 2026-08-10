@@ -17,6 +17,12 @@ log = logging.getLogger(__name__)
 
 DIGEST_FILE = f"{DATA_DIR}/digest.json"
 
+COG_META = {
+    "category": "general",
+    "label": "General",
+    "desc": "Weekly server digest.",
+}
+
 
 def _load_digest() -> dict:
     return load_json(DIGEST_FILE) or {}
