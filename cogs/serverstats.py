@@ -48,44 +48,56 @@ _FALLBACK_FONT_PATHS = [
     "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
 ]
 
-# per-(font,char) glyph-presence cache
-_glyph_cache: dict[tuple[int, int], bool] = {}
-_notdef_cache: dict[int, bytes] = {}
+# fontTools cmap lookup for reliable glyph coverage
+try:
+    from fontTools.ttLib import TTFont
+    _FONTTOOLS_OK = True
+except Exception:
+    _FONTTOOLS_OK = False
+
+_cmap_cache: dict[str, set[int]] = {}
 
 
-def _has_glyph(font: ImageFont.FreeTypeFont, ch: str) -> bool:
-    """True if the font has a real glyph for ch (notdef-mask comparison)."""
-    key = (id(font), ord(ch))
-    cached = _glyph_cache.get(key)
-    if cached is not None:
-        return cached
-    try:
-        mask = font.getmask(ch)
-        nb = mask.tobytes()
-        nd = _notdef_cache.get(id(font))
-        if nd is None:
-            nd = font.getmask("\u0000").tobytes()  # never a real glyph
-            _notdef_cache[id(font)] = nd
-        result = nb != nd and nb != b""
-    except Exception:
-        result = True
-    _glyph_cache[key] = result
-    return result
+def _font_cmap(path: str) -> set[int]:
+    cm = _cmap_cache.get(path)
+    if cm is None:
+        cm = set()
+        if _FONTTOOLS_OK:
+            try:
+                cm = set(TTFont(path, lazy=True).getBestCmap().keys())
+            except Exception:
+                cm = set()
+        _cmap_cache[path] = cm
+    return cm
 
 
 class _FontSet:
     """Primary font + fallbacks. draw() picks a font per glyph so stylized
     unicode names render instead of tofu boxes."""
 
-    def __init__(self, primary: ImageFont.ImageFont, fallbacks: list[ImageFont.ImageFont]):
+    def __init__(self, primary: ImageFont.ImageFont, fallback_paths: list[str]):
         self.primary = primary
-        self.fallbacks = [f for f in fallbacks if isinstance(f, ImageFont.FreeTypeFont)]
+        self._paths = [pth for pth in fallback_paths if os.path.isfile(pth)]
+
+    _ft_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
+
+    def _fallback_font(self, pth: str) -> ImageFont.FreeTypeFont:
+        key = (pth, self.primary.size)
+        f = self._ft_cache.get(key)
+        if f is None:
+            try:
+                f = ImageFont.truetype(pth, self.primary.size)
+            except Exception:
+                f = self.primary
+            self._ft_cache[key] = f
+        return f
 
     def pick(self, ch: str) -> ImageFont.ImageFont:
-        if isinstance(self.primary, ImageFont.FreeTypeFont):
-            for f in [self.primary, *self.fallbacks]:
-                if _has_glyph(f, ch):
-                    return f
+        if _FONTTOOLS_OK and isinstance(self.primary, ImageFont.FreeTypeFont):
+            cp = ord(ch)
+            for pth in self._paths:
+                if cp in _font_cmap(pth):
+                    return self._fallback_font(pth)
         return self.primary
 
     def getlength(self, text: str) -> int:
@@ -114,29 +126,26 @@ class _FontSet:
         elif anchor == "lm":
             asc, desc = self.getmetrics()
             y -= (asc + desc) / 2
-        if not isinstance(self.primary, ImageFont.FreeTypeFont) or not self.fallbacks:
+        if not isinstance(self.primary, ImageFont.FreeTypeFont) or not self._paths:
             draw.text((x, y), text, font=self.primary, fill=fill)
             return
         for ch in text:
             f = self.pick(ch)
-            f.draw(draw, (x, y), ch, fill=fill)
+            draw.text((x, y), ch, font=f, fill=fill)
             x += f.getlength(ch)
 
 
 def _load_font(size: int, bold: bool = False) -> _FontSet:
-    fallbacks: list[ImageFont.ImageFont] = []
-    for fp in _FALLBACK_FONT_PATHS:
-        try:
-            fallbacks.append(ImageFont.truetype(fp, size))
-        except Exception:
-            continue
     for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
         try:
-            return _FontSet(ImageFont.truetype(p, size), fallbacks)
+            return _FontSet(ImageFont.truetype(p, size), list(_FALLBACK_FONT_PATHS))
         except Exception:
             continue
-    if fallbacks:
-        return _FontSet(fallbacks[0], fallbacks[1:])
+    for fp in _FALLBACK_FONT_PATHS:
+        try:
+            return _FontSet(ImageFont.truetype(fp, size), [])
+        except Exception:
+            continue
     return _FontSet(ImageFont.load_default(), [])
 
 
