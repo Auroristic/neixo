@@ -161,11 +161,15 @@ class Bumps(commands.Cog):
             pass
 
     def _top(self, gid: str, limit: int):
-        return _get_conn().execute(
+        rows = _get_conn().execute(
             "SELECT user_id, count FROM bump_counts "
             "WHERE guild_id = ? ORDER BY count DESC, last_bump ASC LIMIT ?",
             (gid, limit),
         ).fetchall()
+        # user_id is stored as TEXT — return ints so LBPageView can resolve
+        # members (guild.get_member needs an int; str ids never matched and
+        # every row rendered as "user-<id>")
+        return [(int(uid), count) for uid, count in rows]
 
     def _user_stats(self, gid: str, uid: int):
         conn = _get_conn()
