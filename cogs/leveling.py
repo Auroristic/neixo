@@ -47,6 +47,12 @@ class Leveling(commands.Cog):
                     disabled INTEGER DEFAULT 0
                 )
             """)
+            # Pre-existing tables (created before the disabled column existed)
+            # won't get it from CREATE IF NOT EXISTS — migrate in place
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(leveling_settings)").fetchall()]
+            if "disabled" not in cols:
+                conn.execute("ALTER TABLE leveling_settings ADD COLUMN disabled INTEGER DEFAULT 0")
+                conn.commit()
             # Persist the disabled flag across restarts (was hardcoded True).
             row = conn.execute(
                 "SELECT disabled FROM leveling_settings WHERE guild_id = '__global__'"
