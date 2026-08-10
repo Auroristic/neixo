@@ -68,13 +68,13 @@ def _render_welcome_card(
         except Exception:
             pass
 
-    draw.text((W // 2, 240), "welcome", font=title_font, fill=(255, 255, 255, 255), anchor="mm")
+    title_font.draw(draw, (W // 2, 240), "welcome", fill=(255, 255, 255, 255), anchor="mm")
     name = member_name if len(member_name) <= 40 else member_name[:39] + "\u2026"
-    draw.text((W // 2, 300), name, font=sub_font, fill=(255, 255, 255, 200), anchor="mm")
-    draw.text(
+    sub_font.draw(draw, (W // 2, 300), name, fill=(255, 255, 255, 200), anchor="mm")
+    sub_font.draw(
+        draw,
         (W // 2, 345),
         f"member #{member_count:,} of {guild_name}" if len(guild_name) <= 45 else f"member #{member_count:,}",
-        font=sub_font,
         fill=(255, 255, 255, 140),
         anchor="mm",
     )

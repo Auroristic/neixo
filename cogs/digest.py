@@ -85,30 +85,30 @@ def _render_digest_card(
     row_font = _load_font(22, bold=False)
     small_font = _load_font(18, bold=False)
 
-    draw.text((90, 70), "weekly digest", font=title_font, fill=(255, 255, 255, 255))
-    draw.text((90, 130), f"{guild_name} · {week_label}", font=sub_font, fill=(255, 255, 255, 170))
+    title_font.draw(draw, (90, 70), "weekly digest", fill=(255, 255, 255, 255))
+    sub_font.draw(draw, (90, 130), f"{guild_name} · {week_label}", fill=(255, 255, 255, 170))
     draw.line([(90, 185), (W - 90, 185)], fill=(255, 255, 255, 60), width=1)
 
     y = 220
-    draw.text((90, y), f"{msg_total:,} messages", font=label_font, fill=(255, 255, 255, 235))
-    cw = draw.textbbox((0, 0), f"+{member_growth:,} members", font=label_font)[2]
-    draw.text((W - 90 - cw, y), f"+{member_growth:,} members", font=label_font, fill=(255, 255, 255, 235))
+    label_font.draw(draw, (90, y), f"{msg_total:,} messages", fill=(255, 255, 255, 235))
+    cw = label_font.getlength(f"+{member_growth:,} members")
+    label_font.draw(draw, (W - 90 - cw, y), f"+{member_growth:,} members", fill=(255, 255, 255, 235))
     y += 40
-    draw.text((90, y), f"{vc_str} in voice", font=label_font, fill=(255, 255, 255, 235))
-    cw = draw.textbbox((0, 0), f"{bumps_total} bumps", font=label_font)[2]
-    draw.text((W - 90 - cw, y), f"{bumps_total} bumps", font=label_font, fill=(255, 255, 255, 235))
+    label_font.draw(draw, (90, y), f"{vc_str} in voice", fill=(255, 255, 255, 235))
+    cw = label_font.getlength(f"{bumps_total} bumps")
+    label_font.draw(draw, (W - 90 - cw, y), f"{bumps_total} bumps", fill=(255, 255, 255, 235))
     y += 70
 
     def _section(label, rows, unit):
         nonlocal y
-        draw.text((90, y), label, font=label_font, fill=(255, 255, 255, 120))
+        label_font.draw(draw, (90, y), label, fill=(255, 255, 255, 120))
         y += 45
         for rank, name, val in rows:
-            draw.text((90, y), f"{rank}.", font=row_font, fill=(255, 255, 255, 100))
-            draw.text((140, y), name, font=row_font, fill=(255, 255, 255, 230))
+            row_font.draw(draw, (90, y), f"{rank}.", fill=(255, 255, 255, 100))
+            row_font.draw(draw, (140, y), name, fill=(255, 255, 255, 230))
             v = f"{val:,}{unit}"
-            vw = draw.textbbox((0, 0), v, font=row_font)[2]
-            draw.text((W - 90 - vw, y), v, font=row_font, fill=(255, 255, 255, 200))
+            vw = row_font.getlength(v)
+            row_font.draw(draw, (W - 90 - vw, y), v, fill=(255, 255, 255, 200))
             y += 40
         y += 20
 
@@ -117,7 +117,7 @@ def _render_digest_card(
     _section("top bumpers", bumper_top, " bumps")
 
     draw.line([(90, H - 110), (W - 90, H - 110)], fill=(255, 255, 255, 50), width=1)
-    draw.text((90, H - 85), "xo", font=small_font, fill=(255, 255, 255, 140))
+    small_font.draw(draw, (90, H - 85), "xo", fill=(255, 255, 255, 140))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)

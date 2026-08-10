@@ -56,9 +56,9 @@ def _render_milestone_card(
     title_font = _load_font(64, bold=True)
     sub_font = _load_font(26, bold=False)
 
-    draw.text((W // 2, 170), f"{count:,}", font=title_font, fill=(255, 255, 255, 255), anchor="mm")
-    draw.text((W // 2, 250), "members!", font=sub_font, fill=(255, 255, 255, 200), anchor="mm")
-    draw.text((W // 2, 320), guild_name[:45], font=sub_font, fill=(255, 255, 255, 140), anchor="mm")
+    title_font.draw(draw, (W // 2, 170), f"{count:,}", fill=(255, 255, 255, 255), anchor="mm")
+    sub_font.draw(draw, (W // 2, 250), "members!", fill=(255, 255, 255, 200), anchor="mm")
+    sub_font.draw(draw, (W // 2, 320), guild_name[:45], fill=(255, 255, 255, 140), anchor="mm")
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)

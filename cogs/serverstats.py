@@ -40,13 +40,104 @@ _FONT_BOLD_PATHS = [
     "arialbd.ttf",
 ]
 
-def _load_font(size: int, bold: bool = False):
-    for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
+# Wide-coverage fallback fonts for glyphs the main chain lacks (stylized
+# unicode names, symbols, dingbats). Used per-glyph via _FontSet.
+_FALLBACK_FONT_PATHS = [
+    "/usr/share/fonts/truetype/ancient-scripts/Symbola_hint.ttf",
+    "/usr/share/fonts/truetype/symbola/Symbola.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+]
+
+# per-(font,char) glyph-presence cache
+_glyph_cache: dict[tuple[int, int], bool] = {}
+_notdef_cache: dict[int, bytes] = {}
+
+
+def _has_glyph(font: ImageFont.FreeTypeFont, ch: str) -> bool:
+    """True if the font has a real glyph for ch (notdef-mask comparison)."""
+    key = (id(font), ord(ch))
+    cached = _glyph_cache.get(key)
+    if cached is not None:
+        return cached
+    try:
+        mask = font.getmask(ch)
+        nb = mask.tobytes()
+        nd = _notdef_cache.get(id(font))
+        if nd is None:
+            nd = font.getmask("\u0000").tobytes()  # never a real glyph
+            _notdef_cache[id(font)] = nd
+        result = nb != nd and nb != b""
+    except Exception:
+        result = True
+    _glyph_cache[key] = result
+    return result
+
+
+class _FontSet:
+    """Primary font + fallbacks. draw() picks a font per glyph so stylized
+    unicode names render instead of tofu boxes."""
+
+    def __init__(self, primary: ImageFont.ImageFont, fallbacks: list[ImageFont.ImageFont]):
+        self.primary = primary
+        self.fallbacks = [f for f in fallbacks if isinstance(f, ImageFont.FreeTypeFont)]
+
+    def pick(self, ch: str) -> ImageFont.ImageFont:
+        if isinstance(self.primary, ImageFont.FreeTypeFont):
+            for f in [self.primary, *self.fallbacks]:
+                if _has_glyph(f, ch):
+                    return f
+        return self.primary
+
+    def getlength(self, text: str) -> int:
+        return int(sum(self.pick(ch).getlength(ch) for ch in text))
+
+    def getbbox(self, text: str) -> tuple[int, int, int, int]:
+        if isinstance(self.primary, ImageFont.FreeTypeFont):
+            asc, desc = self.primary.getmetrics()
+        else:
+            asc, desc = 20, 5
+        return (0, -asc, self.getlength(text), desc)
+
+    def getmetrics(self) -> tuple[int, int]:
+        if isinstance(self.primary, ImageFont.FreeTypeFont):
+            return self.primary.getmetrics()
+        return (20, 5)
+
+    def draw(self, draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, fill, anchor: str = None):
+        x, y = xy
+        if anchor in ("mm", "ms"):
+            w = self.getlength(text)
+            if anchor == "mm":
+                x -= w / 2
+                asc, desc = self.getmetrics()
+                y -= (asc + desc) / 2
+        elif anchor == "lm":
+            asc, desc = self.getmetrics()
+            y -= (asc + desc) / 2
+        if not isinstance(self.primary, ImageFont.FreeTypeFont) or not self.fallbacks:
+            draw.text((x, y), text, font=self.primary, fill=fill)
+            return
+        for ch in text:
+            f = self.pick(ch)
+            f.draw(draw, (x, y), ch, fill=fill)
+            x += f.getlength(ch)
+
+
+def _load_font(size: int, bold: bool = False) -> _FontSet:
+    fallbacks: list[ImageFont.ImageFont] = []
+    for fp in _FALLBACK_FONT_PATHS:
         try:
-            return ImageFont.truetype(p, size)
+            fallbacks.append(ImageFont.truetype(fp, size))
         except Exception:
             continue
-    return ImageFont.load_default()
+    for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
+        try:
+            return _FontSet(ImageFont.truetype(p, size), fallbacks)
+        except Exception:
+            continue
+    if fallbacks:
+        return _FontSet(fallbacks[0], fallbacks[1:])
+    return _FontSet(ImageFont.load_default(), [])
 
 
 # ── Database ────────────────────────────────────────────────────────
@@ -246,14 +337,14 @@ def _render_server_card(
 
     # Server name
     name_y = 50 + icon_size + 20
-    draw.text((55, name_y), guild_name, font=title_font, fill=(255, 255, 255, 250))
+    title_font.draw(draw, (55, name_y), guild_name, fill=(255, 255, 255, 250))
 
     # Member / bot counts
     info_y = name_y + 50
-    draw.text((55, info_y), f"Members: {member_count:,}", font=stat_font, fill=(255, 255, 255, 190))
-    draw.text((55, info_y + 32), f"Bots: {bot_count:,}", font=stat_font, fill=(255, 255, 255, 170))
-    draw.text((55, info_y + 64), f"Boost Level: {boost_level}", font=stat_font, fill=(255, 255, 255, 150))
-    draw.text((55, info_y + 96), f"Created: {created_str}", font=small_font, fill=(255, 255, 255, 130))
+    stat_font.draw(draw, (55, info_y), f"Members: {member_count:,}", fill=(255, 255, 255, 190))
+    stat_font.draw(draw, (55, info_y + 32), f"Bots: {bot_count:,}", fill=(255, 255, 255, 170))
+    stat_font.draw(draw, (55, info_y + 64), f"Boost Level: {boost_level}", fill=(255, 255, 255, 150))
+    small_font.draw(draw, (55, info_y + 96), f"Created: {created_str}", fill=(255, 255, 255, 130))
 
     # Separator line
     sep_x = 340
@@ -263,7 +354,7 @@ def _render_server_card(
     stat_x = 380
     stat_y = 70
 
-    draw.text((stat_x, stat_y), "Top Stats", font=header_font, fill=(255, 255, 255, 230))
+    header_font.draw(draw, (stat_x, stat_y), "Top Stats", fill=(255, 255, 255, 230))
     draw.line([(stat_x, stat_y + 40), (W - 50, stat_y + 40)], fill=(255, 255, 255, 35), width=1)
 
     rows_y = stat_y + 65
@@ -273,7 +364,7 @@ def _render_server_card(
     # Draw label rows
     for i in range(4):
         y = rows_y + i * row_h
-        draw.text((stat_x, y), labels[i], font=label_font, fill=(255, 255, 255, 150))
+        label_font.draw(draw, (stat_x, y), labels[i], fill=(255, 255, 255, 150))
 
     # Draw value rows
     # Row 0: emoji image + count text
@@ -285,14 +376,14 @@ def _render_server_card(
             bg.paste(ei, (stat_x, val_y0), ei)
         except Exception:
             pass
-        draw.text((stat_x + ew + 6, val_y0), emoji_count_text, font=value_font, fill=(255, 255, 255, 230))
+        value_font.draw(draw, (stat_x + ew + 6, val_y0), emoji_count_text, fill=(255, 255, 255, 230))
     else:
-        draw.text((stat_x, val_y0), "No data yet", font=value_font, fill=(255, 255, 255, 230))
+        value_font.draw(draw, (stat_x, val_y0), "No data yet", fill=(255, 255, 255, 230))
 
     # Rows 1-3: plain text
     for i, val in enumerate([top_reactor_val, top_chatter_val, top_vc_val], start=1):
         y = rows_y + 24 + i * row_h
-        draw.text((stat_x, y), val, font=value_font, fill=(255, 255, 255, 230))
+        value_font.draw(draw, (stat_x, y), val, fill=(255, 255, 255, 230))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
@@ -347,8 +438,8 @@ def _render_lb_card(
     footer_font   = _load_font(20, bold=False)
     footer_bold   = _load_font(20, bold=True)
 
-    draw.text((90, 80), title, font=title_font, fill=(255, 255, 255, 255))
-    draw.text((90, 140), subtitle, font=subtitle_font, fill=(255, 255, 255, 170))
+    title_font.draw(draw, (90, 80), title, fill=(255, 255, 255, 255))
+    subtitle_font.draw(draw, (90, 140), subtitle, fill=(255, 255, 255, 170))
     draw.line([(90, 200), (W - 90, 200)], fill=(255, 255, 255, 60), width=1)
 
     start_y = 230
@@ -367,22 +458,22 @@ def _render_lb_card(
         y = start_y + i * row_h
         rank_str = f"{rank}."
         rank_color = tints.get(rank, (255, 255, 255, 235))
-        draw.text((rank_x, y), rank_str, font=rank_font, fill=rank_color)
+        rank_font.draw(draw, (rank_x, y), rank_str, fill=rank_color)
 
         max_w = (count_x - 90) - name_x
         name_disp = name
-        if draw.textbbox((0, 0), name_disp, font=name_font)[2] > max_w:
-            while name_disp and draw.textbbox((0, 0), name_disp + "\u2026", font=name_font)[2] > max_w:
+        if name_font.getlength(name_disp) > max_w:
+            while name_disp and name_font.getlength(name_disp + "\u2026") > max_w:
                 name_disp = name_disp[:-1]
             name_disp = (name_disp + "\u2026") if name_disp else "\u2026"
-        draw.text((name_x, y), name_disp, font=name_font, fill=(255, 255, 255, 220))
+        name_font.draw(draw, (name_x, y), name_disp, fill=(255, 255, 255, 220))
 
         if isinstance(count, str):
             count_str = count
         else:
             count_str = f"{count:,}{unit}"
-        cw = draw.textbbox((0, 0), count_str, font=count_font)[2]
-        draw.text((count_x - cw, y), count_str, font=count_font, fill=rank_color)
+        cw = count_font.getlength(count_str)
+        count_font.draw(draw, (count_x - cw, y), count_str, fill=rank_color)
 
     footer_y = H - 130
     draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
@@ -396,11 +487,11 @@ def _render_lb_card(
         except Exception:
             pass
     text_x = av_x + av_size + 14
-    draw.text((text_x, av_y - 2), bot_name, font=footer_bold, fill=(255, 255, 255, 230))
-    draw.text((text_x, av_y + 22), user_rank_text, font=footer_font, fill=(255, 255, 255, 160))
+    footer_bold.draw(draw, (text_x, av_y - 2), bot_name, fill=(255, 255, 255, 230))
+    footer_font.draw(draw, (text_x, av_y + 22), user_rank_text, fill=(255, 255, 255, 160))
 
-    pw = draw.textbbox((0, 0), page_str, font=footer_font)[2]
-    draw.text((W - 90 - pw, av_y + 8), page_str, font=footer_font, fill=(255, 255, 255, 160))
+    pw = footer_font.getlength(page_str)
+    footer_font.draw(draw, (W - 90 - pw, av_y + 8), page_str, fill=(255, 255, 255, 160))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
@@ -569,8 +660,8 @@ def _render_emoji_card(
     footer_font   = _load_font(20, bold=False)
     footer_bold   = _load_font(20, bold=True)
 
-    draw.text((90, 80), title, font=title_font, fill=(255, 255, 255, 255))
-    draw.text((90, 140), subtitle, font=subtitle_font, fill=(255, 255, 255, 170))
+    title_font.draw(draw, (90, 80), title, fill=(255, 255, 255, 255))
+    subtitle_font.draw(draw, (90, 140), subtitle, fill=(255, 255, 255, 170))
     draw.line([(90, 200), (W - 90, 200)], fill=(255, 255, 255, 60), width=1)
 
     start_y = 230
@@ -589,7 +680,7 @@ def _render_emoji_card(
     for i, (rank, name, img_bytes, count) in enumerate(rows):
         y = start_y + i * row_h
         rank_color = tints.get(rank, (255, 255, 255, 235))
-        draw.text((rank_x, y), f"{rank}.", font=rank_font, fill=rank_color)
+        rank_font.draw(draw, (rank_x, y), f"{rank}.", fill=rank_color)
 
         if img_bytes:
             try:
@@ -600,15 +691,15 @@ def _render_emoji_card(
 
         name_disp = name
         max_w = (count_x - 90) - name_x
-        if draw.textbbox((0, 0), name_disp, font=name_font)[2] > max_w:
-            while name_disp and draw.textbbox((0, 0), name_disp + "\u2026", font=name_font)[2] > max_w:
+        if name_font.getlength(name_disp) > max_w:
+            while name_disp and name_font.getlength(name_disp + "\u2026") > max_w:
                 name_disp = name_disp[:-1]
             name_disp = (name_disp + "\u2026") if name_disp else "\u2026"
-        draw.text((name_x, y), name_disp, font=name_font, fill=(255, 255, 255, 220))
+        name_font.draw(draw, (name_x, y), name_disp, fill=(255, 255, 255, 220))
 
         count_str = f"{count:,} uses"
-        cw = draw.textbbox((0, 0), count_str, font=count_font)[2]
-        draw.text((count_x - cw, y), count_str, font=count_font, fill=rank_color)
+        cw = count_font.getlength(count_str)
+        count_font.draw(draw, (count_x - cw, y), count_str, fill=rank_color)
 
     footer_y = H - 130
     draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
@@ -618,10 +709,10 @@ def _render_emoji_card(
             bg.paste(av, (90, footer_y + 22), av)
         except Exception:
             pass
-    draw.text((144, footer_y + 20), user_rank_text, font=footer_font, fill=(255, 255, 255, 160))
+    footer_font.draw(draw, (144, footer_y + 20), user_rank_text, fill=(255, 255, 255, 160))
 
-    pw = draw.textbbox((0, 0), page_str, font=footer_font)[2]
-    draw.text((W - 90 - pw, footer_y + 28), page_str, font=footer_font, fill=(255, 255, 255, 160))
+    pw = footer_font.getlength(page_str)
+    footer_font.draw(draw, (W - 90 - pw, footer_y + 28), page_str, fill=(255, 255, 255, 160))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)

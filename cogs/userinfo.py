@@ -92,18 +92,18 @@ def _render_user_card(
             pass
 
     x0 = 90 + av_size + 40
-    draw.text((x0, 100), user.display_name, font=f["title"], fill=(255, 255, 255, 255))
+    f["title"].draw(draw, (x0, 100), user.display_name, fill=(255, 255, 255, 255))
     status, sc = _STATUS.get(getattr(member, "status", None), _STATUS[discord.Status.offline])
     if member:
         draw.ellipse([x0, 168, x0 + 16, 184], fill=sc)
-        draw.text((x0 + 28, 160), status, font=f["sub"], fill=(255, 255, 255, 170))
-    draw.text((x0, 210), f"@{user.name} · {user.id}", font=f["sub"], fill=(255, 255, 255, 170))
+        f["sub"].draw(draw, (x0 + 28, 160), status, fill=(255, 255, 255, 170))
+    f["sub"].draw(draw, (x0, 210), f"@{user.name} · {user.id}", fill=(255, 255, 255, 170))
 
     draw.line([(90, 290), (W - 90, 290)], fill=(255, 255, 255, 60), width=1)
 
     def _row(y, label, value):
-        draw.text((90, y), label, font=f["label"], fill=(255, 255, 255, 120))
-        draw.text((320, y), value, font=f["value"], fill=(255, 255, 255, 235))
+        f["label"].draw(draw, (90, y), label, fill=(255, 255, 255, 120))
+        f["value"].draw(draw, (320, y), value, fill=(255, 255, 255, 235))
 
     y = 330
     _row(y, "account created", user.created_at.strftime("%b %d, %Y"))
@@ -120,11 +120,11 @@ def _render_user_card(
 
     if member and member.activity:
         y += 60
-        draw.text((90, y), f"playing: {member.activity.name[:60]}", font=f["sub"], fill=(255, 255, 255, 170))
+        f["sub"].draw(draw, (90, y), f"playing: {member.activity.name[:60]}", fill=(255, 255, 255, 170))
 
     footer_y = H - 120
     draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
-    draw.text((90, footer_y + 25), user.name, font=f["sub"], fill=(255, 255, 255, 160))
+    f["sub"].draw(draw, (90, footer_y + 25), user.name, fill=(255, 255, 255, 160))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
