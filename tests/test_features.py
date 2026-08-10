@@ -54,3 +54,12 @@ def test_trim_history_to_budget_keeps_most_recent():
     mixed = [{"content": "y" * 30_000}] * 8 + [{"content": "short"}]
     kept = _trim_history_to_budget(mixed)
     assert kept[-1]["content"] == "short"
+
+def test_pick_reaction_allowed_emoji():
+    from cogs.ai import _pick_reaction
+    assert _pick_reaction("😭") == "😭"
+    assert _pick_reaction("💀") == "💀"
+    assert _pick_reaction("  😭  ") == "😭"
+    assert _pick_reaction("none") is None
+    assert _pick_reaction("") is None
+    assert _pick_reaction("hmm maybe 👍") is None  # not a bare emoji reply

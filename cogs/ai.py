@@ -43,6 +43,19 @@ from utils import (
 )
 
 
+# emojis the AI is allowed to react with, plus the picker used by the
+# reaction classifier (module-level so it's unit-testable)
+_AI_REACTION_EMOJIS = ("😭", "💀", "🔥", "😂", "❤️", "👍")
+
+
+def _pick_reaction(choice: str) -> str | None:
+    """Return the allowed emoji from a classifier reply, or None."""
+    if not choice:
+        return None
+    emoji = choice.strip().split()[0] if choice.strip() else ""
+    return emoji if emoji in _AI_REACTION_EMOJIS else None
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -644,6 +657,8 @@ class AICog(commands.Cog, name="AI"):
         self.bot = bot
         self._ai_message_ids: OrderedDict = OrderedDict()
         self._ai_chat_ids: OrderedDict = OrderedDict()
+        # per-channel cooldown for the lightweight reaction classifier
+        self._ai_reaction_cooldown: dict[int, float] = {}
 
         nvidia_keys = [
             os.getenv("NVIDIA_API_KEY_1"),
@@ -2025,6 +2040,60 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
 {self._base_system_prompt(memory_str, gif_categories, cmd_summary)}"""
 
+    # ── Recent channel context ─────────────────────────────────
+    # Pulls the latest channel messages when the AI is triggered, so it sees
+    # everything that happened (long messages, other bots, embeds) even if
+    # storage skipped some of them.
+
+    async def _fetch_recent_channel_context(
+        self,
+        message: discord.Message,
+        stored_history: list[dict],
+    ) -> list[str]:
+        if message.guild is None:
+            return []
+        try:
+            recent = [m async for m in message.channel.history(limit=30, before=message)]
+        except (discord.HTTPException, discord.Forbidden):
+            return []
+        recent.reverse()
+
+        # dedupe against what storage already has (author + relative time + text)
+        seen = set()
+        for m in stored_history[-40:]:
+            who = str(m.get("display_name") or m.get("username") or "")
+            when = _format_relative_time(m.get("timestamp"))
+            seen.add((who, when, str(m.get("content") or "")))
+
+        out = []
+        for m in recent:
+            parts = []
+            if m.content and m.content.strip():
+                parts.append(m.content.strip())
+            for e in m.embeds[:2]:
+                bits = []
+                if e.title:
+                    bits.append(e.title)
+                if e.description:
+                    bits.append(e.description[:80])
+                if bits:
+                    parts.append("[" + " \u00b7 ".join(bits) + "]")
+            if m.attachments:
+                parts.append("[files: " + ", ".join(a.filename for a in m.attachments[:3]) + "]")
+            if not parts:
+                continue
+            text = " ".join(parts)
+            if len(text) > 400:
+                text = text[:400] + "\u2026"
+            who = m.author.display_name if not m.author.bot else f"bot:{m.author.name}"
+            when = _format_relative_time(m.created_at.isoformat())
+            key = (who, when, text)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(f"[{who}]{when}: {text}")
+        return out
+
     # ── Shared response handler ───────────────────────────────
 
     async def _handle_response(
@@ -2105,6 +2174,17 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
                         messages_payload.append({"role": "user", "content": text})
                     else:
                         messages_payload.append({"role": "assistant", "content": content})
+
+                # recent channel activity so nothing that happened gets missed
+                recent_context = await self._fetch_recent_channel_context(message, history_for_payload)
+                if recent_context:
+                    messages_payload.append({
+                        "role": "user",
+                        "content": (
+                            "recent channel activity (latest messages, may overlap with history):\n"
+                            + "\n".join(recent_context)
+                        ),
+                    })
 
                 # Build current user-message payload entry
                 reply_context = ""
@@ -2208,6 +2288,66 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
             message, user_key, mem_key,
             system_prompt_fn=lambda m, ms: self._dm_system_prompt("mui", CREATOR_ID, m, ms),
         )
+
+    # ── AI reactions (lightweight per-message classifier) ──────────
+    # The AI can react to messages (sob mostly) based on how wild/crazy they
+    # are. One tiny cheap call per message, throttled per channel.
+
+    _REACTION_EMOJIS = _AI_REACTION_EMOJIS
+    _REACTION_COOLDOWN = 60  # seconds between classifier calls per channel
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.guild is None or message.author.bot:
+            return
+        content = message.content or ""
+        if not content.strip():
+            return
+        # only AI-enabled channels
+        config = load_json(CONFIG_FILE)
+        if str(message.channel.id) not in config.get(str(message.guild.id), {}).get("ai_channels", []):
+            return
+        # skip commands
+        if content.startswith(".") or (self.bot.user and content.startswith(f"{self.bot.user.mention} ")):
+            return
+        # skip messages that already trigger the full AI (mention / reply to the bot)
+        if self.bot.user and re.search(rf"<@!?{self.bot.user.id}>", content):
+            return
+        if message.reference and getattr(message.reference.resolved, "author", None) == self.bot.user:
+            return
+        # throttle per channel
+        now = _time.time()
+        if now - self._ai_reaction_cooldown.get(message.channel.id, 0.0) < self._REACTION_COOLDOWN:
+            return
+        self._ai_reaction_cooldown[message.channel.id] = now
+        await self._classify_reaction(message, content)
+
+    async def _classify_reaction(self, message: discord.Message, content: str) -> None:
+        try:
+            payload = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You pick ONE reaction emoji for a chat message. "
+                        "Choose from exactly: 😭 💀 🔥 😂 ❤️ 👍. "
+                        "Reply with ONLY the emoji. If the message doesn't deserve a reaction, "
+                        "reply with the single word: none. Be sparing — only react to messages "
+                        "that are funny, wild, crazy, dramatic, or relatable. Most messages get: none."
+                    ),
+                },
+                {"role": "user", "content": content[:1500]},
+            ]
+            resp = await self._fallback_complete(payload, max_tokens=8)
+            choice = ""
+            try:
+                choice = (resp.choices[0].message.content or "").strip()
+            except (AttributeError, IndexError):
+                pass
+            emoji = _pick_reaction(choice)
+            if emoji:
+                await message.add_reaction(emoji)
+        except Exception:
+            pass
 
     # ── Store message context ─────────────────────────────────
 
