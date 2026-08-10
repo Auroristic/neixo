@@ -141,7 +141,11 @@ class _FontSet:
 def _load_font(size: int, bold: bool = False) -> _FontSet:
     for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
         try:
-            return _FontSet(ImageFont.truetype(p, size), p, list(_FALLBACK_FONT_PATHS))
+            f = ImageFont.truetype(p, size)
+            # PIL can resolve missing paths via fontconfig — use the REAL
+            # resolved file (font.path) for cmap glyph checks
+            real = getattr(f, "path", "") or p
+            return _FontSet(f, real, list(_FALLBACK_FONT_PATHS))
         except Exception:
             continue
     for fp in _FALLBACK_FONT_PATHS:
