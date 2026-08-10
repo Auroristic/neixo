@@ -80,6 +80,14 @@ class AutoResponse(commands.Cog):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @auto.command(name="remove")
+    @help_meta(
+        usage="`.auto remove <trigger>`",
+        desc="Removes an auto-response trigger.",
+        section="General",
+        examples=[".auto remove hello"],
+        params=[{"name": "trigger", "type": "str", "required": True, "desc": "The trigger to remove."}],
+        note="admin only.",
+    )
     async def auto_remove(self, ctx: commands.Context, trigger: str = None):
         if not await self._admin(ctx):
             return await ctx.send("-# admin only")
@@ -94,6 +102,14 @@ class AutoResponse(commands.Cog):
             await ctx.send(f"-# no trigger named `{trigger.strip().lower()}`")
 
     @auto.command(name="list")
+    @help_meta(
+        usage="`.auto list`",
+        desc="Lists all auto-responses in this server.",
+        section="General",
+        examples=[".auto list"],
+        params=[],
+        note="anyone can view.",
+    )
     async def auto_list(self, ctx: commands.Context):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")
@@ -109,6 +125,14 @@ class AutoResponse(commands.Cog):
         ))
 
     @auto.command(name="clear")
+    @help_meta(
+        usage="`.auto clear`",
+        desc="Removes every auto-response in this server.",
+        section="General",
+        examples=[".auto clear"],
+        params=[],
+        note="admin only.",
+    )
     async def auto_clear(self, ctx: commands.Context):
         if not await self._admin(ctx):
             return await ctx.send("-# admin only")

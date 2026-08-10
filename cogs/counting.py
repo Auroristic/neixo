@@ -69,6 +69,14 @@ class Counting(commands.Cog):
         await ctx.send(f"-# counting game on in {channel.mention}. start at **1**.")
 
     @commands.command(name="countingoff", hidden=True)
+    @help_meta(
+        usage="`.countingoff`",
+        desc="Turns the counting game off (creator only).",
+        section="Fun",
+        examples=[".countingoff"],
+        params=[],
+        note="creator only. alternative to `.counting off`.",
+    )
     @commands.check(lambda ctx: is_owner_or_creator(ctx))
     async def counting_off(self, ctx):
         gid = str(ctx.guild.id)

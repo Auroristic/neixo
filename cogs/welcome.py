@@ -112,6 +112,17 @@ class Welcome(commands.Cog):
         return bool(perms and perms.administrator)
 
     @welcome.command(name="setup")
+    @help_meta(
+        usage="`.welcome setup #channel [message]`",
+        desc="Turns welcome cards on for a channel.",
+        section="General",
+        examples=[".welcome setup #welcome hey {user} welcome!"],
+        params=[
+            {"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "Channel to post welcome cards to."},
+            {"name": "message", "type": "str", "required": False, "desc": "Optional text with the card. `{user}` becomes the new member."},
+        ],
+        note="admin only.",
+    )
     async def welcome_setup(self, ctx: commands.Context, channel: discord.TextChannel = None, *, message: str = None):
         if not await self._admin(ctx):
             return await ctx.send("-# admin only")
@@ -126,6 +137,14 @@ class Welcome(commands.Cog):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @welcome.command(name="off")
+    @help_meta(
+        usage="`.welcome off`",
+        desc="Turns welcome cards off.",
+        section="General",
+        examples=[".welcome off"],
+        params=[],
+        note="admin only.",
+    )
     async def welcome_off(self, ctx: commands.Context):
         if not await self._admin(ctx):
             return await ctx.send("-# admin only")
@@ -135,6 +154,14 @@ class Welcome(commands.Cog):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @welcome.command(name="status")
+    @help_meta(
+        usage="`.welcome status`",
+        desc="Shows whether welcome cards are on and where they post.",
+        section="General",
+        examples=[".welcome status"],
+        params=[],
+        note="anyone can check.",
+    )
     async def welcome_status(self, ctx: commands.Context):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")

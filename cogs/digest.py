@@ -287,6 +287,14 @@ class Digest(commands.Cog):
         return bool(perms and perms.administrator)
 
     @digest.command(name="off")
+    @help_meta(
+        usage="`.digest off`",
+        desc="Turns the weekly digest off.",
+        section="General",
+        examples=[".digest off"],
+        params=[],
+        note="admin only.",
+    )
     async def digest_off(self, ctx: commands.Context):
         if not await self._admin(ctx):
             return await ctx.send("-# admin only")
@@ -296,6 +304,14 @@ class Digest(commands.Cog):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @digest.command(name="status")
+    @help_meta(
+        usage="`.digest status`",
+        desc="Shows whether the weekly digest is on and where it posts.",
+        section="General",
+        examples=[".digest status"],
+        params=[],
+        note="anyone can check.",
+    )
     async def digest_status(self, ctx: commands.Context):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")
@@ -306,6 +322,14 @@ class Digest(commands.Cog):
         await ctx.send(f"-# weekly digest on, posting to {ch.mention if ch else conf['channel_id']} every sunday.")
 
     @digest.command(name="set", aliases=["on"])
+    @help_meta(
+        usage="`.digest <#channel>`",
+        desc="Turns the weekly digest on for a channel.",
+        section="General",
+        examples=[".digest #general"],
+        params=[{"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "Channel to post the digest to."}],
+        note="admin only. posts every sunday.",
+    )
     async def digest_set(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if not await self._admin(ctx):
             return await ctx.send("-# admin only")
