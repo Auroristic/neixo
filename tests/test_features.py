@@ -33,3 +33,24 @@ def test_ago():
     assert _ago((now - timedelta(hours=3)).isoformat()) == "3h"
     assert _ago((now - timedelta(days=2)).isoformat()) == "2d"
     assert _ago("garbage") == "?"
+
+def test_trim_history_to_budget_caps_message_count():
+    from cogs.ai import _trim_history_to_budget
+    tiny = [{"content": "hi"} for _ in range(300)]
+    assert len(_trim_history_to_budget(tiny)) == 120
+
+
+def test_trim_history_to_budget_limits_tokens():
+    from cogs.ai import _trim_history_to_budget, HISTORY_TOKEN_BUDGET, _estimate_tokens
+    huge = [{"content": "x" * 50_000} for _ in range(120)]
+    kept = _trim_history_to_budget(huge)
+    total = sum(_estimate_tokens(m.get("content", "")) for m in kept)
+    assert total <= HISTORY_TOKEN_BUDGET
+    assert len(kept) < 120
+
+
+def test_trim_history_to_budget_keeps_most_recent():
+    from cogs.ai import _trim_history_to_budget
+    mixed = [{"content": "y" * 30_000}] * 8 + [{"content": "short"}]
+    kept = _trim_history_to_budget(mixed)
+    assert kept[-1]["content"] == "short"

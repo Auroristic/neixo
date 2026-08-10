@@ -103,6 +103,34 @@ _conversations_file_lock = asyncio.Lock()
 _bot_memory_file_lock = asyncio.Lock()
 
 
+# the model's context window is 200k tokens — keep history well under it
+# so the system prompt, current message, images and the reply always fit
+HISTORY_TOKEN_BUDGET = 150_000
+# hard cap on history messages even if they're tiny
+HISTORY_MSG_CAP = 120
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token for mixed content."""
+    return max(1, len(text or '') // 4)
+
+
+def _trim_history_to_budget(history: list[dict]) -> list[dict]:
+    """Keep the newest messages that fit the token budget (oldest dropped)."""
+    budget = HISTORY_TOKEN_BUDGET
+    kept = []
+    for msg in reversed(history[-HISTORY_MSG_CAP:]):
+        content = msg.get("content") or ""
+        # account for the display-name / timestamp / reply-context wrapping
+        cost = _estimate_tokens(content) + 12
+        if budget - cost < 0:
+            break
+        budget -= cost
+        kept.append(msg)
+    kept.reverse()
+    return kept
+
+
 def _sanitize_memory_note(note: str) -> str | None:
     note = re.sub(r'\s+', ' ', (note or '').strip())[:300]
     if not note or _INJECTION_PATTERNS.search(note):
@@ -2058,9 +2086,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
                 system_prompt = system_prompt_fn(message, memory_str)
                 image_data = await self._get_images_from_message(message)
 
-                history_for_payload = history[:-1] if history else []
+                history_for_payload = _trim_history_to_budget(history[:-1] if history else [])
                 messages_payload = [{"role": "system", "content": system_prompt}]
-                for msg in history_for_payload[-60:]:
+                for msg in history_for_payload:
                     role    = msg.get("role", "user")
                     content = msg.get("content", "")
                     display = _sanitize_name(msg.get("display_name") or msg.get("username", ""))
