@@ -895,6 +895,8 @@ class ThemeCog(commands.Cog, name="Theme"):
         .theme prefix scan #category
         .theme prefix scan all
         """
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
         # handle "all" passed as the category arg (discord won't resolve "all" as a channel)
         is_all = args is not None and args.strip().lower() == "all"
 
@@ -1316,6 +1318,8 @@ class ThemeCog(commands.Cog, name="Theme"):
     @_is_theme_admin()
     async def prefix_undo(self, ctx: commands.Context):
         """Undo the last prefix operation (add, remove, or all)."""
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
         hist = tm.get_prefix_history(ctx.guild.id)
         if not hist:
             return await ctx.send("-# no prefix history found — nothing to undo")
@@ -1722,6 +1726,8 @@ class ThemeCog(commands.Cog, name="Theme"):
     @_is_theme_admin()
     async def theme_save(self, ctx: commands.Context, *, name: str = None):
         """Save the current server state as a named preset."""
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
         if not name:
             return await ctx.send("-# usage: `.theme save <preset name>`")
         # build a snapshot of current role names + current theme config
@@ -2101,25 +2107,19 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         Pass `--full` to revert back to the factory snapshot (if available).
         """
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
         gid = ctx.guild.id
 
-        # decide whether to pop a single snapshot or roll back to factory
-        if mode and mode.lower() in ("--full", "full"):
+        # peek, don't pop — the snapshot must survive until the user confirms
+        full = mode and mode.lower() in ("--full", "full")
+        if full:
             factory = tm.get_factory_snapshot(gid)
             if not factory:
                 return await ctx.send("-# no factory snapshot found — cannot perform full reset")
-            # pop until we reach factory (inclusive)
-            popped = []
-            while True:
-                s = tm.pop_undo_snapshot(gid)
-                if not s:
-                    break
-                popped.append(s)
-                if s == factory:
-                    break
             snap = factory
         else:
-            snap = tm.pop_undo_snapshot(gid)
+            snap = tm.get_snapshot(gid)
 
         if not snap:
             return await ctx.send("-# no snapshot found — nothing to undo")
@@ -2138,6 +2138,17 @@ class ThemeCog(commands.Cog, name="Theme"):
         await view.wait()
         if not view.confirmed:
             return await confirm_msg.edit(embed=_err_embed("reset cancelled."), view=None)
+
+        # destructive part — only after confirmation
+        if full:
+            while True:
+                s = tm.pop_undo_snapshot(gid)
+                if not s:
+                    break
+                if s == factory:
+                    break
+        else:
+            tm.pop_undo_snapshot(gid)
 
         prog = await ctx.send(f"-# reverting {total} items...")
         done = 0
@@ -2824,11 +2835,14 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         ping = creator.mention if creator else ""
         view = PrefixPromptView()
-        prompt_msg = await channel.send(
-            f"{ping} — {channel.mention} is themed on **{group_name}** (`{prefix}`) prefix.\n"
-            f"-# rename to: **{new_name}**?",
-            view=view,
-        )
+        try:
+            prompt_msg = await channel.send(
+                f"{ping} — {channel.mention} is themed on **{group_name}** (`{prefix}`) prefix.\n"
+                f"-# rename to: **{new_name}**?",
+                view=view,
+            )
+        except discord.HTTPException:
+            return
 
         await view.wait()
 

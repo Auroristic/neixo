@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import discord
@@ -32,38 +33,63 @@ class Leveling(commands.Cog):
         self.bot = bot
         self.xp_cooldowns = {}  # Simple cooldown tracking
         self._leveling_disabled = True  # Disabled on startup
+        self._backfill_task: asyncio.Task | None = None
 
 
     async def cog_load(self):
         """Initialize level-up notification settings and backfill level roles."""
-        self._leveling_disabled = True
         from utils import _db
         with _db() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS leveling_settings (
                     guild_id TEXT PRIMARY KEY,
-                    notifications_enabled INTEGER DEFAULT 1
+                    notifications_enabled INTEGER DEFAULT 1,
+                    disabled INTEGER DEFAULT 0
                 )
             """)
-        # Backfill level roles for users who leveled up while bot was offline
+            # Persist the disabled flag across restarts (was hardcoded True).
+            row = conn.execute(
+                "SELECT disabled FROM leveling_settings WHERE guild_id = '__global__'"
+            ).fetchone()
+            self._leveling_disabled = bool(row[0]) if row else True
+        # Backfill level roles as a background task after ready instead of
+        # blocking startup (large guilds would stall + spam role edits).
+        self._backfill_task = asyncio.create_task(self._backfill_level_roles())
+
+    async def _backfill_level_roles(self) -> None:
+        await self.bot.wait_until_ready()
+        if self._leveling_disabled:
+            return
         for guild in self.bot.guilds:
-            level_roles = get_all_level_roles(guild.id)
-            if not level_roles:
-                continue
-            for member in guild.members:
-                if member.bot:
+            try:
+                level_roles = get_all_level_roles(guild.id)
+                if not level_roles:
                     continue
-                data = get_user_xp(member.id, guild.id)
-                if data:
-                    current_level = data["level"]
-                    for level, role_id in sorted(level_roles.items()):
-                        if current_level >= int(level):
-                            try:
-                                role = guild.get_role(int(role_id))
-                                if role and role not in member.roles:
-                                    await member.add_roles(role, reason=f"Level role backfill (level {level})")
-                            except Exception as e:
-                                logger.warning(f"Failed to backfill level role: {e}")
+                for member in guild.members:
+                    if member.bot:
+                        continue
+                    data = get_user_xp(member.id, guild.id)
+                    if data:
+                        current_level = data["level"]
+                        for level, role_id in sorted(level_roles.items()):
+                            if current_level >= int(level):
+                                try:
+                                    role = guild.get_role(int(role_id))
+                                    if role and role not in member.roles:
+                                        await member.add_roles(role, reason=f"Level role backfill (level {level})")
+                                        await asyncio.sleep(0.5)  # avoid 429 spam
+                                except Exception as e:
+                                    logger.warning(f"Failed to backfill level role: {e}")
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                # one guild's failure shouldn't abort backfill for the rest
+                logger.warning(f"level role backfill failed for guild {guild.id}: {e}")
+
+    def cog_unload(self) -> None:
+        if self._backfill_task and not self._backfill_task.done():
+            self._backfill_task.cancel()
 
     async def cog_check(self, ctx):
         if ctx.guild is None:
@@ -446,9 +472,17 @@ class Leveling(commands.Cog):
         """Disable the leveling system."""
         if system != "level":
             return await ctx.send("Usage: `.disable level`")
-        if not is_owner_or_creator(ctx) and ctx.author.id != ctx.guild.owner_id:
-            return await ctx.send("Only the bot owner, creator, or server owner can disable the leveling system.")
+        # the flag is bot-global — only the creator can toggle it
+        if not is_creator(ctx.author.id):
+            return await ctx.send("creator only")
         self._leveling_disabled = True
+        from utils import _db
+        with _db() as conn:
+            conn.execute(
+                "INSERT INTO leveling_settings (guild_id, notifications_enabled, disabled) "
+                "VALUES ('__global__', 1, 1) "
+                "ON CONFLICT(guild_id) DO UPDATE SET disabled = 1"
+            )
         msg = ("❌ Leveling system **disabled**. XP gain and leveling commands "
                "are now blocked. Use `.enable level` to re-enable.")
         await ctx.send(msg)
@@ -469,9 +503,17 @@ class Leveling(commands.Cog):
         """Enable the leveling system."""
         if system != "level":
             return await ctx.send("Usage: `.enable level`")
-        if not is_owner_or_creator(ctx) and ctx.author.id != ctx.guild.owner_id:
-            return await ctx.send("Only the bot owner, creator, or server owner can enable the leveling system.")
+        # the flag is bot-global — only the creator can toggle it
+        if not is_creator(ctx.author.id):
+            return await ctx.send("creator only")
         self._leveling_disabled = False
+        from utils import _db
+        with _db() as conn:
+            conn.execute(
+                "INSERT INTO leveling_settings (guild_id, notifications_enabled, disabled) "
+                "VALUES ('__global__', 1, 0) "
+                "ON CONFLICT(guild_id) DO UPDATE SET disabled = 0"
+            )
         await ctx.send("✅ Leveling system **enabled**. XP gain and leveling commands are now active.")
 
 

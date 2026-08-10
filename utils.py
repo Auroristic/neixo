@@ -115,7 +115,6 @@ def _ensure_db():
 _LIST_FILES = frozenset({
     IGNORE_LIST_FILE,
     DM_WHITELIST_FILE,
-    CONFESSIONS_FILE,
     AUDIT_FILE,
 })
 
@@ -194,8 +193,11 @@ def _run_migration_once():
     global _migration_done
     if _migration_done:
         return
-    migrate_json_files()
+    # set the flag BEFORE the loop so nested save_json/load_json calls (which
+    # call _run_migration_once) don't re-enter mid-migration — previously this
+    # recursed ~340x on first boot (data is still imported exactly once)
     _migration_done = True
+    migrate_json_files()
 
 # ── init_files: now just a no-op for compat ──────────────────────
 

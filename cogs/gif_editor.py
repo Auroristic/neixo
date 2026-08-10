@@ -215,7 +215,14 @@ async def _pull_from_embed(embed) -> tuple[bytes | None, bool]:
     if not image_url:
         return None, False
 
-    if "tenor.com" in image_url:
+    try:
+        _parsed = _re.match(r"^https?://([^/]+)", image_url)
+        _host = (_parsed.group(1).lower().rstrip(".") if _parsed else "")
+    except Exception:
+        _host = ""
+    is_tenor = bool(_host) and (_host == "tenor.com" or _host.endswith(".tenor.com"))
+
+    if is_tenor:
         if any(image_url.lower().endswith(ext) for ext in ('.gif', '.png', '.jpg', '.webp', '.mp4')):
             gif_attempt = _re.sub(r'\.(png|webp|jpg)$', '.gif', image_url)
             gif_attempt = _re.sub(r'AAAA[a-zA-Z]+', 'AAAAM', gif_attempt)
@@ -680,7 +687,10 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
         if not gif_name:
             gif_name = "You_Should_Read_Grand_Blue_Dreaming"
 
-        factor_int = int(factor.lower().replace("x", ""))
+        try:
+            factor_int = int(factor.lower().replace("x", ""))
+        except ValueError:
+            return await ctx.send("factor needs to be a number like `2x`.")
         if not 1 <= factor_int <= 6:
             return await ctx.send("Please use a factor between 1 and 6.")
 
@@ -735,7 +745,10 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
         if not gif_name:
             gif_name = "You_Should_Read_Grand_Blue_Dreaming"
 
-        factor_int = int(factor.lower().replace("x", ""))
+        try:
+            factor_int = int(factor.lower().replace("x", ""))
+        except ValueError:
+            return await ctx.send("factor needs to be a number like `2x`.")
         if not 1 <= factor_int <= 6:
             return await ctx.send("Please use a factor between 1 and 6.")
 
@@ -787,7 +800,10 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
         if not gif_name:
             gif_name = "You_Should_Read_Grand_Blue_Dreaming"
 
-        factor_int = int(factor.lower().replace("x", ""))
+        try:
+            factor_int = int(factor.lower().replace("x", ""))
+        except ValueError:
+            return await ctx.send("factor needs to be a number like `4x`.")
         if not 1 <= factor_int <= 10:
             return await ctx.send("Please use a factor between 1 and 10.")
 

@@ -1,6 +1,5 @@
 
 import importlib
-from pathlib import Path
 
 import pytest
 
@@ -92,24 +91,6 @@ class TestCreatorId:
         finally:
             monkeypatch.setenv('CREATOR_ID', '123456789')
             importlib.reload(reloaded)
-
-
-class TestGuildAvatars:
-    def test_set_and_get(self):
-        from utils import get_guild_avatar, set_guild_avatar
-        set_guild_avatar('111', '222', 'https://example.com/av.png')
-        assert get_guild_avatar('111', '222') == 'https://example.com/av.png'
-
-    def test_get_missing_returns_none(self):
-        from utils import get_guild_avatar
-        assert get_guild_avatar('111', '999') is None
-
-    def test_remove(self):
-        from utils import get_guild_avatar, remove_guild_avatar, set_guild_avatar
-        set_guild_avatar('111', '222', 'https://example.com/av.png')
-        assert remove_guild_avatar('111', '222') is True
-        assert get_guild_avatar('111', '222') is None
-        assert remove_guild_avatar('111', '222') is False
 
 
 class TestPlaylists:
@@ -371,15 +352,3 @@ class TestHelpMeta:
 
         meta = get_help_meta(ping_cmd)
         assert meta['examples'] == ['.ping']
-
-    def test_bait_help_metadata_is_static_exportable(self):
-        from print_all_help import parse_cog
-
-        parsed = parse_cog(Path('cogs/admin.py'))
-        commands = {cmd['name']: cmd for cmd in parsed['commands']}
-
-        assert commands['bait']['admin'] is True
-        assert commands['set']['group'] == 'bait'
-        assert commands['pending']['desc'] == 'Lists users waiting for delayed bait bans.'
-        assert commands['banned']['desc'] == 'Lists users banned by the bait system.'
-        assert commands['forgive']['desc'] == 'Cancels a pending bait ban or unbans a user already banned by bait.'

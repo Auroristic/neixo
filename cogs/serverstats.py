@@ -425,6 +425,10 @@ class LBPageView(discord.ui.View):
         self.bot_avatar_bytes: bytes | None = None
         self.message: discord.Message | None = None
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # only the command author may page through this leaderboard
+        return interaction.user.id == self.ctx.author.id
+
     async def fetch_assets(self):
         async with aiohttp.ClientSession() as s:
             tasks = [
@@ -535,11 +539,22 @@ class ServerStatsCog(commands.Cog):
 
     async def cog_load(self):
         _get_conn()
+        # bot.guilds is empty until the gateway connects (cog_load runs before
+        # bot.start) — seed VC join times as a background task after ready,
+        # otherwise members already in VC at restart silently lose their session
+        self._vc_seed_task = asyncio.create_task(self._seed_vc_join_times())
+
+    async def _seed_vc_join_times(self) -> None:
+        await self.bot.wait_until_ready()
         for guild in self.bot.guilds:
             for vc in guild.voice_channels:
                 for member in vc.members:
                     if not member.bot:
                         self._vc_join_times.setdefault(guild.id, {})[member.id] = time.time()
+
+    def cog_unload(self) -> None:
+        if getattr(self, "_vc_seed_task", None) and not self._vc_seed_task.done():
+            self._vc_seed_task.cancel()
 
     # ── Listeners ────────────────────────────────────────────────────
     @commands.Cog.listener()
@@ -719,7 +734,7 @@ class ServerStatsCog(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def starboard(self, ctx: commands.Context, channel: discord.TextChannel = None, emoji: str = None, threshold: int = None):
         if channel is None:
-            return await ctx.send_help(ctx.command)
+            return await ctx.send("-# `.starboard #channel [emoji] [threshold]` — or `.starboard emoji 😭` / `.starboard threshold 5`")
         conn = _get_conn()
         existing = conn.execute(
             "SELECT emoji, threshold FROM starboard_config WHERE guild_id = ?",
@@ -879,7 +894,7 @@ class ServerStatsCog(commands.Cog):
     @commands.cooldown(1, 10, commands.BucketType.channel)
     async def leaderboard(self, ctx: commands.Context):
         if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
+            await ctx.send("-# `.lb messages` — top 200 message senders · `.lb vctime` — voice time")
 
     @help_meta(
         usage="`.lb messages`",

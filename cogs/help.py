@@ -6,7 +6,7 @@ from typing import Any
 import discord
 from discord.ext import commands
 
-from utils import get_config, get_embed_color, help_meta, is_owner_or_creator
+from utils import get_aliases, get_config, get_embed_color, help_meta, is_owner_or_creator
 
 log = logging.getLogger(__name__)
 
@@ -268,8 +268,9 @@ class HelpCog(commands.Cog, name="Help"):
         guild_config = config.get(str(guild_id), {})
         whitelist = guild_config.get("whitelist", [])
         is_owner = is_owner_or_creator(ctx)
-        is_wl = str(ctx.author.id) in whitelist
-        has_admin = ctx.author.guild_permissions.administrator if ctx.guild else False
+        is_wl = str(ctx.author.id) in {str(uid) for uid in whitelist}
+        perms = getattr(ctx.author, "guild_permissions", None)
+        has_admin = perms.administrator if perms and ctx.guild else False
         if not ctx.guild:
             is_wl = False
             has_admin = False
@@ -285,6 +286,10 @@ class HelpCog(commands.Cog, name="Help"):
                 sec_label = d.get("section", "")
                 embed = _build_detail_embed(self.bot, color, cmd, d, cat_label, sec_label)
                 return await ctx.send(embed=embed)
+
+            # custom aliases aren't registered commands — show the real
+            # command's help instead of "not found"
+            cmd = get_aliases().get(cmd, cmd)
 
             real_cmd = self.bot.get_command(cmd)
             if real_cmd:

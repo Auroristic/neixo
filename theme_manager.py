@@ -344,7 +344,11 @@ def convert_font(text: str, font_key: str) -> str:
         return text
     table = info["table"]
     converted = text.translate(table)
-    return "\u200c".join(converted)
+    joined = "\u200c".join(converted)
+    # ZWNJ between every char nearly doubles length; channel names cap at 100
+    if len(joined) > 100:
+        return text
+    return joined
 
 def _build_reverse_font_map() -> dict[str, str]:
     rev: dict[str, str] = {}
@@ -358,7 +362,9 @@ _REVERSE_FONT_MAP: dict[str, str] = _build_reverse_font_map()
 
 def strip_font(text: str) -> str:
     """Best-effort: map styled unicode chars back to plain ASCII."""
-    return "".join(_REVERSE_FONT_MAP.get(c, c) for c in text)
+    cleaned = "".join(_REVERSE_FONT_MAP.get(c, c) for c in text)
+    # convert_font inserts ZWNJ between every char — remove leftovers
+    return cleaned.replace("\u200c", "")
 
 # ── Channel prefix helpers ────────────────────────────────────────
 

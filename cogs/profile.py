@@ -118,7 +118,10 @@ async def _apply_presence(
             _current_status = status
         if activity is not _UNSET:
             _current_activity = activity
-        await bot.change_presence(status=_current_status, activity=_current_activity)
+        try:
+            await bot.change_presence(status=_current_status, activity=_current_activity)
+        except Exception as e:
+            log.warning(f"failed to apply presence: {e}")
 
 
 # ── status rotation engine (.rpc) ───────────────────────────────
@@ -224,7 +227,8 @@ class _RPCManager:
         if self.bot:
             # clear the bot's activity AND the persisted "manual" activity
             # so the bot doesn't snap back to a stale value on next restart.
-            asyncio.create_task(_apply_presence(self.bot, activity=None))
+            # keep a reference so the task isn't garbage-collected mid-flight
+            self._clear_task = asyncio.create_task(_apply_presence(self.bot, activity=None))
             _save_presence(activity=None)
 
     async def _loop(self) -> None:
@@ -253,7 +257,10 @@ class _RPCManager:
         except Exception as e:
             log.warning(f"rpc loop crashed: {e}")
         finally:
-            self.task = None
+            # only clear if this is still the current task — _kick() may have
+            # replaced us while we were shutting down
+            if self.task is asyncio.current_task():
+                self.task = None
 
 
 rpc = _RPCManager()
@@ -277,7 +284,10 @@ _IMAGE_MAX_BYTES = 10 * 1024 * 1024
 async def _resolve_image_bytes(ctx: commands.Context, source: str | None) -> bytes | None:
     """Get image bytes from an attachment, a URL string, or None if neither."""
     if ctx.message.attachments:
-        return await ctx.message.attachments[0].read()
+        att = ctx.message.attachments[0]
+        if att.size > _IMAGE_MAX_BYTES:
+            return None
+        return await att.read()
     if not source or not source.startswith("https://"):
         return None
     if len(source) > 2000:
@@ -321,6 +331,9 @@ class ProfileCog(commands.Cog, name="Profile"):
         if rpc.task and not rpc.task.done():
             rpc.task.cancel()
         rpc.task = None
+        clear_task = getattr(rpc, "_clear_task", None)
+        if clear_task and not clear_task.done():
+            clear_task.cancel()
 
     @help_meta(
         usage="`.presence <online|idle|dnd|invisible>`",
@@ -484,6 +497,15 @@ class ProfileCog(commands.Cog, name="Profile"):
         except discord.HTTPException as e:
             await ctx.send(f"-# discord rejected it: {e}")
 
+    @help_meta(
+        usage="`.removeavatar`",
+        desc="Removes the server-specific bot avatar (falls back to the global one).",
+        owner=True,
+        section="Bot Profile",
+        examples=[".removeavatar"],
+        params=[],
+        note="Owner only.",
+    )
     @commands.command(name="removeavatar")
     @commands.guild_only()
     @commands.check(is_owner_or_creator)

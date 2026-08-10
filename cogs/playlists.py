@@ -16,10 +16,9 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
-# Music playlists are part of the music feature, which is CLOSED while in
-# development. Flip MUSIC_LOCKED in cogs/music.py to False to reopen.
-from cogs.music import MUSIC_LOCKED
-
+# Music playlists are part of the music feature, which is DISCONTINUED.
+# MUSIC_LOCKED is read at call time (import cogs.music) so .reload playlists
+# picks up changes and playlists.py never hard-depends on music.py.
 COG_META = {
     "category": "music",
     "commands": ["playlist"],
@@ -34,14 +33,15 @@ class Playlists(commands.Cog):
         self.bot = bot
 
     async def cog_check(self, ctx):
-        if ctx.guild is None:
-            await ctx.send("This command only works in servers.")
-            return False
-        if MUSIC_LOCKED and not is_owner_or_creator(ctx):
+        # read the flag at call time so .reload playlists picks up changes
+        import cogs.music
+        if cogs.music.MUSIC_LOCKED and not is_owner_or_creator(ctx):
             await ctx.send(
-                "🔒 music is **locked** — still in development. "
-                "only the bot owner, creator, or server owner can use it right now."
+                "music is discontinued, sorry. maybe one day it comes back, who knows."
             )
+            return False
+        if ctx.guild is None:
+            await ctx.send("this command only works in servers.")
             return False
         return True
 

@@ -31,6 +31,7 @@ from utils import (
     invalidate_aliases,
     invalidate_config,
     invalidate_ignore,
+    is_creator,
     is_owner_or_creator,
     load_json,
     mark_bait_banned,
@@ -217,7 +218,10 @@ class AdminCog(commands.Cog, name="Admin"):
             if guild:
                 await self._send_bait_log(guild, "Bait ban failed", [f"User ID: `{user_id}`", f"Reason: `{exc}`"])
         finally:
-            self._bait_tasks.pop((guild_id, user_id), None)
+            # only pop if we're still the registered task — a re-schedule
+            # may have replaced us under the same key while we were awaiting
+            if self._bait_tasks.get((guild_id, user_id)) is asyncio.current_task():
+                self._bait_tasks.pop((guild_id, user_id), None)
 
     async def _apply_bait_action(
         self, member: discord.Member, settings: dict, until: datetime,
@@ -388,7 +392,12 @@ class AdminCog(commands.Cog, name="Admin"):
             if not user:
                 return await ctx.send("`.whitelist @user` to toggle them")
 
-            uid = user.id
+            # Normalize legacy int entries to strings (old code stored str(user.id);
+            # readers compare str() so int entries never matched). Dedupes too.
+            whitelist_ids = list(dict.fromkeys(str(w) for w in whitelist_ids))
+            config[str(ctx.guild.id)]['whitelist'] = whitelist_ids
+
+            uid = str(user.id)
             if uid in whitelist_ids:
                 whitelist_ids.remove(uid)
                 save_json(CONFIG_FILE, config)
@@ -478,10 +487,8 @@ class AdminCog(commands.Cog, name="Admin"):
         note="Staff only (whitelisted users).",
     )
     async def ignore_user(self, ctx, user: discord.Member = None):
-        config = get_config()
-        guild_config = config.get(str(ctx.guild.id), {})
-        whitelist = guild_config.get('whitelist', [])
-        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in whitelist:
+        # the ignore list is GLOBAL (all guilds) — only the creator can manage it
+        if not is_creator(ctx.author.id):
             return await ctx.send("no perms")
         if not user:
             return await ctx.send(".ignore @user")
@@ -510,10 +517,12 @@ class AdminCog(commands.Cog, name="Admin"):
         note="Staff only (whitelisted users).",
     )
     async def ignore_list(self, ctx):
+        if ctx.guild is None:
+            return
         config = get_config()
         guild_config = config.get(str(ctx.guild.id), {})
         whitelist = guild_config.get('whitelist', [])
-        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in whitelist:
+        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in {str(uid) for uid in whitelist}:
             return await ctx.send("no perms")
         ignore_list = get_ignore_list()
         if not ignore_list:
@@ -543,7 +552,10 @@ class AdminCog(commands.Cog, name="Admin"):
     )
     async def confess_prefix(self, ctx, action: str = None, channel: discord.TextChannel = None):
         if action == "set":
-            if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
+            if ctx.guild is None:
+                return
+            perms = getattr(ctx.author, "guild_permissions", None)
+            if not is_owner_or_creator(ctx) and not (perms and perms.administrator):
                 await ctx.send("admin only")
                 return
 
@@ -585,7 +597,8 @@ class AdminCog(commands.Cog, name="Admin"):
             return await self._show_alias_list(ctx)
 
         # ── modifications: admin only ─────────────────────────
-        if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
+        perms = getattr(ctx.author, "guild_permissions", None)
+        if not is_owner_or_creator(ctx) and not (perms and perms.administrator):
             return await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
 
         action = args[0].lower()
@@ -1086,12 +1099,16 @@ class AdminCog(commands.Cog, name="Admin"):
         if len(args) < 2:
             return await ctx.send("-# usage: `.cmd allow <#channel>... <category|command>`")
 
-        target = args[-1].strip().lower()
+        target = args[-1].strip().lower().lstrip(".")
         channel_parts = list(args[:-1])
         channel_ids = self._parse_channel_ids(channel_parts)
 
         if not channel_ids:
             return await ctx.send("-# couldn't resolve any channels. use mentions or ids.")
+
+        known = getattr(self.bot, "_known_rule_targets", set()) or set()
+        if known and target not in known:
+            return await ctx.send(f"-# unknown command or category `{target}`.")
 
         set_cmd_channel_rule(ctx.guild.id, target, "allow", channel_ids)
         await ctx.send(f"-# allowed `{target}` only in {len(channel_ids)} channel(s).")
@@ -1117,12 +1134,16 @@ class AdminCog(commands.Cog, name="Admin"):
         if len(args) < 2:
             return await ctx.send("-# usage: `.cmd deny <#channel>... <category|command>`")
 
-        target = args[-1].strip().lower()
+        target = args[-1].strip().lower().lstrip(".")
         channel_parts = list(args[:-1])
         channel_ids = self._parse_channel_ids(channel_parts)
 
         if not channel_ids:
             return await ctx.send("-# couldn't resolve any channels. use mentions or ids.")
+
+        known = getattr(self.bot, "_known_rule_targets", set()) or set()
+        if known and target not in known:
+            return await ctx.send(f"-# unknown command or category `{target}`.")
 
         set_cmd_channel_rule(ctx.guild.id, target, "deny", channel_ids)
         await ctx.send(f"-# denied `{target}` in {len(channel_ids)} channel(s).")
@@ -1148,7 +1169,12 @@ class AdminCog(commands.Cog, name="Admin"):
             return await ctx.send("-# usage: `.cmd clear <category|command>`")
 
         # target can contain spaces; rebuild from all args
-        target = " ".join(a.strip() for a in args if a.strip()).lower()
+        target = " ".join(a.strip() for a in args if a.strip()).lower().lstrip(".")
+
+        known = getattr(self.bot, "_known_rule_targets", set()) or set()
+        if known and target not in known:
+            return await ctx.send(f"-# unknown command or category `{target}`.")
+
         clear_cmd_channel_rule(ctx.guild.id, target)
         await ctx.send(f"-# cleared rule for `{target}`.")
 
@@ -1170,7 +1196,7 @@ class AdminCog(commands.Cog, name="Admin"):
             return await ctx.send("-# administrator only")
 
         if args:
-            target = " ".join(a.strip() for a in args if a.strip()).lower()
+            target = " ".join(a.strip() for a in args if a.strip()).lower().lstrip(".")
             rule = get_cmd_channel_rule(ctx.guild.id, target)
             if not rule:
                 return await ctx.send(f"-# no rule for `{target}`.")

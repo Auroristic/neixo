@@ -191,11 +191,16 @@ class RemindersCog(commands.Cog, name="Reminders"):
         failed = []
         if due:
             for it in due:
+                # cap redelivery attempts so a blocked user can't cause an
+                # endless retry every 30s tick forever
+                if it.get("attempts", 0) >= 3:
+                    continue
                 u = self.bot.get_user(it["user_id"])
                 if u is None:
                     try:
                         u = await self.bot.fetch_user(it["user_id"])
                     except Exception:
+                        it["attempts"] = it.get("attempts", 0) + 1
                         failed.append(it)
                         continue
                 try:
@@ -207,6 +212,7 @@ class RemindersCog(commands.Cog, name="Reminders"):
                         )
                     )
                 except discord.HTTPException:
+                    it["attempts"] = it.get("attempts", 0) + 1
                     failed.append(it)
             if failed:
                 async with self._reminders_lock:
@@ -215,63 +221,66 @@ class RemindersCog(commands.Cog, name="Reminders"):
                     _save_reminders(state)
 
         # ── birthdays ────
-        bs = _load_birthdays()
-        today_md = now.strftime("%m-%d")
-        tomorrow_md = (now + timedelta(days=1)).strftime("%m-%d")
-        cur_year = now.year
-        changed = False
-        for it in bs["items"]:
-            md = it.get("month_day")
-            creator = None  # lazy-fetch only if we have something to send
+        # hold the lock across load-mutate-save so a concurrent `.bday add/remove`
+        # can't be clobbered by our stale snapshot (mirrors the reminder branch)
+        async with self._birthdays_lock:
+            bs = _load_birthdays()
+            today_md = now.strftime("%m-%d")
+            tomorrow_md = (now + timedelta(days=1)).strftime("%m-%d")
+            cur_year = now.year
+            changed = False
+            for it in bs["items"]:
+                md = it.get("month_day")
+                creator = None  # lazy-fetch only if we have something to send
 
-            # ── day-before reminder ────
-            if md == tomorrow_md and it.get("last_pre_notified_year") != cur_year:
-                creator = self.bot.get_user(it["creator_id"])
-                if creator is None:
-                    try:
-                        creator = await self.bot.fetch_user(it["creator_id"])
-                    except Exception:
-                        creator = None
-                if creator is not None:
-                    target_name = it.get("target_name", "someone")
-                    try:
-                        await creator.send(
-                            embed=discord.Embed(
-                                title="🎂 birthday tomorrow",
-                                description=f"heads up — **{target_name}**'s birthday is tomorrow.",
-                                color=0xFFB347,
-                            )
-                        )
-                    except discord.HTTPException:
-                        pass
-                    it["last_pre_notified_year"] = cur_year
-                    changed = True
-
-            # ── day-of reminder ────
-            if md == today_md and it.get("last_notified_year") != cur_year:
-                if creator is None:
+                # ── day-before reminder ────
+                if md == tomorrow_md and it.get("last_pre_notified_year") != cur_year:
                     creator = self.bot.get_user(it["creator_id"])
                     if creator is None:
                         try:
                             creator = await self.bot.fetch_user(it["creator_id"])
                         except Exception:
                             creator = None
-                if creator is not None:
-                    target_name = it.get("target_name", "someone")
-                    try:
-                        await creator.send(
-                            embed=discord.Embed(
-                                title="🎂 birthday today!",
-                                description=f"today is **{target_name}**'s birthday — go wish them.",
-                                color=0xFF8800,
+                    if creator is not None:
+                        target_name = it.get("target_name", "someone")
+                        try:
+                            await creator.send(
+                                embed=discord.Embed(
+                                    title="🎂 birthday tomorrow",
+                                    description=f"heads up — **{target_name}**'s birthday is tomorrow.",
+                                    color=0xFFB347,
+                                )
                             )
-                        )
-                    except discord.HTTPException:
-                        pass
-                    it["last_notified_year"] = cur_year
-                    changed = True
-        if changed:
-            _save_birthdays(bs)
+                        except discord.HTTPException:
+                            pass
+                        it["last_pre_notified_year"] = cur_year
+                        changed = True
+
+                # ── day-of reminder ────
+                if md == today_md and it.get("last_notified_year") != cur_year:
+                    if creator is None:
+                        creator = self.bot.get_user(it["creator_id"])
+                        if creator is None:
+                            try:
+                                creator = await self.bot.fetch_user(it["creator_id"])
+                            except Exception:
+                                creator = None
+                    if creator is not None:
+                        target_name = it.get("target_name", "someone")
+                        try:
+                            await creator.send(
+                                embed=discord.Embed(
+                                    title="🎂 birthday today!",
+                                    description=f"today is **{target_name}**'s birthday — go wish them.",
+                                    color=0xFF8800,
+                                )
+                            )
+                        except discord.HTTPException:
+                            pass
+                        it["last_notified_year"] = cur_year
+                        changed = True
+            if changed:
+                _save_birthdays(bs)
 
     # ── color helper that survives DMs ────────────────────────
     def _color(self, ctx) -> int:

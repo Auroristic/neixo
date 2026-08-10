@@ -21,6 +21,8 @@ COG_META = {
 
 def is_admin():
     async def predicate(ctx):
+        if ctx.guild is None:
+            return False
         return ctx.author.guild_permissions.administrator
     return commands.check(predicate)
 
@@ -83,6 +85,9 @@ class Vanity(commands.Cog):
     def format_msg(self, template, member):
         return (
             template
+            .replace("{{user}}", member.mention)
+            .replace("{{username}}", member.name)
+            .replace("{{server}}", member.guild.name)
             .replace("{user}", member.mention)
             .replace("{username}", member.name)
             .replace("{server}", member.guild.name)
@@ -244,11 +249,16 @@ class Vanity(commands.Cog):
             if channel_id and channel_msg and after.id not in self._welcomed:
                 channel = self.bot.get_channel(channel_id)
                 if channel:
+                    try:
+                        await channel.send(
+                            self.format_msg(channel_msg, after),
+                            allowed_mentions=discord.AllowedMentions(users=[after])
+                        )
+                    except discord.HTTPException:
+                        return
+                    # mark only after a successful send so a transient
+                    # failure doesn't permanently skip this user's welcome
                     self._welcomed.add(after.id)
-                    await channel.send(
-                        self.format_msg(channel_msg, after),
-                        allowed_mentions=discord.AllowedMentions(users=[after])
-                    )
         else:
             if role_id:
                 role = after.guild.get_role(role_id)

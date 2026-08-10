@@ -221,9 +221,6 @@ class ReplyModal(discord.ui.Modal, title="Reply Anonymously"):
                         name=f"Confession #{self.confession_id:03d} Replies",
                         auto_archive_duration=1440
                     )
-                    confession['thread_id'] = str(thread.id)
-                    confessions[confession_key] = confession
-                    save_json(CONFESSIONS_FILE, confessions)
                 except Exception as e:
                     await interaction.response.send_message(
                         f"Failed to create thread: {str(e)}",
@@ -231,32 +228,38 @@ class ReplyModal(discord.ui.Modal, title="Reply Anonymously"):
                     )
                     return
 
+            # everything below is one atomic read-modify-write: holding the
+            # lock across the await means concurrent replies or new confessions
+            # can't clobber each other (mirrors ConfessionModal)
             async with _confessions_lock:
                 confessions = load_json(CONFESSIONS_FILE)
-                confession = confessions.get(confession_key, confession)
+                confession = confessions.get(confession_key)
+                if confession is None:
+                    await interaction.response.send_message("Confession not found.", ephemeral=True)
+                    return
+                if confession.get('thread_id') != str(thread.id):
+                    confession['thread_id'] = str(thread.id)
+
                 reply_count = len(confession.get('replies', []))
                 reply_id = reply_count + 1
 
-            reply_embed = discord.Embed(
-                description=f"{self.reply_text.value}",
-                color=get_embed_color(interaction.guild_id),
-                timestamp=datetime.now(timezone.utc)
-            )
-            reply_embed.set_footer(text=f"Anonymous Reply #{reply_id:03d}")
+                reply_embed = discord.Embed(
+                    description=f"{self.reply_text.value}",
+                    color=get_embed_color(interaction.guild_id),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                reply_embed.set_footer(text=f"Anonymous Reply #{reply_id:03d}")
 
-            reply_message = await thread.send(embed=reply_embed)
+                reply_message = await thread.send(embed=reply_embed)
 
-            reply_data = {
-                'reply_id': reply_id,
-                'user_id': str(user_id),
-                'text': self.reply_text.value,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'message_id': str(reply_message.id)
-            }
+                reply_data = {
+                    'reply_id': reply_id,
+                    'user_id': str(user_id),
+                    'text': self.reply_text.value,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'message_id': str(reply_message.id)
+                }
 
-            async with _confessions_lock:
-                confessions = load_json(CONFESSIONS_FILE)
-                confession = confessions.get(confession_key, confession)
                 if 'replies' not in confession:
                     confession['replies'] = []
                 confession['replies'].append(reply_data)
@@ -352,7 +355,7 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
         guild_config = config.get(str(SEOULITIES_SERVER_ID), {})
         whitelist = guild_config.get('whitelist', [])
 
-        if str(ctx.author.id) not in whitelist:
+        if str(ctx.author.id) not in {str(uid) for uid in whitelist}:
             await ctx.send("no perms")
             return
 

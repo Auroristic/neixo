@@ -259,7 +259,7 @@ class FunCog(commands.Cog, name="Fun"):
         guild_config = config.get(str(ctx.guild.id), {})
         whitelist = guild_config.get("whitelist", [])
 
-        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in whitelist:
+        if not is_owner_or_creator(ctx) and str(ctx.author.id) not in {str(uid) for uid in whitelist}:
             return await ctx.send("no perms")
 
         if not member:
@@ -384,14 +384,15 @@ class FunCog(commands.Cog, name="Fun"):
             if not uwufied and not files:
                 return
 
-            await message.delete()
-
+            # send the webhook copy first, then delete the original —
+            # deleting first loses the user's message if the send fails
             await wh.send(
                 uwufied or "...",
                 username=message.author.display_name,
                 avatar_url=str(message.author.display_avatar.url),
                 files=files if files else discord.utils.MISSING,
             )
+            await message.delete()
         except Exception as e:
             log.warning(f"uwulock error: {e}")
             import traceback

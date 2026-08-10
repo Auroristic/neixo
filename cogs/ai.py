@@ -36,6 +36,7 @@ from utils import (
     help_meta,
     invalidate_config,
     invalidate_dm_whitelist,
+    is_creator,
     is_owner_or_creator,
     load_json,
     save_json,
@@ -2384,7 +2385,8 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         note="Owner only.",
     )
     async def dm_add(self, ctx, user: discord.User = None):
-        if not is_owner_or_creator(ctx):
+        # global bot-wide list — only the creator can touch it, not any guild owner
+        if not is_creator(ctx.author.id):
             return await ctx.send("owner only")
         if not user:
             return await ctx.send(".dmadd @user")
@@ -2409,7 +2411,8 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         note="Owner only.",
     )
     async def dm_remove(self, ctx, user: discord.User = None):
-        if not is_owner_or_creator(ctx):
+        # global bot-wide list — only the creator can touch it
+        if not is_creator(ctx.author.id):
             return await ctx.send("owner only")
         if not user:
             return await ctx.send(".dmremove @user")
@@ -2481,6 +2484,8 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         note="Owner only. Clears the AI's memory of past conversations.",
     )
     async def convo_reset(self, ctx, subcommand: str = None, user: discord.Member = None):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
         is_owner = is_owner_or_creator(ctx)
 
         if subcommand == "all":
@@ -2544,10 +2549,13 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         conversations = load_json(CONVERSATIONS_FILE)
         user_key      = f"{ctx.guild.id}_{ctx.channel.id}"
         save_json(f"{DATA_DIR}/conversations_backup.json", conversations)
+        # stored usernames are sanitized at write time — compare against the
+        # sanitized form or the wipe silently keeps every message
+        stored_name = _sanitize_name(str(target.name))
         if user_key in conversations:
             conversations[user_key] = [
                 msg for msg in conversations[user_key]
-                if msg.get("username") != str(target.name)
+                if msg.get("username") != stored_name
             ]
             save_json(CONVERSATIONS_FILE, conversations)
         await confirm_msg.edit(content=f"done, wiped {who} messages from convo memory here.")
@@ -2570,6 +2578,8 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         note="Owner only.",
     )
     async def convo_refresh(self, ctx, subcommand: str = None):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
 
@@ -2662,6 +2672,8 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         note="Owner only. Memory notes are stored separately from conversation history.",
     )
     async def memory_reset(self, ctx, user: discord.Member = None):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
         is_owner = is_owner_or_creator(ctx)
         target   = user if (user and is_owner) else ctx.author
         if user and not is_owner:

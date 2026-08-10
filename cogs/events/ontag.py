@@ -26,7 +26,10 @@ class OnTag(commands.Cog):
                 color=get_embed_color(message.guild.id)
             )
             embed.set_thumbnail(url=message.author.display_avatar.url)
-            await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            try:
+                await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                pass
 
 
 async def setup(bot):

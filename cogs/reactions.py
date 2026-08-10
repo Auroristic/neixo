@@ -484,18 +484,6 @@ class ReactionsCog(commands.Cog, name="Reactions"):
         self.bot = bot
 
     @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
-        if user.bot or not reaction.message.guild:
-            return
-        _rc_upsert(reaction.message.guild.id, user.id, _emoji_str(reaction.emoji), 1)
-
-    @commands.Cog.listener()
-    async def on_reaction_remove(self, reaction, user):
-        if user.bot or not reaction.message.guild:
-            return
-        _rc_upsert(reaction.message.guild.id, user.id, _emoji_str(reaction.emoji), -1)
-
-    @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         if payload.guild_id is None or payload.user_id == self.bot.user.id:
             return

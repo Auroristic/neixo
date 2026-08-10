@@ -49,10 +49,9 @@ from neixoconfig import Neixocolor, Neixoemojis
 from utils import help_meta, is_owner_or_creator
 
 # ── cogs/music.py ───────────────────────────────────────────────
-# Music is CLOSED to everyone except the bot owner/creator and the
-# server owner while the feature is still in development (YouTube
-# playback is currently IP-flagged and partially broken). Flip
-# MUSIC_LOCKED to False to reopen.
+# Music is DISCONTINUED for everyone except the bot owner/creator and
+# the server owner (for testing). The code is kept — it's valuable.
+# Flip MUSIC_LOCKED to False to reopen for everyone.
 MUSIC_LOCKED = True
 
 COG_META = {
@@ -125,14 +124,13 @@ class Music(commands.Cog):
         self._pending_playback_retries: dict[int, str] = {}
 
     async def cog_check(self, ctx: commands.Context) -> bool:
-        """Lock music behind owner/creator/server-owner while in development."""
+        """Music is discontinued — only owner/creator/server-owner can still test it."""
         if ctx.guild is None:
             await ctx.send("this command only works in servers.")
             return False
         if MUSIC_LOCKED and not is_owner_or_creator(ctx):
             await ctx.send(
-                "🔒 music is **locked** — still in development. "
-                "only the bot owner, creator, or server owner can use it right now."
+                "music is discontinued, sorry. maybe one day it comes back, who knows."
             )
             return False
         return True
@@ -145,6 +143,12 @@ class Music(commands.Cog):
         await _spotify.close()
         if self._http_session and not self._http_session.closed:
             await self._http_session.close()
+        # cancel live lyrics loops and drop stale views so a reload doesn't leak them
+        for task in list(self._live_tasks.values()):
+            task.cancel()
+        self._live_tasks.clear()
+        self._live_msgs.clear()
+        self._np_views.clear()
 
     def _clean_query(self, text: str) -> str:
         text = re.sub(r'\s*\([^)]*\)', '', text)
@@ -414,7 +418,10 @@ class Music(commands.Cog):
         except asyncio.CancelledError:
             pass
         finally:
-            self._live_tasks.pop(guild_id, None)
+            # only pop if this is still the registered task — a restarted
+            # lyrics loop may have replaced us under the same key
+            if self._live_tasks.get(guild_id) is asyncio.current_task():
+                self._live_tasks.pop(guild_id, None)
 
     async def _check_vc(self, ctx: commands.Context) -> bool:
         if not ctx.guild:

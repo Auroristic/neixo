@@ -300,7 +300,7 @@ class MiscCog(commands.Cog, name="Misc"):
         guild_config = config.get(guild_id, {})
         whitelist = guild_config.get('whitelist', [])
 
-        if str(ctx.author.id) not in whitelist:
+        if str(ctx.author.id) not in {str(uid) for uid in whitelist}:
             await ctx.send("no perms?")
             return
 
@@ -335,7 +335,7 @@ class MiscCog(commands.Cog, name="Misc"):
         guild_config = config.get(guild_id, {})
         whitelist = guild_config.get('whitelist', [])
 
-        if str(ctx.author.id) not in whitelist:
+        if str(ctx.author.id) not in {str(uid) for uid in whitelist}:
             await ctx.send("no perms?")
             return
 
