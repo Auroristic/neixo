@@ -75,8 +75,9 @@ class _FontSet:
     """Primary font + fallbacks. draw() picks a font per glyph so stylized
     unicode names render instead of tofu boxes."""
 
-    def __init__(self, primary: ImageFont.ImageFont, fallback_paths: list[str]):
+    def __init__(self, primary: ImageFont.ImageFont, primary_path: str, fallback_paths: list[str]):
         self.primary = primary
+        self._primary_path = primary_path if os.path.isfile(primary_path) else ""
         self._paths = [pth for pth in fallback_paths if os.path.isfile(pth)]
 
     _ft_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
@@ -95,9 +96,11 @@ class _FontSet:
     def pick(self, ch: str) -> ImageFont.ImageFont:
         if _FONTTOOLS_OK and isinstance(self.primary, ImageFont.FreeTypeFont):
             cp = ord(ch)
-            for pth in self._paths:
-                if cp in _font_cmap(pth):
-                    return self._fallback_font(pth)
+            # primary font wins unless it lacks the glyph
+            if self._primary_path and cp not in _font_cmap(self._primary_path):
+                for pth in self._paths:
+                    if cp in _font_cmap(pth):
+                        return self._fallback_font(pth)
         return self.primary
 
     def getlength(self, text: str) -> int:
@@ -138,15 +141,15 @@ class _FontSet:
 def _load_font(size: int, bold: bool = False) -> _FontSet:
     for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
         try:
-            return _FontSet(ImageFont.truetype(p, size), list(_FALLBACK_FONT_PATHS))
+            return _FontSet(ImageFont.truetype(p, size), p, list(_FALLBACK_FONT_PATHS))
         except Exception:
             continue
     for fp in _FALLBACK_FONT_PATHS:
         try:
-            return _FontSet(ImageFont.truetype(fp, size), [])
+            return _FontSet(ImageFont.truetype(fp, size), fp, [])
         except Exception:
             continue
-    return _FontSet(ImageFont.load_default(), [])
+    return _FontSet(ImageFont.load_default(), "", [])
 
 
 # ── Database ────────────────────────────────────────────────────────
