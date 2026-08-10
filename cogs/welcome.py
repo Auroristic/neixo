@@ -1,0 +1,194 @@
+"""
+cogs/welcome.py  —  image welcome cards on member join
+"""
+
+import asyncio
+import io
+import logging
+
+import aiohttp
+import discord
+from discord.ext import commands
+
+from utils import DATA_DIR, help_meta, is_owner_or_creator, load_json, save_json
+
+log = logging.getLogger(__name__)
+
+WELCOME_FILE = f"{DATA_DIR}/welcome.json"
+
+COG_META = {
+    "category": "general",
+    "label": "General",
+    "desc": "Image welcome cards for new members.",
+}
+
+
+def _render_welcome_card(
+    avatar_bytes: bytes | None,
+    banner_bytes: bytes | None,
+    guild_name: str,
+    member_name: str,
+    member_count: int,
+) -> io.BytesIO:
+    from PIL import Image, ImageDraw, ImageFilter
+    from cogs.serverstats import _circle_avatar, _load_font
+
+    W, H = 900, 500
+    if banner_bytes:
+        try:
+            base = Image.open(io.BytesIO(banner_bytes)).convert("RGB")
+        except Exception:
+            base = Image.new("RGB", (W, H), (30, 30, 40))
+    elif avatar_bytes:
+        try:
+            base = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
+        except Exception:
+            base = Image.new("RGB", (W, H), (30, 30, 40))
+    else:
+        base = Image.new("RGB", (W, H), (30, 30, 40))
+    bg = base.resize((W, H), Image.Resampling.LANCZOS)
+    bg = bg.filter(ImageFilter.GaussianBlur(45))
+    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
+
+    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    for y in range(H):
+        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(70 * (y / H))))
+    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    draw = ImageDraw.Draw(bg)
+
+    title_font = _load_font(44, bold=True)
+    sub_font = _load_font(24, bold=False)
+
+    av_size = 150
+    if avatar_bytes:
+        try:
+            av = _circle_avatar(avatar_bytes, av_size)
+            bg.paste(av, ((W - av_size) // 2, 60), av)
+        except Exception:
+            pass
+
+    draw.text((W // 2, 240), "welcome", font=title_font, fill=(255, 255, 255, 255), anchor="mm")
+    name = member_name if len(member_name) <= 40 else member_name[:39] + "\u2026"
+    draw.text((W // 2, 300), name, font=sub_font, fill=(255, 255, 255, 200), anchor="mm")
+    draw.text(
+        (W // 2, 345),
+        f"member #{member_count:,} of {guild_name}" if len(guild_name) <= 45 else f"member #{member_count:,}",
+        font=sub_font,
+        fill=(255, 255, 255, 140),
+        anchor="mm",
+    )
+
+    buf = io.BytesIO()
+    bg.convert("RGB").save(buf, format="PNG", quality=92)
+    buf.seek(0)
+    return buf
+
+
+class Welcome(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.group(name="welcome", invoke_without_command=True)
+    @help_meta(
+        usage="`.welcome setup #channel [message]`  ·  `.welcome off`  ·  `.welcome status`",
+        desc="Image welcome cards for new members.",
+        section="General",
+        examples=[".welcome setup #welcome hey {user} welcome!"],
+        params=[],
+        note="admin only. `{user}` in the message becomes the new member's mention.",
+    )
+    async def welcome(self, ctx: commands.Context):
+        await ctx.send(
+            "-# welcome commands: `.welcome setup #channel [message]` · `.welcome off` · `.welcome status`"
+        )
+
+    async def _admin(self, ctx) -> bool:
+        if ctx.guild is None:
+            return False
+        if is_owner_or_creator(ctx):
+            return True
+        perms = getattr(ctx.author, "guild_permissions", None)
+        return bool(perms and perms.administrator)
+
+    @welcome.command(name="setup")
+    async def welcome_setup(self, ctx: commands.Context, channel: discord.TextChannel = None, *, message: str = None):
+        if not await self._admin(ctx):
+            return await ctx.send("-# admin only")
+        if channel is None:
+            return await ctx.send("-# usage: `.welcome setup #channel [message]`")
+        state = load_json(WELCOME_FILE) or {}
+        state[str(ctx.guild.id)] = {
+            "channel_id": str(channel.id),
+            "message": (message.strip()[:500] if message else None),
+        }
+        save_json(WELCOME_FILE, state)
+        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+
+    @welcome.command(name="off")
+    async def welcome_off(self, ctx: commands.Context):
+        if not await self._admin(ctx):
+            return await ctx.send("-# admin only")
+        state = load_json(WELCOME_FILE) or {}
+        if state.pop(str(ctx.guild.id), None):
+            save_json(WELCOME_FILE, state)
+        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+
+    @welcome.command(name="status")
+    async def welcome_status(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        conf = (load_json(WELCOME_FILE) or {}).get(str(ctx.guild.id))
+        if not conf:
+            return await ctx.send("-# welcome cards are off. `.welcome setup #channel` to turn on.")
+        ch = ctx.guild.get_channel(int(conf["channel_id"]))
+        await ctx.send(f"-# welcome cards on in {ch.mention if ch else conf['channel_id']}.")
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        conf = (load_json(WELCOME_FILE) or {}).get(str(member.guild.id))
+        if not conf:
+            return
+        channel = member.guild.get_channel(int(conf["channel_id"]))
+        if channel is None:
+            return
+
+        avatar_bytes = banner_bytes = None
+        try:
+            async with aiohttp.ClientSession() as s:
+                async def _get(url):
+                    try:
+                        async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                            return await r.read() if r.status == 200 else None
+                    except Exception:
+                        return None
+                tasks = [_get(member.display_avatar.url), _get(member.guild.banner.url) if member.guild.banner else _noop()]
+                results = await asyncio.gather(*tasks)
+                avatar_bytes, banner_bytes = results[0], results[1]
+        except Exception:
+            pass
+
+        buf = await asyncio.to_thread(
+            _render_welcome_card,
+            avatar_bytes,
+            banner_bytes,
+            member.guild.name,
+            member.display_name,
+            member.guild.member_count or len(member.guild.members),
+        )
+        text = (conf.get("message") or "").replace("{user}", member.mention)
+        try:
+            if text:
+                await channel.send(text, file=discord.File(fp=buf, filename="welcome.png"))
+            else:
+                await channel.send(file=discord.File(fp=buf, filename="welcome.png"))
+        except discord.HTTPException:
+            pass
+
+
+async def _noop():
+    return None
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Welcome(bot))

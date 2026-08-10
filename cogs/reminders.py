@@ -58,6 +58,18 @@ def parse_when(s: str) -> datetime | None:
     return None
 
 
+def parse_interval(s: str) -> int | None:
+    """Parse a repeat interval like `5m`, `2h`, `1d`, `1w` → seconds."""
+    s = s.strip().lower()
+    m = _REL_RE.match(s)
+    if not m:
+        return None
+    n = int(m.group(1))
+    if n <= 0:
+        return None
+    return n * _REL_UNITS[m.group(2)]
+
+
 def parse_bday(s: str) -> str | None:
     """Parse a date → 'MM-DD' string. Year is ignored (yearly recurring)."""
     s = s.strip()
@@ -189,6 +201,7 @@ class RemindersCog(commands.Cog, name="Reminders"):
                 state["items"] = kept
                 _save_reminders(state)
         failed = []
+        reschedule = []
         if due:
             for it in due:
                 # cap redelivery attempts so a blocked user can't cause an
@@ -214,10 +227,17 @@ class RemindersCog(commands.Cog, name="Reminders"):
                 except discord.HTTPException:
                     it["attempts"] = it.get("attempts", 0) + 1
                     failed.append(it)
-            if failed:
+                    continue
+                if it.get("recurring") and it.get("interval_seconds"):
+                    nxt = it.copy()
+                    nxt["trigger_iso"] = (_now_utc() + timedelta(seconds=it["interval_seconds"])).isoformat()
+                    nxt["attempts"] = 0
+                    reschedule.append(nxt)
+            if failed or reschedule:
                 async with self._reminders_lock:
                     state = _load_reminders()
                     state["items"].extend(failed)
+                    state["items"].extend(reschedule)
                     _save_reminders(state)
 
         # ── birthdays ────
@@ -288,15 +308,15 @@ class RemindersCog(commands.Cog, name="Reminders"):
 
     # ── .remind ────────────────────────────────────────────
     @help_meta(
-        usage="`.remind <when> <text>`  ·  `.remind list`  ·  `.remind cancel <id>`",
-        desc="DM-yourself reminder. `<when>` accepts relative (`5s`, `5m`, `2h`, `2d`, `1w`) or absolute (`YYYY/MM/DD [HH:MM]`) time.",
+        usage="`.remind <when> <text>`  ·  `.remind every <interval> <text>`  ·  `.remind list`  ·  `.remind cancel <id>`",
+        desc="DM-yourself reminder. `<when>` accepts relative (`5s`, `5m`, `2h`, `2d`, `1w`) or absolute (`YYYY/MM/DD [HH:MM]`) time. Use `every` for recurring reminders.",
         section="Reminders",
-        examples=[".remind 5m take out pizza rolls", ".remind 2026/12/25 it's christmas!", ".remind list"],
+        examples=[".remind 5m take out pizza rolls", ".remind every 1d water the plants", ".remind 2026/12/25 it's christmas!", ".remind list"],
         params=[
-            {"name": "when", "type": "str", "required": True, "desc": "Time spec: relative (`5m`, `2h`, `1d`) or absolute (`2026/12/25 14:30`)."},
+            {"name": "when", "type": "str", "required": True, "desc": "Time spec: relative (`5m`, `2h`, `1d`), absolute (`2026/12/25 14:30`), or `every` for recurring."},
             {"name": "text", "type": "str", "required": True, "desc": "Reminder message (max 500 chars)."},
         ],
-        note="You will receive a DM when the reminder triggers. Time is UTC.",
+        note="You will receive a DM when the reminder triggers. Time is UTC. Recurring: `.remind every 1d <text>`.",
     )
     @commands.group(name="remind", aliases=["reminder"], invoke_without_command=True)
     async def remind(self, ctx, when: str = None, *, text: str = None):
@@ -305,28 +325,49 @@ class RemindersCog(commands.Cog, name="Reminders"):
                 "-# usage: `.remind <when> <text>`\n"
                 "-# • relative: `5s`, `5m`, `2h`, `2d`, `1w`\n"
                 "-# • absolute: `2026/11/08` or `2026/11/08 14:30` (UTC)\n"
+                "-# • recurring: `.remind every 1d <text>`\n"
                 "-# • `.remind list` · `.remind cancel <id>`"
             )
-        trig = parse_when(when)
-        if not trig:
-            return await ctx.send("-# couldn't parse that time. try `5m`, `2h`, or `2026/11/08`")
-        if trig <= _now_utc():
-            return await ctx.send("-# that time is in the past")
+
+        entry = {
+            "user_id": ctx.author.id,
+            "text": text.strip()[:500],
+            "created_iso": _now_utc().isoformat(),
+        }
+
+        if when == "every":
+            iv_text, sep, rest = (text.strip() + " ").partition(" ")
+            interval = parse_interval(iv_text)
+            if not interval or not rest.strip():
+                return await ctx.send(
+                    "-# usage: `.remind every <interval> <text>` — e.g. `.remind every 1d water the plants`"
+                )
+            entry["interval_seconds"] = interval
+            entry["recurring"] = True
+            entry["text"] = rest.strip()[:500]
+            trig = _now_utc() + timedelta(seconds=interval)
+        else:
+            trig = parse_when(when)
+            if not trig:
+                return await ctx.send("-# couldn't parse that time. try `5m`, `2h`, or `2026/11/08`")
+            if trig <= _now_utc():
+                return await ctx.send("-# that time is in the past")
 
         async with self._reminders_lock:
             state = _load_reminders()
             rid = state["next_id"]
             state["next_id"] = rid + 1
-            state["items"].append({
-                "id": rid,
-                "user_id": ctx.author.id,
-                "trigger_iso": trig.isoformat(),
-                "text": text.strip()[:500],
-                "created_iso": _now_utc().isoformat(),
-            })
+            entry["id"] = rid
+            entry["trigger_iso"] = trig.isoformat()
+            state["items"].append(entry)
             _save_reminders(state)
         delta = trig - _now_utc()
-        await ctx.send(f"-# got u — DMing in **{_format_delta(delta)}** (`#{rid}`)")
+        if entry.get("recurring"):
+            await ctx.send(
+                f"-# got u — DMing every **{_format_delta(timedelta(seconds=entry['interval_seconds']))}**, first in **{_format_delta(delta)}** (`#{rid}`)"
+            )
+        else:
+            await ctx.send(f"-# got u — DMing in **{_format_delta(delta)}** (`#{rid}`)")
 
     @help_meta(
         usage=".remind list",
@@ -355,7 +396,11 @@ class RemindersCog(commands.Cog, name="Reminders"):
             except Exception:
                 in_str = "?"
             text_preview = it["text"][:80] + ("…" if len(it["text"]) > 80 else "")
-            lines.append(f"`#{it['id']}` in **{in_str}** — {text_preview}")
+            if it.get("recurring") and it.get("interval_seconds"):
+                interval_str = _format_delta(timedelta(seconds=it["interval_seconds"]))
+                lines.append(f"`#{it['id']}` every **{interval_str}** (next in **{in_str}**) — {text_preview}")
+            else:
+                lines.append(f"`#{it['id']}` in **{in_str}** — {text_preview}")
         embed = discord.Embed(
             title="your reminders",
             description="\n".join(lines),

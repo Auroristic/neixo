@@ -521,6 +521,235 @@ class LBPageView(discord.ui.View):
                 pass
 
 
+# ── Emoji usage leaderboard (reaction_stats based) ──────────────────
+_emoji_img_cache: dict[str, bytes] = {}
+_EMOJI_CACHE_MAX = 200
+
+
+def _render_emoji_card(
+    icon_bytes: bytes | None,
+    title: str,
+    subtitle: str,
+    rows: list[tuple[int, str, bytes | None, int]],
+    page_str: str,
+    bot_avatar_bytes: bytes | None,
+    user_rank_text: str,
+) -> io.BytesIO:
+    W, H = 900, 1100
+    if icon_bytes:
+        try:
+            base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
+        except Exception:
+            base = Image.new("RGB", (W, H), (30, 30, 40))
+    else:
+        base = Image.new("RGB", (W, H), (30, 30, 40))
+    bg = base.resize((W, H), Image.Resampling.LANCZOS)
+    bg = bg.filter(ImageFilter.GaussianBlur(45))
+    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
+
+    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    for y in range(H):
+        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(80 * (y / H))))
+    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+
+    card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(card)
+    pad = 50
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, fill=(255, 255, 255, 14))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, outline=(255, 255, 255, 45), width=1)
+    bg = Image.alpha_composite(bg, card)
+    draw = ImageDraw.Draw(bg)
+
+    title_font    = _load_font(44, bold=True)
+    subtitle_font = _load_font(24, bold=False)
+    rank_font     = _load_font(30, bold=True)
+    name_font     = _load_font(30, bold=False)
+    count_font    = _load_font(30, bold=True)
+    footer_font   = _load_font(20, bold=False)
+    footer_bold   = _load_font(20, bold=True)
+
+    draw.text((90, 80), title, font=title_font, fill=(255, 255, 255, 255))
+    draw.text((90, 140), subtitle, font=subtitle_font, fill=(255, 255, 255, 170))
+    draw.line([(90, 200), (W - 90, 200)], fill=(255, 255, 255, 60), width=1)
+
+    start_y = 230
+    row_h   = 70
+    rank_x  = 90
+    emoji_x = 170
+    name_x  = 250
+    count_x = W - 90
+
+    tints = {
+        1: (255, 215, 64, 255),
+        2: (200, 200, 210, 255),
+        3: (205, 127, 50, 255),
+    }
+
+    for i, (rank, name, img_bytes, count) in enumerate(rows):
+        y = start_y + i * row_h
+        rank_color = tints.get(rank, (255, 255, 255, 235))
+        draw.text((rank_x, y), f"{rank}.", font=rank_font, fill=rank_color)
+
+        if img_bytes:
+            try:
+                e = _circle_avatar(img_bytes, 44)
+                bg.paste(e, (emoji_x, y - 2), e)
+            except Exception:
+                pass
+
+        name_disp = name
+        max_w = (count_x - 90) - name_x
+        if draw.textbbox((0, 0), name_disp, font=name_font)[2] > max_w:
+            while name_disp and draw.textbbox((0, 0), name_disp + "\u2026", font=name_font)[2] > max_w:
+                name_disp = name_disp[:-1]
+            name_disp = (name_disp + "\u2026") if name_disp else "\u2026"
+        draw.text((name_x, y), name_disp, font=name_font, fill=(255, 255, 255, 220))
+
+        count_str = f"{count:,} uses"
+        cw = draw.textbbox((0, 0), count_str, font=count_font)[2]
+        draw.text((count_x - cw, y), count_str, font=count_font, fill=rank_color)
+
+    footer_y = H - 130
+    draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
+    if bot_avatar_bytes:
+        try:
+            av = _circle_avatar(bot_avatar_bytes, 40)
+            bg.paste(av, (90, footer_y + 22), av)
+        except Exception:
+            pass
+    draw.text((144, footer_y + 20), user_rank_text, font=footer_font, fill=(255, 255, 255, 160))
+
+    pw = draw.textbbox((0, 0), page_str, font=footer_font)[2]
+    draw.text((W - 90 - pw, footer_y + 28), page_str, font=footer_font, fill=(255, 255, 255, 160))
+
+    buf = io.BytesIO()
+    bg.convert("RGB").save(buf, format="PNG", quality=92)
+    buf.seek(0)
+    return buf
+
+
+def _emoji_display_name(emoji_str: str) -> str:
+    m = re.match(r"<(a?):(\w+):\d+>", emoji_str)
+    if m:
+        return f":{m.group(2)}:"
+    return emoji_str
+
+
+class EmojiLBView(discord.ui.View):
+    def __init__(self, bot, ctx, emoji_counts: list[tuple[str, int]], title, subtitle, per_page=10):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.ctx = ctx
+        self.emoji_counts = emoji_counts
+        self.title = title
+        self.subtitle = subtitle
+        self.per_page = per_page
+        self.page = 0
+        self.total = max(1, (len(emoji_counts) - 1) // per_page + 1)
+        self.icon_bytes: bytes | None = None
+        self.bot_avatar_bytes: bytes | None = None
+        self.message: discord.Message | None = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.ctx.author.id
+
+    async def fetch_assets(self):
+        async with aiohttp.ClientSession() as s:
+            tasks = [
+                self._fetch(s, self.bot.user.display_avatar.url),
+                self._fetch(s, self.ctx.author.display_avatar.url),
+            ]
+            results = await asyncio.gather(*tasks)
+            self.icon_bytes = results[0]
+            self.bot_avatar_bytes = results[1]
+
+    async def _fetch(self, session: aiohttp.ClientSession, url: str) -> bytes | None:
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                if r.status == 200:
+                    return await r.read()
+        except Exception:
+            return None
+
+    async def _emoji_images(self, page_emojis: list[str]) -> dict[str, bytes | None]:
+        out: dict[str, bytes | None] = {}
+        need: list[str] = []
+        for e in page_emojis:
+            if e in _emoji_img_cache:
+                out[e] = _emoji_img_cache[e]
+            else:
+                need.append(e)
+        if need:
+            async with aiohttp.ClientSession() as s:
+                async def _get(e):
+                    url = _emoji_to_url(e)
+                    if not url:
+                        return e, None
+                    b = await _fetch_emoji_bytes(url, s)
+                    return e, b
+                for e, b in await asyncio.gather(*[_get(e) for e in need]):
+                    out[e] = b
+                    if b and len(_emoji_img_cache) < _EMOJI_CACHE_MAX:
+                        _emoji_img_cache[e] = b
+        return out
+
+    async def render_file(self) -> discord.File:
+        start = self.page * self.per_page
+        chunk = self.emoji_counts[start:start + self.per_page]
+        imgs = await self._emoji_images([e for e, _ in chunk])
+        named = [
+            (rank, _emoji_display_name(e), imgs.get(e), count)
+            for rank, (e, count) in enumerate(chunk, start=start + 1)
+        ]
+        page_str = f"page {self.page + 1}/{self.total}  \u00b7  {len(self.emoji_counts)} emoji"
+        rank_text = f"top {len(self.emoji_counts)} most reacted emoji in /{self.ctx.guild.name}"
+        buf = await asyncio.to_thread(
+            _render_emoji_card,
+            self.icon_bytes,
+            self.title,
+            self.subtitle,
+            named,
+            page_str,
+            self.bot_avatar_bytes,
+            rank_text,
+        )
+        return discord.File(fp=buf, filename="emoji_leaderboard.png")
+
+    async def _refresh(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        try:
+            file = await self.render_file()
+            await interaction.message.edit(attachments=[file], view=self)
+        except Exception as e:
+            log.warning("emoji leaderboard refresh failed: %s", e)
+
+    @discord.ui.button(label="\u25c0", style=discord.ButtonStyle.secondary)
+    async def prev(self, interaction: discord.Interaction, _btn):
+        if self.page > 0:
+            self.page -= 1
+            await self._refresh(interaction)
+        else:
+            await interaction.response.defer()
+
+    @discord.ui.button(label="\u25b6", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: discord.Interaction, _btn):
+        if self.page + 1 < self.total:
+            self.page += 1
+            await self._refresh(interaction)
+        else:
+            await interaction.response.defer()
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except Exception:
+                pass
+
+
 # ── Cog ─────────────────────────────────────────────────────────────
 COG_META = {
     "category": "general",
@@ -938,6 +1167,38 @@ class ServerStatsCog(commands.Cog):
             title="VC Time Leaderboard",
             subtitle=f"most time in voice in /{ctx.guild.name}",
             unit="",
+        )
+        await view.fetch_assets()
+        file = await view.render_file()
+        view.message = await ctx.send(file=file, view=view)
+
+    @help_meta(
+        usage="`.lb emojis`",
+        desc="Shows the most used emoji in the server, from reaction stats.",
+        section="Leaderboards",
+        examples=[".lb emojis"],
+        params=[],
+        note="counts every reaction added in the server.",
+    )
+    @leaderboard.command(name="emojis", aliases=["emj", "emoji", "lbe"])
+    async def lb_emojis(self, ctx: commands.Context):
+        try:
+            conn = _get_react_conn_ro()
+        except Exception:
+            return await ctx.send("-# no reaction data yet.")
+        if conn is None:
+            return await ctx.send("-# no reaction data yet.")
+        rows = conn.execute(
+            "SELECT emoji, SUM(count) as total FROM reaction_stats "
+            "WHERE guild_id = ? GROUP BY emoji ORDER BY total DESC LIMIT 30",
+            (ctx.guild.id,),
+        ).fetchall()
+        if not rows:
+            return await ctx.send("-# no reaction data yet. go react to stuff.")
+        view = EmojiLBView(
+            self.bot, ctx, [(e, c) for e, c in rows],
+            title="Emoji Leaderboard",
+            subtitle=f"most used emoji in /{ctx.guild.name}",
         )
         await view.fetch_assets()
         file = await view.render_file()

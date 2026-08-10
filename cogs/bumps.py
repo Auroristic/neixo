@@ -62,6 +62,16 @@ def _get_conn() -> _sql.Connection:
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
+        # pre-existing tables (created before the streak columns existed)
+        # won't get them from CREATE IF NOT EXISTS — migrate in place
+        cols = [r[1] for r in _bump_conn.execute("PRAGMA table_info(bump_counts)").fetchall()]
+        if "current_streak" not in cols:
+            _bump_conn.executescript(
+                "ALTER TABLE bump_counts ADD COLUMN current_streak INTEGER DEFAULT 0;"
+                "ALTER TABLE bump_counts ADD COLUMN best_streak INTEGER DEFAULT 0;"
+                "ALTER TABLE bump_counts ADD COLUMN streak_updated TEXT;"
+            )
+            _bump_conn.commit()
     return _bump_conn
 
 
@@ -111,17 +121,37 @@ class Bumps(commands.Cog):
 
         async with self._lock:
             conn = _get_conn()
-            conn.execute(
-                "INSERT INTO bump_counts (guild_id, user_id, count, last_bump) "
-                "VALUES (?, ?, 1, ?) "
-                "ON CONFLICT(guild_id, user_id) DO UPDATE SET "
-                "count = count + 1, last_bump = excluded.last_bump",
-                (
-                    str(message.guild.id),
-                    str(bumper_id),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
+            gid, uid = str(message.guild.id), str(bumper_id)
+            now_iso = datetime.now(timezone.utc).isoformat()
+            # streak = consecutive bumps by the same person: if the previous
+            # bump in this guild was also theirs, the streak grows; anyone
+            # else bumping in between resets it to 1
+            prev = conn.execute(
+                "SELECT user_id, current_streak FROM bump_counts "
+                "WHERE guild_id = ? AND streak_updated = "
+                "(SELECT MAX(streak_updated) FROM bump_counts WHERE guild_id = ?)",
+                (gid, gid),
+            ).fetchone()
+            streak = (prev[1] + 1) if (prev and prev[0] == uid) else 1
+            row = conn.execute(
+                "SELECT count, best_streak FROM bump_counts "
+                "WHERE guild_id = ? AND user_id = ?",
+                (gid, uid),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE bump_counts SET count = ?, last_bump = ?, "
+                    "current_streak = ?, best_streak = ?, streak_updated = ? "
+                    "WHERE guild_id = ? AND user_id = ?",
+                    (row[0] + 1, now_iso, streak, max(row[1], streak), now_iso, gid, uid),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO bump_counts (guild_id, user_id, count, last_bump, "
+                    "current_streak, best_streak, streak_updated) "
+                    "VALUES (?, ?, 1, ?, 1, 1, ?)",
+                    (gid, uid, now_iso, now_iso),
+                )
             conn.commit()
 
         # silent confirmation, per house style
@@ -140,7 +170,8 @@ class Bumps(commands.Cog):
     def _user_stats(self, gid: str, uid: int):
         conn = _get_conn()
         row = conn.execute(
-            "SELECT count FROM bump_counts WHERE guild_id = ? AND user_id = ?",
+            "SELECT count, current_streak, best_streak "
+            "FROM bump_counts WHERE guild_id = ? AND user_id = ?",
             (gid, str(uid)),
         ).fetchone()
         if not row:
@@ -178,11 +209,13 @@ class Bumps(commands.Cog):
                 return await ctx.send(
                     f"-# {user.display_name} hasn't bumped yet. get to it."
                 )
+            count, cur_streak, best_streak = row
             embed = discord.Embed(
                 title="bumps",
                 description=(
-                    f"**{user.display_name}** — {row[0]} bump"
-                    f"{'s' if row[0] != 1 else ''} (rank #{rank})"
+                    f"**{user.display_name}** — {count} bump"
+                    f"{'s' if count != 1 else ''} (rank #{rank})\n"
+                    f"streak: {cur_streak} · best: {best_streak}"
                 ),
                 color=get_embed_color(ctx.guild.id),
             )
@@ -194,10 +227,28 @@ class Bumps(commands.Cog):
                 "-# no bumps tracked yet. run /bump on disboard and i'll count it."
             )
 
-        # same PIL leaderboard card as .lb messages / .lb vctime
+        # same PIL leaderboard card as .lb messages / .lb vctime, with the
+        # author's current streak in the footer
         from cogs.serverstats import LBPageView
 
-        view = LBPageView(
+        class BumpsView(LBPageView):
+            def _user_rank_text(self):
+                rank = next(
+                    (i + 1 for i, (uid, _) in enumerate(self.rows) if uid == self.ctx.author.id),
+                    None,
+                )
+                if rank is None:
+                    return "unranked"
+                count = self.rows[rank - 1][1]
+                row = _get_conn().execute(
+                    "SELECT current_streak FROM bump_counts "
+                    "WHERE guild_id = ? AND user_id = ?",
+                    (str(self.ctx.guild.id), str(self.ctx.author.id)),
+                ).fetchone()
+                streak = row[0] if row else 0
+                return f"#{rank} \u00b7 {count} bumps \u00b7 streak {streak}"
+
+        view = BumpsView(
             self.bot,
             ctx,
             rows,
