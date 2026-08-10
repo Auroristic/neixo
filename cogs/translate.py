@@ -121,6 +121,16 @@ DISPLAY = {
     "th": "thai",
 }
 
+DETECT_MODEL = "deepseek-ai/deepseek-v4-flash-0731"
+
+# iso 639-1 -> riva code (detection returns the short code)
+_ISO_TO_RIVA = {
+    "zh": "zh-CN",
+    "pt": "pt-PT",
+    "es": "es-ES",
+    "en": "en",
+}
+
 _KEYS = None
 
 
@@ -144,14 +154,14 @@ class Translate(commands.Cog):
 
     @commands.command(name="translate", aliases=["tr", "trans"])
     @help_meta(
-        usage="`.translate <language> <text>`  ·  `.translate from <language> <text>`",
-        desc="Translates text with NVIDIA riva (english <-> 36 languages).",
+        usage="`.translate <language> <text>`  ·  reply to a message + `.translate [language]`",
+        desc="Translates text with NVIDIA riva (english <-> 36 languages). Replying to a message translates that message.",
         section="General",
         examples=[".translate japanese hello there", ".translate from ja this is japanese text"],
         params=[
-            {"name": "args", "type": "str", "required": True, "desc": "`<language> <text>` (source is english) or `from <language> <text>` (to english). `.translate langs` for the list."},
+            {"name": "args", "type": "str", "required": True, "desc": "`<language> <text>` (source is english), `from <language> <text>` (to english), or reply to a message and use `.translate [language]` to translate it (any language -> english by default). `.translate langs` for the list."},
         ],
-        note="default direction is english -> chosen language. use `from <lang>` to go to english.",
+        note="replying with no args translates the replied message to english. reply + `.translate <lang>` goes to that language (auto-detects the source).",
     )
     async def translate(self, ctx: commands.Context, *, args: str = None):
         if not args:
@@ -161,7 +171,47 @@ class Translate(commands.Cog):
             names = ", ".join(sorted(set(DISPLAY.values())))
             return await ctx.send(f"-# supported: {names}")
 
-        # parse direction
+        key = _get_key()
+        if not key:
+            return await ctx.send("-# no nvidia key set. can't translate rn")
+
+        # ── replying to a message: translate THAT message ──
+        replied = await self._resolved_reply_content(ctx.message)
+        if replied:
+            if not args:
+                # no args -> any language -> english (auto detection works for ->en)
+                src, tgt, text = "auto", "en", replied
+            elif args.strip().lower().startswith("from "):
+                lang = LANG_CODES.get(args.strip()[5:].strip().lower())
+                if not lang:
+                    return await ctx.send(f"-# don't know that language. `.translate langs` for the list.")
+                src, tgt, text = lang, "en", replied
+            else:
+                lang = LANG_CODES.get(args.strip().lower())
+                if not lang:
+                    return await ctx.send(
+                        f"-# when replying, the optional arg is the target language (e.g. `.translate japanese`). `.translate langs` for the list."
+                    )
+                async with ctx.typing():
+                    detected = await self._detect_lang(key, replied)
+                if not detected:
+                    return await ctx.send("-# couldn't detect the source language, try `.translate from <lang>`")
+                src, tgt, text = detected, lang, replied
+            direction = f"auto -> {tgt}" if src == "auto" else f"{src} -> {tgt}"
+            async with ctx.typing():
+                result = await self._call_translate(key, src, tgt, text)
+            if result is None:
+                return await ctx.send("-# translate call failed. try again in a sec")
+            embed = discord.Embed(
+                description=result,
+                color=get_embed_color(ctx.guild.id) if ctx.guild else 0x121516,
+            )
+            embed.set_author(name=direction)
+            footer = replied[:120] + ("…" if len(replied) > 120 else "")
+            embed.set_footer(text=footer)
+            return await ctx.send(embed=embed)
+
+        # ── normal text translation ──
         parts = args.strip().split(None, 1)
         if parts[0].lower() == "from" and len(parts) > 1:
             inner = parts[1].strip().split(None, 1)
@@ -186,10 +236,6 @@ class Translate(commands.Cog):
         if len(text) < 1:
             return await ctx.send("-# nothing to translate")
 
-        key = _get_key()
-        if not key:
-            return await ctx.send("-# no nvidia key set. can't translate rn")
-
         async with ctx.typing():
             result = await self._call_translate(key, src, tgt, text)
         if result is None:
@@ -206,6 +252,49 @@ class Translate(commands.Cog):
             footer = text
         embed.set_footer(text=footer)
         await ctx.send(embed=embed)
+
+    async def _detect_lang(self, key: str, text: str) -> str | None:
+        """Detect the language code of a text snippet (cheap deepseek call)."""
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": DETECT_MODEL,
+            "messages": [
+                {"role": "user", "content": (
+                    "Reply with ONLY the ISO 639-1 code of the language this text is in. "
+                    "No other text, no punctuation.\nText: " + text[:400]
+                )},
+            ],
+            "max_tokens": 5,
+            "temperature": 0.0,
+        }
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.post(TRANSLATE_URL, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.json()
+            code = data["choices"][0]["message"]["content"].strip().lower()[:5]
+            return _ISO_TO_RIVA.get(code, code)
+        except Exception:
+            return None
+
+    async def _resolved_reply_content(self, message: discord.Message) -> str | None:
+        if not message.reference:
+            return None
+        ref = message.reference.resolved
+        if isinstance(ref, discord.Message) and ref.content and not ref.author.bot:
+            return ref.content.strip()[:1500]
+        if message.reference.message_id and message.guild:
+            try:
+                ref = await message.channel.fetch_message(message.reference.message_id)
+                if ref.content and not ref.author.bot:
+                    return ref.content.strip()[:1500]
+            except discord.HTTPException:
+                pass
+        return None
 
     async def _call_translate(self, key: str, src: str, tgt: str, text: str) -> str | None:
         headers = {
