@@ -10,7 +10,7 @@ Turn the single message-snipe into a snipe suite: `.snipe`/`.s`, `.esnipe`/`.es`
 
 ## Background
 
-`cogs/snipe.py` currently has a single `.snipe [n]` command backed by a per-channel `deque` of deleted-message snapshots (max 5 per channel). Snapshots capture content, author, avatar, attachments, sticker, deleted-at timestamp, and reply reference. The embed renders only the first attachment (or sticker) as the image.
+`cogs/snipe.py` currently has a single `.snipe [n]` command backed by a per-channel `deque` of deleted-message snapshots (max 5 per channel — this will grow to 50). Snapshots capture content, author, avatar, attachments, sticker, deleted-at timestamp, and reply reference. The embed renders only the first attachment (or sticker) as the image.
 
 ## Feature Set
 
@@ -28,7 +28,7 @@ Turn the single message-snipe into a snipe suite: `.snipe`/`.s`, `.esnipe`/`.es`
 - New listener `on_message_edit(before, after)`:
   - Skip if `after.author.bot`, `before.guild is None`, or `before.content == after.content`.
   - Snapshot: `before` content, author, avatar, attachments, stickers, edited-at timestamp, message jump URL.
-  - Store in per-channel deque (`_edited`), max 5, same key scheme as deleted.
+  - Store in per-channel deque (`_edited`), max 50, same key scheme as deleted.
 - Command:
   - `n` default 1, guard `n < 1` → "`n` has to be at least 1".
   - Empty deque or `n > len` → "nothing edited here. yet."
@@ -41,7 +41,7 @@ Turn the single message-snipe into a snipe suite: `.snipe`/`.s`, `.esnipe`/`.es`
 - New listener `on_reaction_remove(reaction, user)`:
   - Skip if `user.bot` or `reaction.message.guild is None`.
   - Snapshot: emoji (str — handles custom emoji via `reaction.emoji`), message author, message jump URL, channel id, reactor, removed-at timestamp.
-  - Store in per-channel deque (`_reactions`), max 5.
+  - Store in per-channel deque (`_reactions`), max 50.
 - Command:
   - `n` default 1, same guards as above.
   - Embed: author = reactor (icon = reactor avatar), description `removed :emoji:` on `@author`'s [message](jump url). Timestamp = removed-at.
@@ -50,9 +50,10 @@ Turn the single message-snipe into a snipe suite: `.snipe`/`.s`, `.esnipe`/`.es`
 ## Shared Conventions
 
 - All three deques keyed by `(guild_id, channel_id)`.
-- `_SNIPE_KEEP = 5` shared constant for all deques.
+- `_SNIPE_KEEP = 50` — all three deques keep the last 50 snapshots per channel (a lot, not a few; memory cost is trivial since snapshots are small dicts).
 - Same embed color via `get_embed_color(ctx.guild.id)`, UTC timestamps, `help_meta` decorator with usage/desc/examples/params/note for each command, section "Fun".
 - Guild-only guard: "this command only works in servers."
+- The "nothing ... here. yet." empty state messages adapt per command ("nothing deleted here. yet." / "nothing edited here. yet." / "no reactions removed here. yet.").
 
 ## Out of Scope
 
