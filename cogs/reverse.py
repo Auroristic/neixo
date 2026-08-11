@@ -270,7 +270,8 @@ async def _ai_identify(bot, channel, data: bytes, results: list[dict], question:
             "content": (
                 "you identify anime, manga, characters, and art from a picture "
                 "plus reverse image search results. name the title, character, "
-                "artist, or source when you can. lowercase, concise, max 3 sentences. "
+                "artist, or source when you can. wrap the anime/movie/tv/source "
+                "name in **bold**. lowercase, concise, max 3 sentences. "
                 "if you can't tell, say you can't tell."
             ),
         },
