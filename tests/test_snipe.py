@@ -189,3 +189,79 @@ def test_edit_embed_shows_before_content_and_image():
     assert "old text" in embed.description
     assert embed.image.url == "https://img1"
     assert "edit #1" in embed.footer.text
+
+
+def test_reaction_emoji_str_unicode_passthrough():
+    from cogs.snipe import _reaction_emoji_str
+
+    assert _reaction_emoji_str("🚀") == "🚀"
+
+
+def test_reaction_emoji_str_custom_static():
+    from cogs.snipe import _reaction_emoji_str
+
+    emoji = SimpleNamespace(name="lotus", id=456, animated=False)
+    assert _reaction_emoji_str(emoji) == "<:lotus:456>"
+
+
+def test_reaction_emoji_str_custom_animated():
+    from cogs.snipe import _reaction_emoji_str
+
+    emoji = SimpleNamespace(name="dance", id=123, animated=True)
+    assert _reaction_emoji_str(emoji) == "<a:dance:123>"
+
+
+def _fake_reaction_remove(emoji="🚀", reactor_bot=False, **overrides):
+    message = SimpleNamespace(
+        guild=SimpleNamespace(id=1),
+        channel=SimpleNamespace(id=2),
+        id=9,
+        jump_url="https://discord.com/channels/1/2/9",
+        author=SimpleNamespace(display_name="alice"),
+    )
+    reactor = SimpleNamespace(
+        bot=reactor_bot,
+        display_name="bob",
+        display_avatar=SimpleNamespace(url="https://avatar"),
+    )
+    reaction = SimpleNamespace(emoji=emoji, message=message)
+    for attr, value in overrides.items():
+        setattr(reaction, attr, value)
+    return reaction, reactor
+
+
+async def test_reaction_snapshot_stores_emoji_reactor_and_message():
+    cog = Snipe(None)
+    reaction, reactor = _fake_reaction_remove()
+    await cog.on_reaction_remove(reaction, reactor)
+
+    snap = cog._reactions[(1, 2)][0]
+    assert snap["emoji"] == "🚀"
+    assert snap["reactor"].display_name == "bob"
+    assert snap["message_author"].display_name == "alice"
+    assert snap["message_jump_url"] == "https://discord.com/channels/1/2/9"
+
+
+async def test_reaction_snapshot_skips_bot_reactors():
+    cog = Snipe(None)
+    reaction, reactor = _fake_reaction_remove(reactor_bot=True)
+    await cog.on_reaction_remove(reaction, reactor)
+    assert cog._reactions == {}
+
+
+def test_reaction_embed_shows_reactor_emoji_and_target():
+    from cogs.snipe import _render_reaction_embed
+
+    snap = {
+        "emoji": "<a:dance:123>",
+        "reactor": SimpleNamespace(display_name="bob"),
+        "reactor_avatar": "https://avatar",
+        "message_author": SimpleNamespace(display_name="alice"),
+        "message_jump_url": "https://discord.com/channels/1/2/9",
+        "removed_at": 1_700_000_000,
+    }
+    embed = _render_reaction_embed(snap, 1, 1)
+    assert "<a:dance:123>" in embed.description
+    assert "bob" in embed.description
+    assert "alice" in embed.description
+    assert "rsnipe #1" in embed.footer.text

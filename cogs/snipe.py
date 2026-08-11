@@ -78,11 +78,37 @@ def _render_edit_embed(snap: dict, guild_id: int, n: int) -> discord.Embed:
     return embed
 
 
+def _reaction_emoji_str(emoji) -> str:
+    """Render a reaction emoji as a display string (unicode passthrough, custom → <:name:id>)."""
+    if isinstance(emoji, str):
+        return emoji
+    if emoji.animated:
+        return f"<a:{emoji.name}:{emoji.id}>"
+    return f"<:{emoji.name}:{emoji.id}>"
+
+
+def _render_reaction_embed(snap: dict, guild_id: int, n: int) -> discord.Embed:
+    embed = discord.Embed(
+        description=(
+            f"removed {snap['emoji']} on **{snap['message_author'].display_name}**'s "
+            f"[message]({snap['message_jump_url']})"
+        ),
+        color=get_embed_color(guild_id),
+        timestamp=datetime.fromtimestamp(snap["removed_at"], tz=timezone.utc),
+    )
+    embed.set_author(name=snap["reactor"].display_name, icon_url=snap["reactor_avatar"])
+    embed.set_footer(
+        text=f"rsnipe #{n} · removed {int(time.time() - snap['removed_at'])}s ago"
+    )
+    return embed
+
+
 class Snipe(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._deleted: dict[tuple[int, int], deque] = {}
         self._edited: dict[tuple[int, int], deque] = {}
+        self._reactions: dict[tuple[int, int], deque] = {}
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
@@ -120,6 +146,23 @@ class Snipe(commands.Cog):
             "jump_url": before.jump_url,
         }
         dq = self._edited.setdefault(key, deque(maxlen=_SNIPE_KEEP))
+        dq.appendleft(snap)
+
+    @commands.Cog.listener()
+    async def on_reaction_remove(self, reaction: discord.Reaction, user: discord.User):
+        message = reaction.message
+        if message.guild is None or user.bot:
+            return
+        key = (message.guild.id, message.channel.id)
+        snap = {
+            "emoji": _reaction_emoji_str(reaction.emoji),
+            "reactor": user,
+            "reactor_avatar": user.display_avatar.url,
+            "message_author": message.author,
+            "message_jump_url": message.jump_url,
+            "removed_at": time.time(),
+        }
+        dq = self._reactions.setdefault(key, deque(maxlen=_SNIPE_KEEP))
         dq.appendleft(snap)
 
     @commands.command(name="snipe", aliases=["s"])
@@ -177,6 +220,34 @@ class Snipe(commands.Cog):
             return await ctx.send("-# nothing edited here. yet.")
         snap = dq[n - 1]
         await ctx.send(embed=_render_edit_embed(snap, ctx.guild.id, n))
+
+    @commands.command(name="rsnipe", aliases=["rs"])
+    @help_meta(
+        usage="`.rsnipe [n]`",
+        desc="Shows the last removed reaction in this channel (or the nth one).",
+        section="Fun",
+        examples=[".rsnipe", ".rs 2"],
+        params=[
+            {
+                "name": "n",
+                "type": "int",
+                "required": False,
+                "desc": "Which removed reaction to show, 1 = most recent.",
+            },
+        ],
+        note="only works while the reaction removal is still in my memory (up to 50 per channel).",
+    )
+    async def rsnipe(self, ctx: commands.Context, n: int = 1):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if n < 1:
+            return await ctx.send("-# `n` has to be at least 1")
+        key = (ctx.guild.id, ctx.channel.id)
+        dq = self._reactions.get(key)
+        if not dq or n > len(dq):
+            return await ctx.send("-# no reactions removed here. yet.")
+        snap = dq[n - 1]
+        await ctx.send(embed=_render_reaction_embed(snap, ctx.guild.id, n))
 
 
 async def setup(bot: commands.Bot):
