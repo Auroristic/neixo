@@ -21,6 +21,7 @@ class _FakeMessage:
     def __init__(self, attachments=None, embeds=None):
         self.attachments = attachments or []
         self.embeds = embeds or []
+        self.reference = None
 
 
 class _FakeReference:

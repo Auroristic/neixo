@@ -173,7 +173,7 @@ def _parse_lens_block(html: str, key: str) -> list[dict]:
                 if node[0] not in seen:
                     seen.add(node[0])
                     out.append({"text": node[0], "url": node[1], "domain": node[1].split("/")[2]})
-            stack.extend(node)
+            stack.extend(reversed(node))
         elif isinstance(node, dict):
             stack.extend(node.values())
         if len(out) >= 5:
