@@ -88,12 +88,9 @@ _FONT_BOLD_PATHS = [
 
 
 def _load_font(size: int, bold: bool = False):
-    for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
-        try:
-            return ImageFont.truetype(p, size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
+    from cogs.serverstats import _load_font as _serverstats_load_font
+
+    return _serverstats_load_font(size, bold=bold)
 
 
 def _emoji_to_url(emoji_str: str) -> str | None:
@@ -207,8 +204,8 @@ def _render_leaderboard_card(
             title_x += 64
         except Exception:
             pass
-    draw.text((title_x, title_y),  title,    font=title_font,    fill=(255, 255, 255, 255))
-    draw.text((90,      title_y + 60), subtitle, font=subtitle_font, fill=(255, 255, 255, 170))
+    title_font.draw(draw, (title_x, title_y), title, fill=(255, 255, 255, 255))
+    subtitle_font.draw(draw, (90, title_y + 60), subtitle, fill=(255, 255, 255, 170))
 
     draw.line([(90, 200), (W - 90, 200)], fill=(255, 255, 255, 60), width=1)
 
@@ -229,22 +226,22 @@ def _render_leaderboard_card(
         y = start_y + i * row_h
         rank_str = f"{rank}."
         rank_color = tints.get(rank, (255, 255, 255, 235))
-        draw.text((rank_x, y), rank_str, font=rank_font, fill=rank_color)
+        rank_font.draw(draw, (rank_x, y), rank_str, fill=rank_color)
 
         max_w = (count_x - 90) - name_x
         name_disp = name
-        if draw.textbbox((0, 0), name_disp, font=name_font)[2] > max_w:
-            while name_disp and draw.textbbox((0, 0), name_disp + "…", font=name_font)[2] > max_w:
+        if name_font.getlength(name_disp) > max_w:
+            while name_disp and name_font.getlength(name_disp + "…") > max_w:
                 name_disp = name_disp[:-1]
             name_disp = (name_disp + "…") if name_disp else "…"
-        draw.text((name_x, y), name_disp, font=name_font, fill=(255, 255, 255, 220))
+        name_font.draw(draw, (name_x, y), name_disp, fill=(255, 255, 255, 220))
 
         if isinstance(count, str):
             count_str = count
         else:
             count_str = f"{count:,}"
-        cw = draw.textbbox((0, 0), count_str, font=count_font)[2]
-        draw.text((count_x - cw, y), count_str, font=count_font, fill=rank_color)
+        cw = count_font.getlength(count_str)
+        count_font.draw(draw, (count_x - cw, y), count_str, fill=rank_color)
 
     # ── Footer area ──
     footer_y = H - 130
@@ -261,12 +258,12 @@ def _render_leaderboard_card(
             pass
     # bot name + user rank
     text_x = av_x + av_size + 14
-    draw.text((text_x, av_y - 2), bot_name, font=footer_bold, fill=(255, 255, 255, 230))
-    draw.text((text_x, av_y + 22), user_rank_text, font=footer_font, fill=(255, 255, 255, 160))
+    footer_bold.draw(draw, (text_x, av_y - 2), bot_name, fill=(255, 255, 255, 230))
+    footer_font.draw(draw, (text_x, av_y + 22), user_rank_text, fill=(255, 255, 255, 160))
 
     # page info on the right
-    pw = draw.textbbox((0, 0), page_str, font=footer_font)[2]
-    draw.text((W - 90 - pw, av_y + 8), page_str, font=footer_font, fill=(255, 255, 255, 160))
+    pw = footer_font.getlength(page_str)
+    footer_font.draw(draw, (W - 90 - pw, av_y + 8), page_str, fill=(255, 255, 255, 160))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)

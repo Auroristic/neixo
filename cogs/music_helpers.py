@@ -41,12 +41,9 @@ _FONT_BOLD_PATHS = [
 ]
 
 def _load_font(size: int, bold: bool = False):
-    for p in (_FONT_BOLD_PATHS if bold else _FONT_REG_PATHS):
-        try:
-            return ImageFont.truetype(p, size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
+    from cogs.serverstats import _load_font as _serverstats_load_font
+
+    return _serverstats_load_font(size, bold=bold)
 
 # ── CONSTANTS ─────────────────────────────────────────────────
 
@@ -444,17 +441,17 @@ async def _gen_music_card(
         max_w = gr - 80 - 40
 
         def trunc(text: str, font) -> str:
-            if draw.textbbox((0, 0), text, font=font)[2] <= max_w:
+            if font.getlength(text) <= max_w:
                 return text
             while text:
-                if draw.textbbox((0, 0), text + "...", font=font)[2] <= max_w:
+                if font.getlength(text + "...") <= max_w:
                     return text + "..."
                 text = text[:-1]
             return "..."
 
-        draw.text((80, 90), trunc(title, title_font), font=title_font, fill=(255, 255, 255, 250))
-        draw.text((80, 150), trunc(author, subtitle_font), font=subtitle_font, fill=(255, 255, 255, 180))
-        draw.text((80, 280), f"{position_str} / {duration}" if position_str else f"Duration: {duration}", font=dur_font, fill=(255, 255, 255, 160))
+        title_font.draw(draw, (80, 90), trunc(title, title_font), fill=(255, 255, 255, 250))
+        subtitle_font.draw(draw, (80, 150), trunc(author, subtitle_font), fill=(255, 255, 255, 180))
+        dur_font.draw(draw, (80, 280), f"{position_str} / {duration}" if position_str else f"Duration: {duration}", fill=(255, 255, 255, 160))
 
         bx, by, bw, bh = 80, 330, max_w, 4
         draw.rounded_rectangle([bx, by, bx + bw, by + bh], radius=2, fill=(255, 255, 255, 50))
