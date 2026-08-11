@@ -145,17 +145,17 @@ class Reverse(commands.Cog):
 
     @commands.command(name="reverse", aliases=["rv", "saucenao"])
     @help_meta(
-        usage=".reverse [anime] [image url] [question...]",
+        usage=".reverse [what] [image url] [question...]",
         desc="Reverse image search — reply to an image, attach one, or pass a url. "
-        "Add `anime` and the AI identifies the image for you.",
+        "Pass a word like `anime`, `movie`, or `character` and the AI identifies it.",
         section="Utility",
-        examples=[".reverse", ".reverse anime", ".reverse <image url>", ".reverse <@image-message>"],
+        examples=[".reverse", ".reverse anime", ".reverse movie", ".reverse character", ".reverse <image url>"],
         params=[
             {
-                "name": "anime",
+                "name": "what",
                 "type": "str",
                 "required": False,
-                "desc": "Pass exactly `anime` to have the AI identify the image and answer.",
+                "desc": "What the AI should identify: anime, movie, character, artist... any non-url word works.",
             },
             {
                 "name": "image url",
@@ -167,7 +167,7 @@ class Reverse(commands.Cog):
                 "name": "question",
                 "type": "str",
                 "required": False,
-                "desc": "Optional question for the AI (only with `anime`).",
+                "desc": "Optional extra question for the AI (only with the `what` word).",
             },
         ],
         note="saucenao first (anime sources), google lens page fallback.",
@@ -175,8 +175,10 @@ class Reverse(commands.Cog):
     async def reverse(self, ctx: commands.Context, url: str = None, *, question: str = None):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")
-        ai_mode = url == "anime"
+        ai_mode = url is not None and not url.startswith(("http://", "https://"))
+        ask_what = None
         if ai_mode:
+            ask_what = url
             url = None
         source = _resolve_source(ctx, url)
         if not source:
@@ -192,7 +194,12 @@ class Reverse(commands.Cog):
         if ai_mode:
             if not results and not api_key:
                 return await ctx.send("-# ai mode needs a saucenao key for context. set SAUCENAO_KEY in .env.")
-            q = (question or "what is this? identify the anime, character, or artist.").strip()
+            if question:
+                q = f"what {ask_what} is this? {question}"
+            elif ask_what and ask_what != "anime":
+                q = f"what {ask_what} is this? identify it."
+            else:
+                q = "what is this? identify the anime, character, or artist."
             answer, status_msg = await _ai_identify(ctx.bot, ctx.channel, data, results, q)
             if answer:
                 embed = discord.Embed(
@@ -268,9 +275,10 @@ async def _ai_identify(bot, channel, data: bytes, results: list[dict], question:
         {
             "role": "system",
             "content": (
-                "you identify anime, manga, characters, and art from a picture "
+                "you identify what's in a picture — anime, movie, tv show, "
+                "character, artist, game, or anything else — using the image "
                 "plus reverse image search results. name the title, character, "
-                "artist, or source when you can. wrap the anime/movie/tv/source "
+                "artist, or source when you can. wrap the title or source "
                 "name in **bold**. lowercase, concise, max 3 sentences. "
                 "if you can't tell, say you can't tell."
             ),
