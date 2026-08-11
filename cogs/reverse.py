@@ -31,6 +31,7 @@ SAUCENAO_API = "https://saucenao.com/search.php"
 LENS_UPLOAD = "https://lens.google.com/v3/upload"
 MAX_BYTES = 8 * 1024 * 1024
 MIN_SIMILARITY = 50.0
+WEAK_FLOOR = 20.0
 
 
 def _first_image(message: discord.Message) -> str | None:
