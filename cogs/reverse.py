@@ -5,6 +5,7 @@ direct-link fallback (Google no longer ships server-side match data, so
 the best we can do keylessly is hand over the lens results page).
 """
 
+import base64
 import logging
 import os
 
@@ -144,23 +145,39 @@ class Reverse(commands.Cog):
 
     @commands.command(name="reverse", aliases=["rv", "saucenao"])
     @help_meta(
-        usage=".reverse [image url]",
-        desc="Reverse image search — reply to an image, attach one, or pass a url.",
+        usage=".reverse [anime] [image url] [question...]",
+        desc="Reverse image search — reply to an image, attach one, or pass a url. "
+        "Add `anime` and the AI identifies the image for you.",
         section="Utility",
-        examples=[".reverse", ".reverse <image url>", ".reverse <@image-message>"],
+        examples=[".reverse", ".reverse anime", ".reverse <image url>", ".reverse <@image-message>"],
         params=[
+            {
+                "name": "anime",
+                "type": "str",
+                "required": False,
+                "desc": "Pass exactly `anime` to have the AI identify the image and answer.",
+            },
             {
                 "name": "image url",
                 "type": "str",
                 "required": False,
                 "desc": "Direct link to the image. Leave empty to use an attachment or replied-to image.",
             },
+            {
+                "name": "question",
+                "type": "str",
+                "required": False,
+                "desc": "Optional question for the AI (only with `anime`).",
+            },
         ],
         note="saucenao first (anime sources), google lens page fallback.",
     )
-    async def reverse(self, ctx: commands.Context, url: str = None):
+    async def reverse(self, ctx: commands.Context, url: str = None, *, question: str = None):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")
+        ai_mode = url == "anime"
+        if ai_mode:
+            url = None
         source = _resolve_source(ctx, url)
         if not source:
             return await ctx.send("-# attach an image, pass a url, or reply to a message with one.")
@@ -170,13 +187,40 @@ class Reverse(commands.Cog):
             return await ctx.send("-# couldn't download that image.")
 
         api_key = os.environ.get("SAUCENAO_KEY", "")
-        if api_key:
-            results = await _saucenao(data, api_key)
+        results = await _saucenao(data, api_key) if api_key else []
+
+        if ai_mode:
+            if not results and not api_key:
+                return await ctx.send("-# ai mode needs a saucenao key for context. set SAUCENAO_KEY in .env.")
+            q = (question or "what is this? identify the anime, character, or artist.").strip()
+            answer, status_msg = await _ai_identify(ctx.bot, ctx.channel, data, results, q)
+            if answer:
+                embed = discord.Embed(
+                    title="ai identified",
+                    description=answer,
+                    color=get_embed_color(ctx.guild.id),
+                )
+                if results and results[0]["url"]:
+                    embed.set_footer(text="saucenao source: " + results[0]["url"])
+                embed.set_image(url=source)
+                if status_msg is not None:
+                    try:
+                        await status_msg.delete()
+                    except discord.HTTPException:
+                        pass
+                return await ctx.send(embed=embed)
+            if status_msg is not None:
+                try:
+                    await status_msg.delete()
+                except discord.HTTPException:
+                    pass
             if results:
                 return await ctx.send(embed=_build_embed(ctx, "saucenao", results, source))
-            log.info("reverse: saucenao no match >= %.0f%%", MIN_SIMILARITY)
-        else:
-            log.warning("reverse: no SAUCENAO_KEY in env, lens only")
+            return await ctx.send("-# ai is unavailable rn, and saucenao found nothing. try again later.")
+
+        if results:
+            return await ctx.send(embed=_build_embed(ctx, "saucenao", results, source))
+        log.info("reverse: saucenao no match >= %.0f%%", MIN_SIMILARITY)
 
         page_url = await _lens_url(data)
         embed = _build_embed(ctx, "google lens", [], source)
@@ -185,6 +229,71 @@ class Reverse(commands.Cog):
         else:
             embed.description = "no matches found anywhere. 😔"
         return await ctx.send(embed=embed)
+
+
+def _mime_of(data: bytes) -> str:
+    if data.startswith(b"\x89PNG"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"GIF8"):
+        return "image/gif"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+def _saucenao_summary(results: list[dict]) -> str:
+    lines = []
+    for r in results[:5]:
+        line = f"- {r['similarity']:.1f}% {r['name']}: {r['title'][:80]}"
+        if r["url"]:
+            line += f" ({r['url']})"
+        lines.append(line)
+    return "\n".join(lines) or "no matches"
+
+
+async def _ai_identify(bot, channel, data: bytes, results: list[dict], question: str) -> tuple[str | None, str | None]:
+    """Ask the AI to identify the image. Returns (answer, status_msg)."""
+    ai = bot.get_cog("AI")
+    if ai is None:
+        return None, None
+    b64 = base64.b64encode(data).decode()
+    summary = _saucenao_summary(results)
+    user_text = (
+        f"reverse image search results for this image:\n{summary}\n\n"
+        f"{question}"
+    )
+    payload = [
+        {
+            "role": "system",
+            "content": (
+                "you identify anime, manga, characters, and art from a picture "
+                "plus reverse image search results. name the title, character, "
+                "artist, or source when you can. lowercase, concise, max 3 sentences. "
+                "if you can't tell, say you can't tell."
+            ),
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_text},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{_mime_of(data)};base64,{b64}"},
+                },
+            ],
+        },
+    ]
+    try:
+        response, status_msg, _used_fallback = await ai._call_with_status(
+            channel, payload, has_images=True, max_tokens=350
+        )
+        text = response.choices[0].message.content
+        return (text.strip() or None), status_msg
+    except Exception:
+        log.warning("reverse: ai identify failed", exc_info=True)
+        return None, None
 
 
 def _build_embed(ctx: commands.Context, engine: str, results: list[dict], source: str) -> discord.Embed:
