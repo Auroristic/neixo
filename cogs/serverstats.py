@@ -419,7 +419,13 @@ def _render_lb_card(
     user_rank_text: str,
     unit: str = "",
 ) -> io.BytesIO:
-    W, H = 900, 1100
+    W = 900
+    MAX_ROWS = 10
+    H = 1100
+    if rows:
+        n = min(len(rows), MAX_ROWS)
+        H = 320 + n * 60 + 180
+        H = max(H, 700)
 
     if icon_bytes:
         try:
@@ -470,7 +476,7 @@ def _render_lb_card(
         3: (205, 127, 50, 255),
     }
 
-    for i, (rank, name, count) in enumerate(rows):
+    for i, (rank, name, count) in enumerate(rows[:MAX_ROWS]):
         y = start_y + i * row_h
         rank_str = f"{rank}."
         rank_color = tints.get(rank, (255, 255, 255, 235))
@@ -642,7 +648,13 @@ def _render_emoji_card(
     bot_avatar_bytes: bytes | None,
     user_rank_text: str,
 ) -> io.BytesIO:
-    W, H = 900, 1100
+    W = 900
+    MAX_ROWS = 10
+    H = 1100
+    if rows:
+        n = min(len(rows), MAX_ROWS)
+        H = 320 + n * 70 + 180  # row_h = 70
+        H = max(H, 700)
     if icon_bytes:
         try:
             base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
@@ -693,7 +705,7 @@ def _render_emoji_card(
         3: (205, 127, 50, 255),
     }
 
-    for i, (rank, name, img_bytes, count) in enumerate(rows):
+    for i, (rank, name, img_bytes, count) in enumerate(rows[:MAX_ROWS]):
         y = start_y + i * row_h
         rank_color = tints.get(rank, (255, 255, 255, 235))
         rank_font.draw(draw, (rank_x, y), f"{rank}.", fill=rank_color)

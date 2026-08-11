@@ -156,7 +156,13 @@ def _render_leaderboard_card(
     """CPU-intensive image render — call via asyncio.to_thread.
     Tall card with blurred guild-icon background, glass overlay, and a
     bot-avatar + user-rank footer."""
-    W, H = 900, 1100
+    W = 900
+    MAX_ROWS = 10
+    H = 1100
+    if rows:
+        n = min(len(rows), MAX_ROWS)
+        H = 320 + n * 60 + 180  # title block + rows + footer
+        H = max(H, 700)
 
     # ── Background: blurred guild icon (or fallback gradient) ──
     if icon_bytes:
@@ -222,7 +228,7 @@ def _render_leaderboard_card(
         3: (205, 127, 50,  255),
     }
 
-    for i, (rank, name, count) in enumerate(rows):
+    for i, (rank, name, count) in enumerate(rows[:MAX_ROWS]):
         y = start_y + i * row_h
         rank_str = f"{rank}."
         rank_color = tints.get(rank, (255, 255, 255, 235))
