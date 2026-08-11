@@ -592,7 +592,7 @@ def test_reaction_embed_shows_reactor_emoji_and_target():
     }
     embed = _render_reaction_embed(snap, 1, 1)
     assert "<a:dance:123>" in embed.description
-    assert "bob" in embed.description
+    assert embed.author.name == "bob"
     assert "alice" in embed.description
     assert "rsnipe #1" in embed.footer.text
 ```
@@ -690,7 +690,7 @@ Add the command (after `esnipe`):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_snipe.py -v`
-Expected: all 20 tests PASS.
+Expected: all 19 tests PASS.
 
 - [ ] **Step 5: Run the full suite to check for regressions**
 
