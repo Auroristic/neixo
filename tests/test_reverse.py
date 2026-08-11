@@ -1,4 +1,4 @@
-from cogs.reverse import _parse_lens_block, _resolve_source
+from cogs.reverse import _resolve_source
 
 
 class _FakeAttachment:
@@ -70,25 +70,3 @@ def test_resolve_own_embed_image():
 def test_resolve_none():
     ctx = _FakeCtx(_FakeMessage())
     assert _resolve_source(ctx, None) is None
-
-
-def test_lens_block_extracts_matches():
-    html = (
-        "AF_initDataCallback({key: 'ds:5', data:["
-        '["first hit","https://danbooru.donmai.us/posts/1",null,null],'
-        '["second hit","https://pixiv.net/artworks/2",null,null]'
-        "], sideChannel: {}});"
-    )
-    out = _parse_lens_block(html, "ds:5")
-    assert out[0]["text"] == "first hit"
-    assert out[0]["domain"] == "danbooru.donmai.us"
-    assert out[1]["url"] == "https://pixiv.net/artworks/2"
-
-
-def test_lens_block_wrong_key_empty():
-    html = "AF_initDataCallback({key: 'ds:5', data:[], sideChannel: {}});"
-    assert _parse_lens_block(html, "ds:9") == []
-
-
-def test_lens_block_bad_json_empty():
-    assert _parse_lens_block("no init data here", "ds:5") == []

@@ -1,12 +1,12 @@
 """
 cogs/reverse.py  —  .reverse — reverse image search
-SauceNAO first (anime-grade sources), Google Lens fallback (everything else).
+SauceNAO first (anime-grade sources, needs SAUCENAO_KEY), Google Lens
+direct-link fallback (Google no longer ships server-side match data, so
+the best we can do keylessly is hand over the lens results page).
 """
 
-import json
 import logging
 import os
-import re
 
 import aiohttp
 import discord
@@ -27,10 +27,9 @@ _BROWSER_UA = (
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 SAUCENAO_API = "https://saucenao.com/search.php"
-LENS_UPLOAD = "https://lens.google.com/upload"
+LENS_UPLOAD = "https://lens.google.com/v3/upload"
 MAX_BYTES = 8 * 1024 * 1024
 MIN_SIMILARITY = 50.0
-LENS_KEYS = ("ds:5", "ds:3", "ds:6", "ds:2")
 
 
 def _first_image(message: discord.Message) -> str | None:
@@ -117,68 +116,26 @@ async def _saucenao(data: bytes, api_key: str) -> list[dict]:
     return out[:3]
 
 
-async def _lens_search(data: bytes) -> tuple[str | None, list[dict]]:
-    """Upload to Google Lens. Returns (search page url, best-effort matches)."""
+async def _lens_url(data: bytes) -> str | None:
+    """Upload to Google Lens (v3 endpoint, consent cookie bypass).
+    Google renders results client-side only, so we return the results
+    page URL for the user to open — no data to scrape server-side."""
     form = aiohttp.FormData()
     form.add_field("encoded_image", data, filename="image.png", content_type="image/png")
-    page_url = None
-    matches: list[dict] = []
     try:
         async with aiohttp.ClientSession() as s:
             async with s.post(
                 LENS_UPLOAD,
                 data=form,
-                headers={"User-Agent": _BROWSER_UA},
+                headers={"User-Agent": _BROWSER_UA, "Cookie": "SOCS=CAI"},
                 timeout=aiohttp.ClientTimeout(total=25),
             ) as r:
-                page_url = str(r.url)
-                html = await r.text(errors="replace")
-                for key in LENS_KEYS:
-                    found = _parse_lens_block(html, key)
-                    if found:
-                        matches = found
-                        break
+                if r.status != 200:
+                    return None
+                return str(r.url)
     except Exception:
-        log.warning("reverse: lens failed", exc_info=True)
-        return None, []
-    return page_url, matches[:5]
-
-
-def _parse_lens_block(html: str, key: str) -> list[dict]:
-    m = re.search(
-        r"AF_initDataCallback\({key: '" + re.escape(key) + r"'.*?data:\[(.*?)\], sideChannel",
-        html,
-        re.DOTALL,
-    )
-    if not m:
-        return []
-    try:
-        raw = m.group(1).replace("\\x22", '"')
-        blob = json.loads("[" + raw + "]")
-    except (json.JSONDecodeError, ValueError):
-        return []
-    out: list[dict] = []
-    seen: set[str] = set()
-    stack = [blob]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, list):
-            if (
-                len(node) >= 3
-                and isinstance(node[0], str)
-                and node[0]
-                and isinstance(node[1], str)
-                and node[1].startswith("http")
-            ):
-                if node[0] not in seen:
-                    seen.add(node[0])
-                    out.append({"text": node[0], "url": node[1], "domain": node[1].split("/")[2]})
-            stack.extend(reversed(node))
-        elif isinstance(node, dict):
-            stack.extend(node.values())
-        if len(out) >= 5:
-            break
-    return out
+        log.warning("reverse: lens upload failed", exc_info=True)
+        return None
 
 
 class Reverse(commands.Cog):
@@ -221,10 +178,12 @@ class Reverse(commands.Cog):
         else:
             log.warning("reverse: no SAUCENAO_KEY in env, lens only")
 
-        page_url, matches = await _lens_search(data)
-        embed = _build_embed(ctx, "google lens", matches, source)
+        page_url = await _lens_url(data)
+        embed = _build_embed(ctx, "google lens", [], source)
         if page_url:
-            embed.set_footer(text="google lens · " + page_url)
+            embed.description = f"no saucenao match — [open this image in google lens]({page_url})"
+        else:
+            embed.description = "no matches found anywhere. 😔"
         return await ctx.send(embed=embed)
 
 
