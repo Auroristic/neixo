@@ -287,7 +287,7 @@ async def _ai_identify(bot, channel, data: bytes, results: list[dict], question:
     ]
     try:
         response, status_msg, _used_fallback = await ai._call_with_status(
-            channel, payload, has_images=True, max_tokens=350
+            channel, payload, has_images=True, max_tokens=3000
         )
         text = response.choices[0].message.content
         return (text.strip() or None), status_msg
