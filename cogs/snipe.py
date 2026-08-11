@@ -58,10 +58,31 @@ def _render_deleted_embed(snap: dict, guild_id: int, n: int) -> discord.Embed:
     return embed
 
 
+def _render_edit_embed(snap: dict, guild_id: int, n: int) -> discord.Embed:
+    author = snap["author"]
+    embed = discord.Embed(
+        description=snap["content"] or "*no text*",
+        color=get_embed_color(guild_id),
+        timestamp=datetime.fromtimestamp(snap["edited_at"], tz=timezone.utc),
+    )
+    embed.set_author(name=author.display_name, icon_url=snap["avatar"])
+    embed.set_footer(
+        text=f"edit #{n} · edited {int(time.time() - snap['edited_at'])}s ago"
+    )
+    embed.add_field(
+        name="message",
+        value=f"[jump]({snap['jump_url']})",
+        inline=False,
+    )
+    _add_attachments(embed, snap["attachments"], snap["sticker"], "attachment")
+    return embed
+
+
 class Snipe(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._deleted: dict[tuple[int, int], deque] = {}
+        self._edited: dict[tuple[int, int], deque] = {}
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
@@ -80,6 +101,25 @@ class Snipe(commands.Cog):
             "reference": getattr(message.reference.resolved, "content", None) if message.reference else None,
         }
         dq = self._deleted.setdefault(key, deque(maxlen=_SNIPE_KEEP))
+        dq.appendleft(snap)
+
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if after.guild is None or after.author.bot:
+            return
+        if before.content == after.content:
+            return
+        key = (after.guild.id, after.channel.id)
+        snap = {
+            "content": before.content,
+            "author": before.author,
+            "avatar": before.author.display_avatar.url,
+            "attachments": [a.url for a in before.attachments],
+            "sticker": before.stickers[0].url if before.stickers else None,
+            "edited_at": time.time(),
+            "jump_url": before.jump_url,
+        }
+        dq = self._edited.setdefault(key, deque(maxlen=_SNIPE_KEEP))
         dq.appendleft(snap)
 
     @commands.command(name="snipe", aliases=["s"])
@@ -109,6 +149,34 @@ class Snipe(commands.Cog):
             return await ctx.send("-# nothing deleted here. yet.")
         snap = dq[n - 1]
         await ctx.send(embed=_render_deleted_embed(snap, ctx.guild.id, n))
+
+    @commands.command(name="esnipe", aliases=["es"])
+    @help_meta(
+        usage="`.esnipe [n]`",
+        desc="Shows the last edited message's pre-edit content in this channel (or the nth one).",
+        section="Fun",
+        examples=[".esnipe", ".es 2"],
+        params=[
+            {
+                "name": "n",
+                "type": "int",
+                "required": False,
+                "desc": "Which edit to show, 1 = most recent.",
+            },
+        ],
+        note="only the pre-edit content is shown — the after-content is still in chat.",
+    )
+    async def esnipe(self, ctx: commands.Context, n: int = 1):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if n < 1:
+            return await ctx.send("-# `n` has to be at least 1")
+        key = (ctx.guild.id, ctx.channel.id)
+        dq = self._edited.get(key)
+        if not dq or n > len(dq):
+            return await ctx.send("-# nothing edited here. yet.")
+        snap = dq[n - 1]
+        await ctx.send(embed=_render_edit_embed(snap, ctx.guild.id, n))
 
 
 async def setup(bot: commands.Bot):

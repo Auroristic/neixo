@@ -117,3 +117,75 @@ def test_add_attachments_single_image_no_fields():
     _add_attachments(embed, ["https://img1"], None, "image")
     assert embed.image.url == "https://img1"
     assert len(embed.fields) == 0
+
+
+def _fake_edit_pair(content_before="old text", content_after="new text", **overrides):
+    author = SimpleNamespace(
+        bot=False,
+        display_name="alice",
+        display_avatar=SimpleNamespace(url="https://avatar"),
+    )
+    before = SimpleNamespace(
+        guild=SimpleNamespace(id=1),
+        channel=SimpleNamespace(id=2),
+        author=author,
+        content=content_before,
+        attachments=[SimpleNamespace(url="https://img1")],
+        stickers=[],
+        jump_url="https://discord.com/channels/1/2/9",
+    )
+    after = SimpleNamespace(
+        guild=SimpleNamespace(id=1),
+        channel=SimpleNamespace(id=2),
+        author=author,
+        content=content_after,
+    )
+    for attr, value in overrides.items():
+        setattr(before, attr, value)
+    return before, after
+
+
+async def test_edit_snapshot_stores_before_content():
+    from cogs.snipe import Snipe
+
+    cog = Snipe(None)
+    before, after = _fake_edit_pair()
+    await cog.on_message_edit(before, after)
+
+    snap = cog._edited[(1, 2)][0]
+    assert snap["content"] == "old text"
+    assert snap["jump_url"] == "https://discord.com/channels/1/2/9"
+
+
+async def test_edit_snapshot_skips_noop_edits():
+    cog = Snipe(None)
+    before, after = _fake_edit_pair(content_before="same", content_after="same")
+    await cog.on_message_edit(before, after)
+    assert cog._edited == {}
+
+
+async def test_edit_snapshot_skips_bot_messages():
+    cog = Snipe(None)
+    before, after = _fake_edit_pair()
+    before.author = SimpleNamespace(bot=True, display_name="botty")
+    after.author = before.author
+    await cog.on_message_edit(before, after)
+    assert cog._edited == {}
+
+
+def test_edit_embed_shows_before_content_and_image():
+    from cogs.snipe import _render_edit_embed
+
+    snap = {
+        "content": "old text",
+        "author": SimpleNamespace(display_name="alice"),
+        "avatar": "https://avatar",
+        "attachments": ["https://img1"],
+        "sticker": None,
+        "edited_at": 1_700_000_000,
+        "jump_url": "https://discord.com/channels/1/2/9",
+    }
+    embed = _render_edit_embed(snap, 1, 1)
+    assert "old text" in embed.description
+    assert embed.image.url == "https://img1"
+    assert "edit #1" in embed.footer.text
