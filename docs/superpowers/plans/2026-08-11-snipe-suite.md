@@ -122,18 +122,40 @@ def test_embed_shows_all_attachments():
     assert any("https://img3" in v for v in field_urls)
 
 
+async def test_deleted_snapshot_captures_reply_content():
+    cog = Snipe(None)
+    msg = _fake_message()
+    msg.reference = SimpleNamespace(resolved=SimpleNamespace(content="the original"))
+    await cog.on_message_delete(msg)
+    assert cog._deleted[(1, 2)][0]["reference"] == "the original"
+
+
+async def test_deleted_snapshot_handles_deleted_reply():
+    # resolved is a DeletedReferencedMessage (no .content attr) when the
+    # replied-to message was itself deleted — must not raise.
+    cog = Snipe(None)
+    msg = _fake_message()
+    msg.reference = SimpleNamespace(resolved=SimpleNamespace(message_id=9, channel_id=2, guild_id=1))
+    await cog.on_message_delete(msg)
+    assert cog._deleted[(1, 2)][0]["reference"] is None
+
+
 def test_embed_sticker_wins_over_first_attachment():
     snap = {
         "content": "hi",
         "author": SimpleNamespace(display_name="alice"),
         "avatar": "https://avatar",
-        "attachments": ["https://img1"],
+        "attachments": ["https://img1", "https://img2"],
         "sticker": "https://sticker.png",
         "deleted_at": 1_700_000_000,
         "reference": None,
     }
     embed = _render_deleted_embed(snap, 1, 1)
     assert embed.image.url == "https://sticker.png"
+    # sticker took the image slot, so every attachment must still appear as a field
+    field_urls = [f.value for f in embed.fields]
+    assert any("https://img1" in v for v in field_urls)
+    assert any("https://img2" in v for v in field_urls)
 
 
 def test_add_attachments_single_image_no_fields():
@@ -179,12 +201,20 @@ _SNIPE_KEEP = 50  # per-channel history
 
 
 def _add_attachments(embed: discord.Embed, images: list[str], sticker: str | None, label: str) -> None:
-    """Set the embed image to the first attachment (or sticker), and add the rest as fields."""
+    """Set the embed image to the first attachment (or sticker), and add the rest as fields.
+
+    When a sticker takes the image slot, ALL attachments go to fields (otherwise
+    the first attachment would be silently dropped).
+    """
     if sticker:
         embed.set_image(url=sticker)
+        start = 0
     elif images:
         embed.set_image(url=images[0])
-    for i, url in enumerate(images[1:], start=2):
+        start = 1
+    else:
+        return
+    for i, url in enumerate(images[start:], start=start + 1):
         embed.add_field(name=f"{label} {i}", value=f"[attachment {i}]({url})", inline=False)
 
 
@@ -222,9 +252,9 @@ class Snipe(commands.Cog):
             "attachments": [a.url for a in message.attachments],
             "sticker": message.stickers[0].url if message.stickers else None,
             "deleted_at": time.time(),
-            "reference": message.reference.resolved.content if (
-                message.reference and message.reference.resolved
-            ) else None,
+            # resolved is a DeletedReferencedMessage (no .content) when the
+            # replied-to message was itself deleted — getattr handles that.
+            "reference": getattr(message.reference.resolved, "content", None) if message.reference else None,
         }
         dq = self._deleted.setdefault(key, deque(maxlen=_SNIPE_KEEP))
         dq.appendleft(snap)
@@ -265,7 +295,7 @@ async def setup(bot: commands.Bot):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_snipe.py -v`
-Expected: all 7 tests PASS.
+Expected: all 9 tests PASS.
 
 - [ ] **Step 5: Manual sanity check — verify `.s` alias registers**
 
@@ -461,7 +491,7 @@ Add the command (after `snipe`):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_snipe.py -v`
-Expected: all 11 tests PASS.
+Expected: all 13 tests PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -660,7 +690,7 @@ Add the command (after `esnipe`):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_snipe.py -v`
-Expected: all 18 tests PASS.
+Expected: all 20 tests PASS.
 
 - [ ] **Step 5: Run the full suite to check for regressions**
 
