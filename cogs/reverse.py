@@ -77,7 +77,7 @@ async def _download(url: str) -> bytes | None:
         return None
 
 
-async def _saucenao(data: bytes, api_key: str) -> list[dict]:
+async def _saucenao(data: bytes, api_key: str, min_sim: float = WEAK_FLOOR) -> list[dict]:
     form = aiohttp.FormData()
     form.add_field("file", data, filename="image.png", content_type="image/png")
     form.add_field("api_key", api_key)
@@ -100,7 +100,7 @@ async def _saucenao(data: bytes, api_key: str) -> list[dict]:
             sim = float(h.get("similarity", 0))
         except (TypeError, ValueError):
             continue
-        if sim < MIN_SIMILARITY:
+        if sim < min_sim:
             continue
         urls = [u for u in (d.get("ext_urls") or []) if str(u).startswith("http")]
         name = h.get("index_name") or "source"
@@ -114,7 +114,7 @@ async def _saucenao(data: bytes, api_key: str) -> list[dict]:
                 "thumb": h.get("thumbnail"),
             }
         )
-    return out[:3]
+    return out[:8]
 
 
 async def _lens_url(data: bytes) -> str | None:
@@ -190,6 +190,8 @@ class Reverse(commands.Cog):
 
         api_key = os.environ.get("SAUCENAO_KEY", "")
         results = await _saucenao(data, api_key) if api_key else []
+        strong = [r for r in results if r["similarity"] >= MIN_SIMILARITY]
+        weak = [r for r in results if r["similarity"] < MIN_SIMILARITY][:3]
 
         if ai_mode:
             if not results and not api_key:
@@ -200,15 +202,16 @@ class Reverse(commands.Cog):
                 q = f"what {ask_what} is this? identify it."
             else:
                 q = "what is this? identify the anime, character, or artist."
-            answer, status_msg = await _ai_identify(ctx.bot, ctx.channel, data, results, q)
+            answer, status_msg = await _ai_identify(ctx.bot, ctx.channel, data, strong, weak, q)
             if answer:
                 embed = discord.Embed(
                     title="ai identified",
                     description=answer,
                     color=get_embed_color(ctx.guild.id),
                 )
-                if results and results[0]["url"]:
-                    embed.set_footer(text="saucenao source: " + results[0]["url"])
+                src = (strong or weak)
+                if src and src[0]["url"]:
+                    embed.set_footer(text="saucenao source: " + src[0]["url"])
                 embed.set_image(url=source)
                 if status_msg is not None:
                     try:
@@ -221,15 +224,19 @@ class Reverse(commands.Cog):
                     await status_msg.delete()
                 except discord.HTTPException:
                     pass
-            if results:
-                return await ctx.send(embed=_build_embed(ctx, "saucenao", results, source))
+            if strong:
+                return await ctx.send(embed=_build_embed(ctx, "saucenao", strong, source))
+            if weak:
+                return await ctx.send(embed=_build_weak_embed(ctx, weak, source, lens=None))
             return await ctx.send("-# ai is unavailable rn, and saucenao found nothing. try again later.")
 
-        if results:
-            return await ctx.send(embed=_build_embed(ctx, "saucenao", results, source))
-        log.info("reverse: saucenao no match >= %.0f%%", MIN_SIMILARITY)
+        if strong:
+            return await ctx.send(embed=_build_embed(ctx, "saucenao", strong, source))
+        log.info("reverse: saucenao no strong match >= %.0f%% (%d weak)", MIN_SIMILARITY, len(weak))
 
         page_url = await _lens_url(data)
+        if weak:
+            return await ctx.send(embed=_build_weak_embed(ctx, weak, source, lens=page_url))
         embed = _build_embed(ctx, "google lens", [], source)
         if page_url:
             embed.description = f"no saucenao match — [open this image in google lens]({page_url})"
@@ -250,23 +257,28 @@ def _mime_of(data: bytes) -> str:
     return "image/png"
 
 
-def _saucenao_summary(results: list[dict]) -> str:
+def _saucenao_summary(strong: list[dict], weak: list[dict]) -> str:
     lines = []
-    for r in results[:5]:
+    for r in strong[:5]:
         line = f"- {r['similarity']:.1f}% {r['name']}: {r['title'][:80]}"
+        if r["url"]:
+            line += f" ({r['url']})"
+        lines.append(line)
+    for r in weak[:3]:
+        line = f"- {r['similarity']:.1f}% (weak match) {r['name']}: {r['title'][:80]}"
         if r["url"]:
             line += f" ({r['url']})"
         lines.append(line)
     return "\n".join(lines) or "no matches"
 
 
-async def _ai_identify(bot, channel, data: bytes, results: list[dict], question: str) -> tuple[str | None, str | None]:
+async def _ai_identify(bot, channel, data: bytes, strong: list[dict], weak: list[dict], question: str) -> tuple[str | None, str | None]:
     """Ask the AI to identify the image. Returns (answer, status_msg)."""
     ai = bot.get_cog("AI")
     if ai is None:
         return None, None
     b64 = base64.b64encode(data).decode()
-    summary = _saucenao_summary(results)
+    summary = _saucenao_summary(strong, weak)
     user_text = (
         f"reverse image search results for this image:\n{summary}\n\n"
         f"{question}"
@@ -303,6 +315,28 @@ async def _ai_identify(bot, channel, data: bytes, results: list[dict], question:
     except Exception:
         log.warning("reverse: ai identify failed", exc_info=True)
         return None, None
+
+
+def _build_weak_embed(ctx: commands.Context, results: list[dict], source: str, lens: str | None) -> discord.Embed:
+    embed = discord.Embed(
+        title="weak matches — below confidence",
+        description="nothing matched above 50%, but here are the closest guesses:",
+        color=get_embed_color(ctx.guild.id),
+    )
+    lines = []
+    for i, r in enumerate(results, 1):
+        if r["url"]:
+            lines.append(f"{i}. ⭐ {r['similarity']:.1f}% — **{r['name']}** — [{r['title'][:60]}]({r['url']})")
+        else:
+            lines.append(f"{i}. ⭐ {r['similarity']:.1f}% — **{r['name']}** — {r['title'][:60]}")
+    embed.description += "\n" + "\n".join(lines)
+    if lens:
+        embed.description += f"\n\n[open this image in google lens]({lens})"
+    if results[0].get("thumb"):
+        embed.set_thumbnail(url=results[0]["thumb"])
+    embed.set_image(url=source)
+    embed.set_footer(text="saucenao · low confidence guesses")
+    return embed
 
 
 def _build_embed(ctx: commands.Context, engine: str, results: list[dict], source: str) -> discord.Embed:
