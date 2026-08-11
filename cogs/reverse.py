@@ -31,7 +31,7 @@ SAUCENAO_API = "https://saucenao.com/search.php"
 LENS_UPLOAD = "https://lens.google.com/v3/upload"
 MAX_BYTES = 8 * 1024 * 1024
 MIN_SIMILARITY = 50.0
-WEAK_FLOOR = 20.0
+WEAK_FLOOR = 40.0
 
 
 def _first_image(message: discord.Message) -> str | None:
@@ -78,7 +78,7 @@ async def _download(url: str) -> bytes | None:
         return None
 
 
-async def _saucenao(data: bytes, api_key: str, min_sim: float = WEAK_FLOOR) -> list[dict]:
+async def _saucenao(data: bytes, api_key: str) -> list[dict]:
     form = aiohttp.FormData()
     form.add_field("file", data, filename="image.png", content_type="image/png")
     form.add_field("api_key", api_key)
@@ -94,6 +94,13 @@ async def _saucenao(data: bytes, api_key: str, min_sim: float = WEAK_FLOOR) -> l
     except Exception:
         log.warning("reverse: saucenao failed", exc_info=True)
         return []
+    # saucenao's own confidence threshold (docs: below it results "would
+    # normally be hidden") — never show/feed the AI anything below it
+    try:
+        api_min = float(payload.get("header", {}).get("minimum_similarity", WEAK_FLOOR))
+    except (TypeError, ValueError):
+        api_min = WEAK_FLOOR
+    floor = max(WEAK_FLOOR, api_min)
     out = []
     for res in payload.get("results") or []:
         h, d = res.get("header", {}), res.get("data", {})
@@ -101,7 +108,7 @@ async def _saucenao(data: bytes, api_key: str, min_sim: float = WEAK_FLOOR) -> l
             sim = float(h.get("similarity", 0))
         except (TypeError, ValueError):
             continue
-        if sim < min_sim:
+        if sim < floor:
             continue
         urls = [u for u in (d.get("ext_urls") or []) if str(u).startswith("http")]
         name = h.get("index_name") or "source"
