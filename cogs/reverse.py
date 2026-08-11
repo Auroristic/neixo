@@ -156,7 +156,7 @@ class Reverse(commands.Cog):
                 "desc": "Direct link to the image. Leave empty to use an attachment or replied-to image.",
             },
         ],
-        note="saucenao first (anime sources), google lens fallback. needs SAUCENAO_KEY in .env.",
+        note="saucenao first (anime sources), google lens page fallback.",
     )
     async def reverse(self, ctx: commands.Context, url: str = None):
         if ctx.guild is None:
