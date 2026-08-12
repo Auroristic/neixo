@@ -1246,6 +1246,7 @@ class Music(commands.Cog):
 
     # ── commands ──────────────────────────────────────────────
 
+    @commands.command(aliases=["p"])
     @help_meta(
         usage="`.play <query>`",
         desc="Plays a song or playlist. Auto-detects YouTube, Spotify, SoundCloud, and Bandcamp links.",
@@ -1254,7 +1255,6 @@ class Music(commands.Cog):
             ".play never gonna give you up",
             ".play https://youtu.be/dQw4w9WgXcQ",
             ".play https://open.spotify.com/track/...",
-            ".play https://artist.bandcamp.com/track/...",
         ],
         params=[
             {
@@ -1266,12 +1266,12 @@ class Music(commands.Cog):
         ],
         note="Join a voice channel first. You can queue multiple songs. Spotify playlists are auto-scraped.",
     )
-    @commands.command(aliases=["p"])
     async def play(self, ctx: commands.Context, *, query: str = None) -> None:
         if not query:
             return await ctx.send(embed=_err_embed("gimme something to play. `.play <query>`", ctx))
         await self._play_core(ctx, query)
 
+    @commands.command(aliases=["sc"])
     @help_meta(
         usage="`.playsc <query>`",
         desc="Plays a song directly from SoundCloud (good fallback when YouTube is blocked).",
@@ -1282,12 +1282,12 @@ class Music(commands.Cog):
         ],
         note="Join a voice channel first. Searches SoundCloud directly, bypassing YouTube.",
     )
-    @commands.command(aliases=["sc"])
     async def playsc(self, ctx: commands.Context, *, query: str = None) -> None:
         if not query:
             return await ctx.send(embed=_err_embed("gimme something to play. `.playsc <query>`", ctx))
         await self._play_sc_core(ctx, query)
 
+    @commands.command(aliases=["bc"])
     @help_meta(
         usage="`.playbc <query>`",
         desc="Plays a song directly from Bandcamp without touching YouTube.",
@@ -1303,7 +1303,6 @@ class Music(commands.Cog):
         ],
         note="Join a voice channel first. Direct links are preferred when Bandcamp search is unavailable.",
     )
-    @commands.command(aliases=["bc"])
     async def playbc(self, ctx: commands.Context, *, query: str = None) -> None:
         if not query:
             return await ctx.send(embed=_err_embed("gimme something to play. `.playbc <query>`", ctx))
@@ -1351,6 +1350,7 @@ class Music(commands.Cog):
                 ctx
             ))
 
+    @commands.command(aliases=["next"])
     @help_meta(
         usage="`.skip`",
         desc="Skips the current track. Requires a vote if multiple people are in voice.",
@@ -1359,27 +1359,27 @@ class Music(commands.Cog):
         params=[],
         note="If you're alone, the track skips immediately. In a group, a vote is started.",
     )
-    @commands.command(aliases=["next"])
     async def skip(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
         await self._handle_skip(ctx, vote_initiator=ctx.author)
 
+    @commands.command(aliases=["vs"])
+    @commands.cooldown(1, 10, commands.BucketType.user)
     @help_meta(
         usage="`.voteskip`",
         desc="Starts a vote to skip the current track.",
         section="Playback",
         examples=[".voteskip"],
         params=[],
-        note="Works in tandem with `.skip`. Majority vote is required in group sessions.",
+        note="Works in tandem with `.skip`. Majority vote is required in group sessions. 10s cooldown between votes.",
     )
-    @commands.command(aliases=["vs"])
-    @commands.cooldown(1, 10, commands.BucketType.user)
     async def voteskip(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
         await self._handle_skip(ctx, vote_initiator=ctx.author)
 
+    @commands.command(aliases=["dc", "stop"])
     @help_meta(
         usage="`.disconnect`",
         desc="Stops playback, clears the queue, and leaves the voice channel.",
@@ -1388,7 +1388,6 @@ class Music(commands.Cog):
         params=[],
         note="Use this instead of just leaving the VC — it ensures proper cleanup.",
     )
-    @commands.command(aliases=["dc", "stop"])
     async def disconnect(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx):
             return
@@ -1417,6 +1416,7 @@ class Music(commands.Cog):
         await player.disconnect()
         await ctx.send(embed=_ok_embed("disconnected.", ctx))
 
+    @commands.command(aliases=["vol"])
     @help_meta(
         usage="`.volume [1-200]`",
         desc="Checks or sets the playback volume (1-200%).",
@@ -1427,7 +1427,6 @@ class Music(commands.Cog):
         ],
         note="Default is 100%. Values above 100 may cause distortion.",
     )
-    @commands.command(aliases=["vol"])
     async def volume(self, ctx: commands.Context, value: int = None) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1438,6 +1437,7 @@ class Music(commands.Cog):
         await player.set_volume(value)
         await ctx.send(embed=_ok_embed(f"volume set to **{value}**.", ctx))
 
+    @commands.command()
     @help_meta(
         usage="`.pause`",
         desc="Pauses the current playback.",
@@ -1446,7 +1446,6 @@ class Music(commands.Cog):
         params=[],
         note="Use `.resume` to continue playing.",
     )
-    @commands.command()
     async def pause(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1455,6 +1454,7 @@ class Music(commands.Cog):
         await ctx.send(embed=_ok_embed("paused.", ctx))
         await self._update_vc_status(player.channel.id, "paused | Neixo")
 
+    @commands.command()
     @help_meta(
         usage="`.resume`",
         desc="Resumes paused playback.",
@@ -1463,7 +1463,6 @@ class Music(commands.Cog):
         params=[],
         note="Only works if playback is currently paused.",
     )
-    @commands.command()
     async def resume(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1474,6 +1473,7 @@ class Music(commands.Cog):
         await ctx.send(embed=_ok_embed("resumed.", ctx))
         await self._update_vc_status(player.channel.id, f"{player.current.title} | Neixo")
 
+    @commands.command(aliases=["np", "now"])
     @help_meta(
         usage="`.nowplaying`",
         desc="Shows the currently playing track with a generated music card.",
@@ -1482,7 +1482,6 @@ class Music(commands.Cog):
         params=[],
         note="Displays an interactive embed with album art, progress bar, and controls.",
     )
-    @commands.command(aliases=["np", "now"])
     async def nowplaying(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1519,6 +1518,7 @@ class Music(commands.Cog):
         embed.set_image(url="attachment://neixomusiccard.png")
         await msg.edit(embed=embed, attachments=[card_file])
 
+    @commands.command()
     @help_meta(
         usage="`.loop`",
         desc="Opens a dropdown to set the loop mode (track / queue / off).",
@@ -1527,7 +1527,6 @@ class Music(commands.Cog):
         params=[],
         note="Select from the dropdown: Track (repeat one), Queue (repeat all), or Off.",
     )
-    @commands.command()
     async def loop(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1545,6 +1544,7 @@ class Music(commands.Cog):
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
 
+    @commands.command()
     @help_meta(
         usage="`.shuffle`",
         desc="Shuffles the current queue into a random order.",
@@ -1553,7 +1553,6 @@ class Music(commands.Cog):
         params=[],
         note="The current track continues playing; only upcoming tracks are shuffled.",
     )
-    @commands.command()
     async def shuffle(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1561,6 +1560,7 @@ class Music(commands.Cog):
         player.queue.shuffle()
         await ctx.send(embed=_ok_embed("queue shuffled.", ctx))
 
+    @commands.command()
     @help_meta(
         usage="`.autoplay`",
         desc="Toggles autoplay — plays similar tracks after the queue ends.",
@@ -1569,7 +1569,6 @@ class Music(commands.Cog):
         params=[],
         note="When enabled, the bot will automatically add similar tracks when the queue is empty.",
     )
-    @commands.command()
     async def autoplay(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1582,6 +1581,7 @@ class Music(commands.Cog):
             label = "enabled"
         await ctx.send(embed=_ok_embed(f"autoplay **{label}**.", ctx))
 
+    @commands.command()
     @help_meta(
         usage="`.seek <time>`",
         desc="Jumps to a specific position in the current track.",
@@ -1592,7 +1592,6 @@ class Music(commands.Cog):
         ],
         note="Not supported on all tracks (e.g. live streams).",
     )
-    @commands.command()
     async def seek(self, ctx: commands.Context, *, position: str) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1618,6 +1617,7 @@ class Music(commands.Cog):
             synced = view._synced_lines if view else None
             if synced and player.current:
                 await self._start_live_lyrics(ctx.channel, player, synced, player.current)
+    @commands.command(aliases=["ff"])
     @help_meta(
         usage="`.fastforward [seconds]`",
         desc="Fast-forwards by a number of seconds (default 10s).",
@@ -1628,7 +1628,6 @@ class Music(commands.Cog):
         ],
         note="Not supported on live streams.",
     )
-    @commands.command(aliases=["ff"])
     async def fastforward(self, ctx: commands.Context, seconds: int = 10) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1644,6 +1643,7 @@ class Music(commands.Cog):
             if synced and player.current:
                 await self._start_live_lyrics(ctx.channel, player, synced, player.current)
 
+    @commands.command(aliases=["rw"])
     @help_meta(
         usage="`.rewind [seconds]`",
         desc="Rewinds by a number of seconds (default 10s).",
@@ -1654,7 +1654,6 @@ class Music(commands.Cog):
         ],
         note="Not supported on live streams.",
     )
-    @commands.command(aliases=["rw"])
     async def rewind(self, ctx: commands.Context, seconds: int = 10) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1669,6 +1668,7 @@ class Music(commands.Cog):
             if synced and player.current:
                 await self._start_live_lyrics(ctx.channel, player, synced, player.current)
 
+    @commands.command()
     @help_meta(
         usage="`.replay`",
         desc="Restarts the current track from the beginning.",
@@ -1677,7 +1677,6 @@ class Music(commands.Cog):
         params=[],
         note="Works like a seek to position 0.",
     )
-    @commands.command()
     async def replay(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1691,6 +1690,7 @@ class Music(commands.Cog):
             if synced and player.current:
                 await self._start_live_lyrics(ctx.channel, player, synced, player.current)
 
+    @commands.command(aliases=["sim"])
     @help_meta(
         usage="`.similar`",
         desc="Shows similar tracks to the current one. Pick up to 7 to add to the queue.",
@@ -1699,7 +1699,6 @@ class Music(commands.Cog):
         params=[],
         note="Uses the current track to recommend similar songs via a selection menu.",
     )
-    @commands.command(aliases=["sim"])
     async def similar(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1722,6 +1721,7 @@ class Music(commands.Cog):
         view = SimilarView(tracks, player, ctx.author.id)
         await ctx.send(embed=embed, view=view)
 
+    @commands.command(aliases=["dh", "genre", "hits"])
     @help_meta(
         usage="`.dailyhits`",
         desc="Opens a genre dropdown to load daily hit tracks.",
@@ -1730,7 +1730,6 @@ class Music(commands.Cog):
         params=[],
         note="Pick a genre from the dropdown to see today's top tracks in that genre.",
     )
-    @commands.command(aliases=["dh", "genre", "hits"])
     async def dailyhits(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx):
             return
@@ -1748,6 +1747,8 @@ class Music(commands.Cog):
 
     # ── lyrics ────────────────────────────────────────────────
 
+    @commands.command(aliases=["l", "lyric"])
+    @commands.cooldown(1, 10, commands.BucketType.user)
     @help_meta(
         usage="`.lyrics [query]`",
         desc="Fetches lyrics for the current track or a search query. Results are paginated.",
@@ -1756,10 +1757,8 @@ class Music(commands.Cog):
         params=[
             {"name": "query", "type": "str", "required": False, "desc": "Song name to search lyrics for. Omit to use current track."},
         ],
-        note="Uses syncedlyrics and LRCLIB. Supports synced/karaoke-style lyrics.",
+        note="Uses syncedlyrics and LRCLIB. Supports synced/karaoke-style lyrics. 10s cooldown between uses.",
     )
-    @commands.command(aliases=["l", "lyric"])
-    @commands.cooldown(1, 10, commands.BucketType.user)
     async def lyrics(self, ctx: commands.Context, *, query: str = None) -> None:
         if query:
             clean = self._clean_query(query)
@@ -1800,16 +1799,16 @@ class Music(commands.Cog):
         if isinstance(error, commands.CommandOnCooldown):
             await ctx.send(embed=_err_embed("Please wait 10 seconds before using this command again.", ctx), delete_after=5)
 
+    @commands.command()
+    @commands.cooldown(1, 10, commands.BucketType.user)
     @help_meta(
         usage="`.sync`",
         desc="Forces synced karaoke-style lyrics for the current track.",
         section="Playback",
         examples=[".sync"],
         params=[],
-        note="Only works if synced lyrics are available for the current track.",
+        note="Only works if synced lyrics are available for the current track. 10s cooldown between uses.",
     )
-    @commands.command()
-    @commands.cooldown(1, 10, commands.BucketType.user)
     async def sync(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -1873,6 +1872,7 @@ class Music(commands.Cog):
 
     # ── queue group ───────────────────────────────────────────
 
+    @commands.group(name="queue", aliases=["q"], invoke_without_command=True)
     @help_meta(
         usage="`.queue`",
         desc="Shows the current queue with total duration and loop mode. Paginated.",
@@ -1881,7 +1881,6 @@ class Music(commands.Cog):
         params=[],
         note="Use `.queue remove`, `.queue shuffle`, `.queue empty`, `.queue move`, `.queue skipto`, or `.queue dedupe` for more queue management.",
     )
-    @commands.group(name="queue", aliases=["q"], invoke_without_command=True)
     async def queue_group(self, ctx: commands.Context) -> None:
         player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         if not player or not player.current:
@@ -1895,6 +1894,7 @@ class Music(commands.Cog):
         view = QueueView(ctx, player)
         view.message = await ctx.send(embed=view.build_embed(), view=view)
 
+    @queue_group.command(name="remove", aliases=["rm"])
     @help_meta(
         usage="`.queue remove <position>`",
         desc="Removes a track from the queue by its position number.",
@@ -1905,7 +1905,6 @@ class Music(commands.Cog):
         ],
         note="Use `.queue` to see positions.",
     )
-    @queue_group.command(name="remove", aliases=["rm"])
     async def queue_remove(self, ctx: commands.Context, index: int) -> None:
         if not await self._check_vc(ctx):
             return
@@ -1919,6 +1918,7 @@ class Music(commands.Cog):
         player.queue.remove(removed)
         await ctx.send(embed=_ok_embed(f"removed **{removed.title}**.", ctx))
 
+    @queue_group.command(name="shuffle")
     @help_meta(
         usage="`.queue shuffle`",
         desc="Shuffles the queue in place.",
@@ -1927,7 +1927,6 @@ class Music(commands.Cog):
         params=[],
         note="Same as `.shuffle` but as a queue subcommand.",
     )
-    @queue_group.command(name="shuffle")
     async def queue_shuffle(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx):
             return
@@ -1935,6 +1934,7 @@ class Music(commands.Cog):
         player.queue.shuffle()
         await ctx.send(embed=_ok_embed("queue shuffled.", ctx))
 
+    @queue_group.command(name="empty", aliases=["clear"])
     @help_meta(
         usage="`.queue empty`",
         desc="Clears the entire queue.",
@@ -1943,7 +1943,6 @@ class Music(commands.Cog):
         params=[],
         note="The current track will continue playing.",
     )
-    @queue_group.command(name="empty", aliases=["clear"])
     async def queue_empty(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx):
             return
@@ -1951,6 +1950,7 @@ class Music(commands.Cog):
         player.queue.clear()
         await ctx.send(embed=_ok_embed("queue cleared.", ctx))
 
+    @queue_group.command(name="move", aliases=["mv"])
     @help_meta(
         usage="`.queue move <from> <to>`",
         desc="Moves a track from one position to another in the queue.",
@@ -1962,7 +1962,6 @@ class Music(commands.Cog):
         ],
         note="Use `.queue` to see positions.",
     )
-    @queue_group.command(name="move", aliases=["mv"])
     async def queue_move(self, ctx: commands.Context, position: int, new_position: int) -> None:
         if not await self._check_vc(ctx):
             return
@@ -1982,6 +1981,7 @@ class Music(commands.Cog):
             player.queue.put(t)
         await ctx.send(embed=_ok_embed(f"moved **{track.title}** to position **{new_position}**.", ctx))
 
+    @queue_group.command(name="skipto", aliases=["st"])
     @help_meta(
         usage="`.queue skipto <pos>`",
         desc="Skips directly to a specific position in the queue.",
@@ -1992,7 +1992,6 @@ class Music(commands.Cog):
         ],
         note="All tracks before the target position are removed.",
     )
-    @queue_group.command(name="skipto", aliases=["st"])
     async def queue_skipto(self, ctx: commands.Context, position: int) -> None:
         if not await self._check_vc(ctx):
             return
@@ -2010,6 +2009,7 @@ class Music(commands.Cog):
         await player.skip(force=True)
         await ctx.send(embed=_ok_embed(f"skipped to **{target.title}** (position {position}).", ctx))
 
+    @queue_group.command(name="dedupe")
     @help_meta(
         usage="`.queue dedupe`",
         desc="Removes duplicate tracks from the queue.",
@@ -2018,7 +2018,6 @@ class Music(commands.Cog):
         params=[],
         note="Keeps only the first occurrence of each track.",
     )
-    @queue_group.command(name="dedupe")
     async def queue_dedupe(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx):
             return
@@ -2045,6 +2044,7 @@ class Music(commands.Cog):
 
     # ── preset filter dropdown ────────────────────────────────
 
+    @commands.command()
     @help_meta(
         usage="`.preset`",
         desc="Opens a dropdown to browse and apply audio filters.",
@@ -2053,7 +2053,6 @@ class Music(commands.Cog):
         params=[],
         note="Select from available filter presets. Use `.clearfilter` to reset.",
     )
-    @commands.command()
     async def preset(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -2098,6 +2097,7 @@ class Music(commands.Cog):
 
     # ── individual filter commands ────────────────────────────
 
+    @commands.command(aliases=["bass", "bb"])
     @help_meta(
         usage="`.bassboost`",
         desc="Applies a heavy bass boost filter — punchy low-end.",
@@ -2106,7 +2106,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command(aliases=["bass", "bb"])
     async def bassboost(self, ctx: commands.Context) -> None:
         # Standard 15-band Lavalink EQ: bands 0–4 cover 25 Hz to 160 Hz.
         # Boost the low end smoothly without the hidden detune the old preset had.
@@ -2120,6 +2119,7 @@ class Music(commands.Cog):
         ])
         await self._apply_filter(ctx, f, "bass boost")
 
+    @commands.command()
     @help_meta(
         usage="`.nightcore`",
         desc="Applies a higher pitch and speed filter — anime/nightcore style.",
@@ -2128,7 +2128,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command()
     async def nightcore(self, ctx: commands.Context) -> None:
         # Classic anime nightcore: pitch + speed up by 20%.
         # Cut a hair off the lowest sub-bass (gets boomy at high speed) and
@@ -2143,6 +2142,7 @@ class Music(commands.Cog):
         ])
         await self._apply_filter(ctx, f, "nightcore")
 
+    @commands.command()
     @help_meta(
         usage="`.lofi`",
         desc="Applies a low-fidelity filter — mellow and warm sound.",
@@ -2151,7 +2151,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command()
     async def lofi(self, ctx: commands.Context) -> None:
         # Mellow, warm, slightly slowed — classic study-beats vibe.
         # Roll off everything above 1.6 kHz progressively for that vinyl-warm
@@ -2172,6 +2171,7 @@ class Music(commands.Cog):
         ])
         await self._apply_filter(ctx, f, "lofi")
 
+    @commands.command()
     @help_meta(
         usage="`.slowed`",
         desc="Applies a slowed + reverb effect — chill and dreamy.",
@@ -2180,7 +2180,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command()
     async def slowed(self, ctx: commands.Context) -> None:
         # Slowed-and-reverb style. Lavalink has no real reverb, so we fake the
         # "spacey" feel with a soft low-pass + a gentle low-frequency tremolo,
@@ -2198,6 +2197,7 @@ class Music(commands.Cog):
         ])
         await self._apply_filter(ctx, f, "slowed + reverb")
 
+    @commands.command()
     @help_meta(
         usage="`.concert`",
         desc="Applies a live concert hall reverb effect.",
@@ -2206,7 +2206,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command()
     async def concert(self, ctx: commands.Context) -> None:
         # Live-hall feel: classic "smile" EQ (boosted bass + treble, slight mid scoop)
         # plus a small amount of cross-channel bleed for stereo widening.
@@ -2230,6 +2229,7 @@ class Music(commands.Cog):
         )
         await self._apply_filter(ctx, f, "concert")
 
+    @commands.command()
     @help_meta(
         usage="`.eightd`",
         desc="Applies 8D audio — sound rotates around your head.",
@@ -2238,7 +2238,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Best experienced with headphones. Use `.clearfilter` to remove.",
     )
-    @commands.command()
     async def eightd(self, ctx: commands.Context) -> None:
         # 8D — rotation_hz=0.2 is the standard "around your head" speed.
         # The old 0.28 was too fast and made it feel dizzy.
@@ -2252,6 +2251,7 @@ class Music(commands.Cog):
         ])
         await self._apply_filter(ctx, f, "8D")
 
+    @commands.command()
     @help_meta(
         usage="`.dolby`",
         desc="Applies a Dolby surround sound effect.",
@@ -2260,7 +2260,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command()
     async def dolby(self, ctx: commands.Context) -> None:
         # Surround / cinematic feel: smile EQ for big bass + sparkly highs,
         # plus a meaningful amount of channel cross-bleed for spatial spread.
@@ -2283,6 +2282,7 @@ class Music(commands.Cog):
         )
         await self._apply_filter(ctx, f, "dolby surround", vol_cap=90)
 
+    @commands.command()
     @help_meta(
         usage="`.heaven`",
         desc="Applies an ethereal, airy filter — floaty and soft.",
@@ -2291,7 +2291,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command()
     async def heaven(self, ctx: commands.Context) -> None:
         # Floaty, airy, slightly slowed and lifted in pitch like a music box.
         # Highs sparkle, lows are gentle, slight stereo widening for "open" feel.
@@ -2313,6 +2312,7 @@ class Music(commands.Cog):
         )
         await self._apply_filter(ctx, f, "heaven", vol_cap=85)
 
+    @commands.command(aliases=["karaoke", "vocalscut"])
     @help_meta(
         usage="`.instrumental`",
         desc="Attempts to remove vocals — karaoke mode.",
@@ -2321,12 +2321,12 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Works best on tracks with centered vocals. Use `.clearfilter` to remove.",
     )
-    @commands.command(aliases=["karaoke", "vocalscut"])
     async def instrumental(self, ctx: commands.Context) -> None:
         f = wavelink.Filters()
         f.karaoke.set(level=1.0, mono_level=1.0, filter_band=220.0, filter_width=200.0)
         await self._apply_filter(ctx, f, "instrumental/karaoke", vol_cap=90)
 
+    @commands.command(aliases=["underwater", "muffle"])
     @help_meta(
         usage="`.muffled`",
         desc="Applies a muffled underwater effect.",
@@ -2335,7 +2335,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command(aliases=["underwater", "muffle"])
     async def muffled(self, ctx: commands.Context) -> None:
         # Heavy low-pass + progressive treble roll-off for that
         # behind-a-wall / underwater sound. No karaoke (that was unrelated).
@@ -2354,6 +2353,7 @@ class Music(commands.Cog):
         ])
         await self._apply_filter(ctx, f, "muffled", vol_cap=90)
 
+    @commands.command(aliases=["tremolo", "trem"])
     @help_meta(
         usage="`.tremolocmd`",
         desc="Applies a tremolo effect — rapid volume oscillation.",
@@ -2362,7 +2362,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command(aliases=["tremolo", "trem"])
     async def tremolocmd(self, ctx: commands.Context) -> None:
         # Just amplitude oscillation. The old preset stacked an aggressive
         # bass boost + low-pass on top which fought the effect.
@@ -2370,6 +2369,7 @@ class Music(commands.Cog):
         f.tremolo.set(frequency=4.0, depth=0.6)
         await self._apply_filter(ctx, f, "tremolo", vol_cap=95)
 
+    @commands.command()
     @help_meta(
         usage="`.vibrato`",
         desc="Applies a vibrato effect — rapid pitch oscillation.",
@@ -2378,7 +2378,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command()
     async def vibrato(self, ctx: commands.Context) -> None:
         # Pitch oscillation. Removed the karaoke filter the old preset had —
         # vibrato has nothing to do with vocal removal.
@@ -2386,6 +2385,7 @@ class Music(commands.Cog):
         f.vibrato.set(frequency=8.0, depth=0.7)
         await self._apply_filter(ctx, f, "vibrato", vol_cap=95)
 
+    @commands.command(aliases=["dreamy", "dream", "trance"])
     @help_meta(
         usage="`.dreamcore`",
         desc="Applies a trance-like dreamy filter.",
@@ -2394,7 +2394,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command(aliases=["dreamy", "dream", "trance"])
     async def dreamcore(self, ctx: commands.Context) -> None:
         # Dreamy, slightly sped-up trance feel. Subtle tremolo gives the
         # pulsing energy without it feeling jittery.
@@ -2412,6 +2411,7 @@ class Music(commands.Cog):
         ])
         await self._apply_filter(ctx, f, "dreamcore", vol_cap=92)
 
+    @commands.command(aliases=["hall", "cave"])
     @help_meta(
         usage="`.rotation`",
         desc="Applies a hall/spacious cave-like ambience effect.",
@@ -2420,7 +2420,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. For 8D rotation specifically, use `.eightd`. Use `.clearfilter` to remove.",
     )
-    @commands.command(aliases=["hall", "cave"])
     async def rotation(self, ctx: commands.Context) -> None:
         # Hall / cave ambience. Lavalink has no real reverb, so we approximate:
         # slight low-pass for "distance", a mid scoop (rooms naturally absorb
@@ -2447,6 +2446,7 @@ class Music(commands.Cog):
         )
         await self._apply_filter(ctx, f, "hall", vol_cap=90)
 
+    @commands.command(aliases=["reversefx", "fliproom"])
     @help_meta(
         usage="`.reverseroom`",
         desc="Applies a reverse room — flipped spatial effect.",
@@ -2455,7 +2455,6 @@ class Music(commands.Cog):
         params=[],
         note="Toggle effect. Use `.clearfilter` to remove.",
     )
-    @commands.command(aliases=["reversefx", "fliproom"])
     async def reverseroom(self, ctx: commands.Context) -> None:
         # Disorienting flipped-room feel: slow wobble in pitch, slightly
         # slowed playback, and a mid scoop for that "wrong way round" vibe.
@@ -2474,6 +2473,7 @@ class Music(commands.Cog):
         ])
         await self._apply_filter(ctx, f, "reverse room", vol_cap=88)
 
+    @commands.command(aliases=["cf", "clearfilters"])
     @help_meta(
         usage="`.clearfilter`",
         desc="Clears all active audio filters and restores clean audio.",
@@ -2482,7 +2482,6 @@ class Music(commands.Cog):
         params=[],
         note="Turns off all filter effects at once.",
     )
-    @commands.command(aliases=["cf", "clearfilters"])
     async def clearfilter(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -2490,6 +2489,7 @@ class Music(commands.Cog):
         await player.set_filters(wavelink.Filters())
         await ctx.send(embed=_ok_embed("all filters cleared.", ctx))
 
+    @commands.command()
     @help_meta(
         usage="`.save`",
         desc="DMs you the current track info so you don't lose it.",
@@ -2498,7 +2498,6 @@ class Music(commands.Cog):
         params=[],
         note="Sends a DM with the track name, artist, and URL.",
     )
-    @commands.command()
     async def save(self, ctx: commands.Context) -> None:
         if not await self._check_vc(ctx) or not await self._check_playing(ctx):
             return
@@ -2516,6 +2515,7 @@ class Music(commands.Cog):
         except discord.Forbidden:
             await ctx.send(embed=_err_embed("couldn't DM you. check your privacy settings.", ctx))
 
+    @commands.command(aliases=["recent"])
     @help_meta(
         usage="`.history`",
         desc="Shows the last 10 tracks that were played in this session.",
@@ -2524,7 +2524,6 @@ class Music(commands.Cog):
         params=[],
         note="Session history resets when the bot leaves the voice channel.",
     )
-    @commands.command(aliases=["recent"])
     async def history(self, ctx: commands.Context) -> None:
         hist = self._history.get(ctx.guild.id)
         if not hist:
@@ -2536,6 +2535,7 @@ class Music(commands.Cog):
             color=Neixocolor,
         ))
 
+    @commands.command(aliases=["pn"])
     @help_meta(
         usage="`.playnext <query>`",
         desc="Adds a track to the front of the queue so it plays next.",
@@ -2546,7 +2546,6 @@ class Music(commands.Cog):
         ],
         note="The track is inserted at position 1 in the queue (after the current track).",
     )
-    @commands.command(aliases=["pn"])
     async def playnext(self, ctx: commands.Context, *, query: str = None) -> None:
         if not query:
             return await ctx.send(embed=_err_embed("gimme a track. `.playnext <query>`", ctx))
@@ -2577,6 +2576,7 @@ class Music(commands.Cog):
         player.queue.put_at(0, track)
         await ctx.send(embed=_ok_embed(f"**{track.title}** will play next.", ctx))
 
+    @commands.command()
     @help_meta(
         usage="`.radio <name>`",
         desc="Plays an internet radio station by name.",
@@ -2587,7 +2587,6 @@ class Music(commands.Cog):
         ],
         note="Joins voice and starts streaming the radio station.",
     )
-    @commands.command()
     async def radio(self, ctx: commands.Context, *, name: str = None) -> None:
         if not name:
             return await ctx.send(embed=_err_embed("gimme a station name. `.radio <name>`", ctx))
@@ -2634,6 +2633,7 @@ class Music(commands.Cog):
             await player.play(player.queue.get())
         await ctx.send(embed=_ok_embed(f"playing **{station.get('name', name)}** {Neixoemojis.get('cd')}", ctx))
 
+    @commands.command(aliases=["eq"])
     @help_meta(
         usage="`.exportqueue`",
         desc="DMs you the current queue as clickable links.",
@@ -2642,7 +2642,6 @@ class Music(commands.Cog):
         params=[],
         note="Each track is sent as a clickable link to the song on its source platform.",
     )
-    @commands.command(aliases=["eq"])
     async def exportqueue(self, ctx: commands.Context) -> None:
         player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
         if not player or not player.current:
@@ -2658,6 +2657,7 @@ class Music(commands.Cog):
         except discord.Forbidden:
             await ctx.send(embed=_err_embed("couldn't DM you. check your privacy settings.", ctx))
 
+    @commands.command()
     @help_meta(
         usage="`.stats`",
         desc="Shows session stats: tracks played, total time, and top requester.",
@@ -2666,7 +2666,6 @@ class Music(commands.Cog):
         params=[],
         note="Stats reset when the bot leaves the voice channel.",
     )
-    @commands.command()
     async def stats(self, ctx: commands.Context) -> None:
         if not ctx.guild:
             return
