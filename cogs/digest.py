@@ -177,7 +177,7 @@ class Digest(commands.Cog):
             except Exception as e:
                 log.warning("digest failed for %s: %s", gid_str, e)
 
-    def _baselines(self, gid_str: str, conf: dict) -> tuple[dict, int, int, int]:
+    def _baselines(self, gid_str: str, conf: dict, update: bool = True) -> tuple[dict, dict, dict]:
         base = conf.setdefault("baselines", {})
         # current totals from the stats db
         from cogs.serverstats import _get_conn as _stats_conn
@@ -213,17 +213,18 @@ class Digest(commands.Cog):
                 delta_bumps[int(uid)] = cur - prev
 
         # update baselines to current totals
-        for uid, cur in msgs.items():
-            base.setdefault(str(uid), {})["msgs"] = cur
-        for uid, cur in vc.items():
-            base.setdefault(str(uid), {})["vc"] = cur
-        for uid, cur in bumps.items():
-            base.setdefault(str(uid), {})["bumps"] = cur
+        if update:
+            for uid, cur in msgs.items():
+                base.setdefault(str(uid), {})["msgs"] = cur
+            for uid, cur in vc.items():
+                base.setdefault(str(uid), {})["vc"] = cur
+            for uid, cur in bumps.items():
+                base.setdefault(str(uid), {})["bumps"] = cur
         return (delta_msgs, delta_vc, delta_bumps)
 
-    async def _run_digest(self, guild: discord.Guild, conf: dict):
+    async def _build_digest_file(self, guild: discord.Guild, conf: dict, update: bool) -> io.BytesIO | None:
         gid_str = str(guild.id)
-        delta_msgs, delta_vc, delta_bumps = self._baselines(gid_str, conf)
+        delta_msgs, delta_vc, delta_bumps = self._baselines(gid_str, conf, update=update)
 
         def _name(uid):
             m = guild.get_member(uid)
@@ -246,7 +247,7 @@ class Digest(commands.Cog):
             pass
 
         week_label = f"week of {datetime.now(timezone.utc).strftime('%b %d')}"
-        buf = await asyncio.to_thread(
+        return await asyncio.to_thread(
             _render_digest_card,
             icon_bytes,
             guild.name,
@@ -259,6 +260,11 @@ class Digest(commands.Cog):
             [(i + 1, _name(uid), n // 60) for i, (uid, n) in enumerate(vc_rows)],
             [(i + 1, _name(uid), n) for i, (uid, n) in enumerate(bumper_rows)],
         )
+
+    async def _run_digest(self, guild: discord.Guild, conf: dict):
+        buf = await self._build_digest_file(guild, conf, update=True)
+        if buf is None:
+            return
         channel = guild.get_channel(int(conf["channel_id"]))
         if channel is not None:
             try:
@@ -323,6 +329,26 @@ class Digest(commands.Cog):
             return await ctx.send("-# digest is off. `.digest #channel` to turn on.")
         ch = ctx.guild.get_channel(int(conf["channel_id"]))
         await ctx.send(f"-# weekly digest on, posting to {ch.mention if ch else conf['channel_id']} every sunday.")
+
+    @digest.command(name="now")
+    @help_meta(
+        usage="`.digest now`",
+        desc="Sends the current week's digest card on demand.",
+        section="General",
+        examples=[".digest now"],
+        params=[],
+        note="admin only. shows the same stats as the sunday card — does not affect the scheduled run.",
+    )
+    async def digest_now(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if not await self._admin(ctx):
+            return await ctx.send("-# admin only")
+        conf = _load_digest().get(str(ctx.guild.id)) or {}
+        buf = await self._build_digest_file(ctx.guild, conf, update=False)
+        if buf is None:
+            return
+        await ctx.send(file=discord.File(fp=buf, filename="digest.png"))
 
     @digest.command(name="set", aliases=["on"])
     @help_meta(
