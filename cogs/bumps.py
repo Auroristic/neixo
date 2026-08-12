@@ -200,7 +200,7 @@ class Bumps(commands.Cog):
                 "desc": "Show a specific user's bump count and rank.",
             },
         ],
-        note="tracks disboard bumps. one bump every 2 hours, so it's a fair race.",
+        note="Tracks Disboard bumps. One bump every 2 hours, so it's a fair race.",
     )
     async def bumps(self, ctx: commands.Context, user: discord.Member = None):
         if ctx.guild is None:

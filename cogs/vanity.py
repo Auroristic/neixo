@@ -93,20 +93,23 @@ class Vanity(commands.Cog):
             .replace("{server}", member.guild.name)
         )
 
+    @commands.group(name="vanity", invoke_without_command=True)
     @help_meta(
         usage="`.vanity [config|substring|channel|message|role|reset]`",
         desc="Vanity status tracker — root command for all vanity subcommands.",
+        section="Vanity",
         staff=True,
         examples=[".vanity", ".vanity config"],
         params=[],
         note="Staff only. Subcommands: config, substring, channel, message, role, reset.",
     )
-    @commands.group(name="vanity", invoke_without_command=True)
     async def vanity(self, ctx):
         await ctx.send("**Vanity commands:** `config`, `substring`, `channel`, `message`, `role`, `reset`")
 
+    @vanity.command(name="config")
+    @is_admin()
     @help_meta(
-        usage=".vanity config",
+        usage="`.vanity config`",
         desc="Shows the current vanity configuration for this server.",
         section="Vanity",
         staff=True,
@@ -114,8 +117,6 @@ class Vanity(commands.Cog):
         params=[],
         note="Staff only.",
     )
-    @vanity.command(name="config")
-    @is_admin()
     async def vanity_config(self, ctx):
         await self.ensure_rule(ctx.guild.id)
         rule = await self.get_rule(ctx.guild.id)
@@ -131,8 +132,10 @@ class Vanity(commands.Cog):
         embed.set_footer(text="Use .vanity <substring|channel|message|role> to configure")
         await ctx.send(embed=embed)
 
+    @vanity.command(name="substring")
+    @is_admin()
     @help_meta(
-        usage=".vanity substring <text>",
+        usage="`.vanity substring <text>`",
         desc="Sets the status substring the bot watches for.",
         section="Vanity",
         staff=True,
@@ -142,15 +145,15 @@ class Vanity(commands.Cog):
         ],
         note="Staff only. Members whose status contains this text will trigger the configured notification.",
     )
-    @vanity.command(name="substring")
-    @is_admin()
     async def set_substring(self, ctx, *, substring: str):
         await self.ensure_rule(ctx.guild.id)
         await self.update_rule(ctx.guild.id, substring=substring)
         await ctx.send(f"✅ Substring set to `{substring}`")
 
+    @vanity.command(name="channel")
+    @is_admin()
     @help_meta(
-        usage=".vanity channel <#channel>",
+        usage="`.vanity channel <#channel>`",
         desc="Sets the notification channel for vanity matches.",
         section="Vanity",
         staff=True,
@@ -160,16 +163,16 @@ class Vanity(commands.Cog):
         ],
         note="Staff only.",
     )
-    @vanity.command(name="channel")
-    @is_admin()
     async def set_channel(self, ctx, channel: discord.TextChannel):
         await self.ensure_rule(ctx.guild.id)
         await self.update_rule(ctx.guild.id, channel_id=channel.id)
         await ctx.send(f"✅ Notification channel set to {channel.mention}")
 
+    @vanity.command(name="message")
+    @is_admin()
     @help_meta(
-        usage=".vanity message <text>",
-        desc="Sets the notification message for vanity matches. Use `{{user}}`, `{{username}}`, `{{server}}` as placeholders.",
+        usage="`.vanity message <text>`",
+        desc="Sets the vanity match notification message. Placeholders: `{{user}}`, `{{username}}`, `{{server}}`.",
         section="Vanity",
         staff=True,
         examples=[".vanity message {{user}} is repping {{server}}!"],
@@ -178,15 +181,15 @@ class Vanity(commands.Cog):
         ],
         note="Staff only.",
     )
-    @vanity.command(name="message")
-    @is_admin()
     async def set_message(self, ctx, *, message: str):
         await self.ensure_rule(ctx.guild.id)
         await self.update_rule(ctx.guild.id, channel_msg=message)
         await ctx.send(f"✅ Notification message set to `{message}`\n> Placeholders: `{{user}}` `{{username}}` `{{server}}`")
 
+    @vanity.command(name="role")
+    @is_admin()
     @help_meta(
-        usage=".vanity role <@role>",
+        usage="`.vanity role <@role>`",
         desc="Sets the role to assign when a status match is found.",
         section="Vanity",
         staff=True,
@@ -196,15 +199,15 @@ class Vanity(commands.Cog):
         ],
         note="Staff only.",
     )
-    @vanity.command(name="role")
-    @is_admin()
     async def set_role(self, ctx, role: discord.Role):
         await self.ensure_rule(ctx.guild.id)
         await self.update_rule(ctx.guild.id, role_id=role.id)
         await ctx.send(f"✅ Role set to {role.mention}")
 
+    @vanity.command(name="reset")
+    @is_admin()
     @help_meta(
-        usage=".vanity reset",
+        usage="`.vanity reset`",
         desc="Resets all vanity configuration for this server.",
         section="Vanity",
         staff=True,
@@ -212,8 +215,6 @@ class Vanity(commands.Cog):
         params=[],
         note="Staff only. This cannot be undone.",
     )
-    @vanity.command(name="reset")
-    @is_admin()
     async def reset_config(self, ctx):
         await self.conn.execute("DELETE FROM vanity_rules WHERE guild_id = ?", (ctx.guild.id,))
         await self.conn.commit()

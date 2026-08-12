@@ -34,16 +34,17 @@ class ImagineCog(commands.Cog, name="Imagine"):
         if self.session:
             await self.session.close()
 
+    @commands.command(name="imagine", aliases=["draw", "gen"])
     @help_meta(
         usage="`.imagine <prompt>`",
         desc="Generate an image using AI.",
+        section="Image",
         examples=[".imagine a cat in space", ".imagine cyberpunk city rain"],
         params=[
             {"name": "prompt", "type": "str", "required": True, "desc": "Description of the image to generate."},
         ],
         note="Uses NVIDIA FLUX.2 model. Per-user cooldown applies.",
     )
-    @commands.command(name="imagine", aliases=["draw", "gen"])
     async def imagine_cmd(self, ctx: commands.Context, *, prompt: str):
         """Generate an image using AI."""
         cd = check_imagine_cooldown(ctx.author.id)

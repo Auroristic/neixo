@@ -40,7 +40,7 @@ class EmbedMaker(commands.Cog):
         params=[
             {"name": "content", "type": "str", "required": True, "desc": "`title | description` — optional `--color #hex` at the end."},
         ],
-        note="staff only.",
+        note="Staff only.",
     )
     async def embed(self, ctx: commands.Context, *, content: str = None):
         if not await self._staff(ctx):

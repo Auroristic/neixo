@@ -72,7 +72,7 @@ class Warns(commands.Cog):
             {"name": "user", "type": "discord.Member", "required": True, "desc": "User to warn."},
             {"name": "reason", "type": "str", "required": True, "desc": "Why they're being warned."},
         ],
-        note="staff only. use `.warnlog #channel` to get a log channel.",
+        note="Staff only. Use `.warn log #channel` to get a log channel.",
     )
     async def warn(self, ctx: commands.Context, user: discord.Member = None, *, reason: str = None):
         if not await self._staff(ctx):
@@ -123,6 +123,16 @@ class Warns(commands.Cog):
         await self._post_log(ctx.guild, f"`{ctx.author.display_name}` warned <@{user.id}> ({count}/{BAN_AT}) — {reason.strip()[:100]}")
 
     @warn.group(name="log", invoke_without_command=True)
+    @help_meta(
+        usage="`.warn log [#channel]`",
+        desc="Shows or sets the warn log channel.",
+        section="Moderation",
+        examples=[".warn log", ".warn log #staff-logs"],
+        params=[
+            {"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "Channel to post warn logs to. Omit to show the current one."},
+        ],
+        note="Staff only.",
+    )
     async def warn_log(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if not await self._staff(ctx):
             return await ctx.send("-# staff only")
@@ -138,6 +148,16 @@ class Warns(commands.Cog):
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @warn.command(name="clear")
+    @help_meta(
+        usage="`.warn clear <@user>`",
+        desc="Clears all warns for a user.",
+        section="Moderation",
+        examples=[".warn clear @someone"],
+        params=[
+            {"name": "user", "type": "discord.Member", "required": True, "desc": "User whose warns to clear."},
+        ],
+        note="Staff only. This cannot be undone.",
+    )
     async def warn_clear(self, ctx: commands.Context, user: discord.Member = None):
         if not await self._staff(ctx):
             return await ctx.send("-# staff only")
@@ -183,7 +203,7 @@ class Warns(commands.Cog):
         section="Moderation",
         examples=[".warnings", ".warnings @someone"],
         params=[{"name": "user", "type": "discord.Member", "required": False, "desc": "User to check. Defaults to you."}],
-        note="staff see anyone's warns.",
+        note="Staff can check anyone's warns.",
     )
     async def warnings(self, ctx: commands.Context, user: discord.Member = None):
         if ctx.guild is None:

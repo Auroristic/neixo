@@ -118,11 +118,11 @@ class Welcome(commands.Cog):
     @commands.group(name="welcome", invoke_without_command=True)
     @help_meta(
         usage="`.welcome setup #channel [message]`  ·  `.welcome off`  ·  `.welcome status`",
-        desc="Image welcome cards for new members.",
+        desc="Manages image welcome cards for new members.",
         section="General",
         examples=[".welcome setup #welcome hey {user} welcome!"],
         params=[],
-        note="admin only. `{user}` in the message becomes the new member's mention.",
+        note="Admin only. `{user}` in the message becomes the new member's mention.",
     )
     async def welcome(self, ctx: commands.Context):
         await ctx.send(
@@ -147,7 +147,7 @@ class Welcome(commands.Cog):
             {"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "Channel to post welcome cards to."},
             {"name": "message", "type": "str", "required": False, "desc": "Optional text with the card. `{user}` becomes the new member."},
         ],
-        note="admin only.",
+        note="Admin only.",
     )
     async def welcome_setup(self, ctx: commands.Context, channel: discord.TextChannel = None, *, message: str = None):
         if not await self._admin(ctx):
@@ -169,7 +169,7 @@ class Welcome(commands.Cog):
         section="General",
         examples=[".welcome off"],
         params=[],
-        note="admin only.",
+        note="Admin only.",
     )
     async def welcome_off(self, ctx: commands.Context):
         if not await self._admin(ctx):
@@ -186,7 +186,7 @@ class Welcome(commands.Cog):
         section="General",
         examples=[".welcome status"],
         params=[],
-        note="anyone can check.",
+        note="Anyone can check.",
     )
     async def welcome_status(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -205,7 +205,7 @@ class Welcome(commands.Cog):
         section="General",
         examples=[".welcome test"],
         params=[],
-        note="anyone can preview — does not change settings. 1 use per 10 seconds.",
+        note="Anyone can preview — does not change settings. Cooldown: 1 use per 10 seconds.",
     )
     async def welcome_test(self, ctx: commands.Context):
         if ctx.guild is None:

@@ -252,16 +252,17 @@ class HelpCog(commands.Cog, name="Help"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    @commands.command(name="help", aliases=["h"])
     @help_meta(
         usage="`.help [command]`",
         desc="Shows the full command catalogue or detailed info for a specific command.",
+        section="General",
         examples=[".help", ".help play", ".help remind"],
         params=[
             {"name": "command", "type": "str", "required": False, "desc": "Optional command name to get detailed info about."},
         ],
         note="Without arguments, shows a link to the web help site. Use `.help <command>` for detailed info.",
     )
-    @commands.command(name="help", aliases=["h"])
     async def help_command(self, ctx: commands.Context, *, command: str = None):
         config = get_config()
         guild_id = ctx.guild.id if ctx.guild else 0

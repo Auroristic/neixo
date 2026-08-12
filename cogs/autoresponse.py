@@ -49,11 +49,11 @@ class AutoResponse(commands.Cog):
     @commands.group(name="auto", aliases=["autoresponse"], invoke_without_command=True)
     @help_meta(
         usage="`.auto add <trigger> => <response>`  ·  `.auto remove <trigger>`  ·  `.auto list`",
-        desc="Custom auto-responses: when someone says the trigger, the bot replies.",
+        desc="Creates custom auto-responses — the bot replies when someone says the trigger.",
         section="General",
         examples=[".auto add hello => hi there", ".auto remove hello", ".auto list"],
         params=[],
-        note="admin only. placeholders: `{user}`, `{server}`, `{channel}`. max 15 triggers per server.",
+        note="Admin only. Placeholders: `{user}`, `{server}`, `{channel}`. Max 15 triggers per server.",
     )
     async def auto(self, ctx: commands.Context, *, args: str = None):
         if not args:
@@ -86,7 +86,7 @@ class AutoResponse(commands.Cog):
         section="General",
         examples=[".auto remove hello"],
         params=[{"name": "trigger", "type": "str", "required": True, "desc": "The trigger to remove."}],
-        note="admin only.",
+        note="Admin only.",
     )
     async def auto_remove(self, ctx: commands.Context, trigger: str = None):
         if not await self._admin(ctx):
@@ -108,7 +108,7 @@ class AutoResponse(commands.Cog):
         section="General",
         examples=[".auto list"],
         params=[],
-        note="anyone can view.",
+        note="Anyone can view.",
     )
     async def auto_list(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -131,7 +131,7 @@ class AutoResponse(commands.Cog):
         section="General",
         examples=[".auto clear"],
         params=[],
-        note="admin only.",
+        note="Admin only.",
     )
     async def auto_clear(self, ctx: commands.Context):
         if not await self._admin(ctx):

@@ -153,32 +153,25 @@ class Reverse(commands.Cog):
 
     @commands.command(name="reverse", aliases=["rv", "saucenao"])
     @help_meta(
-        usage=".reverse [what] [image url] [question...]",
-        desc="Reverse image search — reply to an image, attach one, or pass a url. "
-        "Pass a word like `anime`, `movie`, or `character` and the AI identifies it.",
+        usage="`.reverse [url] [text...]`",
+        desc="Reverse image search with optional AI identification (anime, movie, character).",
         section="Utility",
-        examples=[".reverse", ".reverse anime", ".reverse movie", ".reverse character", ".reverse <image url>"],
+        examples=[".reverse", ".reverse anime", ".reverse <image url>"],
         params=[
             {
-                "name": "what",
+                "name": "url",
                 "type": "str",
                 "required": False,
-                "desc": "What the AI should identify: anime, movie, character, artist... any non-url word works.",
+                "desc": "Direct image link, or a `what` word (e.g. `anime`, `movie`, `character`) to identify an attached or replied-to image.",
             },
             {
-                "name": "image url",
+                "name": "text",
                 "type": "str",
                 "required": False,
-                "desc": "Direct link to the image. Leave empty to use an attachment or replied-to image.",
-            },
-            {
-                "name": "question",
-                "type": "str",
-                "required": False,
-                "desc": "Optional extra question for the AI (only with the `what` word).",
+                "desc": "Optional extra question for the AI (only when the first arg is a `what` word).",
             },
         ],
-        note="saucenao first (anime sources), google lens page fallback.",
+        note="Checks SauceNAO first (anime sources), with a Google Lens page as fallback.",
     )
     async def reverse(self, ctx: commands.Context, url: str = None, *, question: str = None):
         if ctx.guild is None:

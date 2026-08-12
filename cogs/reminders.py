@@ -307,18 +307,18 @@ class RemindersCog(commands.Cog, name="Reminders"):
         return get_embed_color(ctx.guild.id) if ctx.guild else 0x121516
 
     # ── .remind ────────────────────────────────────────────
+    @commands.group(name="remind", aliases=["reminder"], invoke_without_command=True)
     @help_meta(
-        usage="`.remind <when> <text>`  ·  `.remind every <interval> <text>`  ·  `.remind list`  ·  `.remind cancel <id>`",
-        desc="DM-yourself reminder. `<when>` accepts relative (`5s`, `5m`, `2h`, `2d`, `1w`) or absolute (`YYYY/MM/DD [HH:MM]`) time. Use `every` for recurring reminders.",
+        usage="`.remind <when> <text>`",
+        desc="DM-yourself a one-off or recurring reminder. Times can be relative or absolute.",
         section="Reminders",
-        examples=[".remind 5m take out pizza rolls", ".remind every 1d water the plants", ".remind 2026/12/25 it's christmas!", ".remind list"],
+        examples=[".remind 5m take out pizza rolls", ".remind every 1d water the plants", ".remind list"],
         params=[
-            {"name": "when", "type": "str", "required": True, "desc": "Time spec: relative (`5m`, `2h`, `1d`), absolute (`2026/12/25 14:30`), or `every` for recurring."},
+            {"name": "when", "type": "str", "required": True, "desc": "Relative (`5m`, `2h`, `1d`, `1w`), absolute (`2026/12/25 14:30` UTC), or `every` for recurring."},
             {"name": "text", "type": "str", "required": True, "desc": "Reminder message (max 500 chars)."},
         ],
-        note="You will receive a DM when the reminder triggers. Time is UTC. Recurring: `.remind every 1d <text>`.",
+        note="You'll get a DM when it triggers. Subcommands: `.remind list`, `.remind cancel <id>`.",
     )
-    @commands.group(name="remind", aliases=["reminder"], invoke_without_command=True)
     async def remind(self, ctx, when: str = None, *, text: str = None):
         if not when or not text:
             return await ctx.send(
@@ -369,15 +369,15 @@ class RemindersCog(commands.Cog, name="Reminders"):
         else:
             await ctx.send(f"-# got u — DMing in **{_format_delta(delta)}** (`#{rid}`)")
 
+    @remind.command(name="list")
     @help_meta(
-        usage=".remind list",
+        usage="`.remind list`",
         desc="Lists all your active reminders.",
         section="Reminders",
         examples=[".remind list"],
         params=[],
         note="Shows reminder IDs, time remaining, and preview of the message.",
     )
-    @remind.command(name="list")
     async def remind_list(self, ctx):
         async with self._reminders_lock:
             state = _load_reminders()
@@ -408,8 +408,9 @@ class RemindersCog(commands.Cog, name="Reminders"):
         )
         await ctx.send(embed=embed)
 
+    @remind.command(name="cancel", aliases=["rm", "del", "delete"])
     @help_meta(
-        usage=".remind cancel <id>",
+        usage="`.remind cancel <id>`",
         desc="Cancels a reminder by its ID.",
         section="Reminders",
         examples=[".remind cancel 3"],
@@ -418,7 +419,6 @@ class RemindersCog(commands.Cog, name="Reminders"):
         ],
         note="You can only cancel your own reminders.",
     )
-    @remind.command(name="cancel", aliases=["rm", "del", "delete"])
     async def remind_cancel(self, ctx, rid: int):
         async with self._reminders_lock:
             state = _load_reminders()
@@ -433,18 +433,18 @@ class RemindersCog(commands.Cog, name="Reminders"):
         await ctx.send(f"-# cancelled `#{rid}`")
 
     # ── .bday ──────────────────────────────────────────────
+    @commands.group(name="bday", aliases=["birthday"], invoke_without_command=True)
     @help_meta(
         usage="`.bday <date> [@user|name]`  ·  `.bday list`  ·  `.bday remove [@user]`",
         desc="Saves a birthday — the bot DMs you every year on the date. Date format: `MM/DD` or `YYYY/MM/DD`.",
         section="Reminders",
-        examples=[".bday 11/08", ".bday 2002/11/08 @user", ".bday list", ".bday remove @user"],
+        examples=[".bday 11/08", ".bday 2002/11/08 @user", ".bday list"],
         params=[
             {"name": "date", "type": "str", "required": True, "desc": "Birthday date: `MM/DD` or `YYYY/MM/DD`."},
             {"name": "target", "type": "str", "required": False, "desc": "Optional @user or name. Defaults to yourself."},
         ],
         note="The bot will DM you a birthday greeting every year on the saved date.",
     )
-    @commands.group(name="bday", aliases=["birthday"], invoke_without_command=True)
     async def bday(self, ctx, date: str = None, *, target: str = None):
         if not date:
             return await ctx.send(
@@ -481,15 +481,15 @@ class RemindersCog(commands.Cog, name="Reminders"):
             f"-# saved — i'll DM u every year on `{md}` for **{target_name}**"
         )
 
+    @bday.command(name="list")
     @help_meta(
-        usage=".bday list",
+        usage="`.bday list`",
         desc="Lists all your saved birthdays.",
         section="Reminders",
         examples=[".bday list"],
         params=[],
         note="Shows the saved dates and names.",
     )
-    @bday.command(name="list")
     async def bday_list(self, ctx):
         async with self._birthdays_lock:
             bs = _load_birthdays()
@@ -507,8 +507,9 @@ class RemindersCog(commands.Cog, name="Reminders"):
         )
         await ctx.send(embed=embed)
 
+    @bday.command(name="remove", aliases=["rm", "del", "delete"])
     @help_meta(
-        usage=".bday remove [@user]",
+        usage="`.bday remove [@user]`",
         desc="Removes a saved birthday.",
         section="Reminders",
         examples=[".bday remove @user"],
@@ -517,7 +518,6 @@ class RemindersCog(commands.Cog, name="Reminders"):
         ],
         note="This cannot be undone.",
     )
-    @bday.command(name="remove", aliases=["rm", "del", "delete"])
     async def bday_remove(self, ctx, *, target: str = None):
         target_id, target_name = _resolve_target(self.bot, target, ctx.author)
         async with self._birthdays_lock:

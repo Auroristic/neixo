@@ -234,6 +234,7 @@ class FunCog(commands.Cog, name="Fun"):
                 except Exception as e:
                     log.warning(f"webhook gc delete: {e}")
 
+    @commands.command(name="uwulock")
     @help_meta(
         usage="`.uwulock @user [#channel]`",
         desc="Toggles uwulock on a user — all their messages become uwufied.",
@@ -246,7 +247,6 @@ class FunCog(commands.Cog, name="Fun"):
         section="Moderation",
         staff=True,
     )
-    @commands.command(name="uwulock")
     async def uwulock(
         self,
         ctx,
@@ -301,6 +301,7 @@ class FunCog(commands.Cog, name="Fun"):
         except Exception:
             pass
 
+    @commands.command(name="uwulist")
     @help_meta(
         usage="`.uwulist`",
         desc="Shows who is currently uwulocked.",
@@ -310,7 +311,6 @@ class FunCog(commands.Cog, name="Fun"):
         section="Moderation",
         staff=True,
     )
-    @commands.command(name="uwulist")
     async def uwulist(self, ctx):
         if not ctx.guild:
             return

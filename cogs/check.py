@@ -26,14 +26,15 @@ class Check(commands.Cog):
         if self.session:
             await self.session.close()
 
+    @commands.command()
     @help_meta(
         usage="`.anilist`",
         desc="Checks AniList API status and latency.",
+        section="General",
         examples=[".anilist"],
         params=[],
         note="No authentication required. Uses the AniList GraphQL API.",
     )
-    @commands.command()
     async def anilist(self, ctx: commands.Context):
         """Check AniList API status."""
         url = "https://graphql.anilist.co"

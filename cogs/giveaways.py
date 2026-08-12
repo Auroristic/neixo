@@ -125,7 +125,7 @@ class Giveaways(commands.Cog):
             {"name": "duration", "type": "str", "required": True, "desc": "How long it runs: `30m`, `2h`, `1d`, `1w`."},
             {"name": "prize", "type": "str", "required": True, "desc": "The prize."},
         ],
-        note="anyone can host. winners are picked randomly from 🎉 reactors.",
+        note="Anyone can host. Winners are picked randomly from 🎉 reactors.",
     )
     async def giveaway(self, ctx: commands.Context, duration: str = None, *, prize: str = None):
         if ctx.guild is None:
@@ -171,7 +171,7 @@ class Giveaways(commands.Cog):
         section="Fun",
         examples=[".giveawaycancel"],
         params=[],
-        note="admin only.",
+        note="Admin only.",
     )
     async def giveaway_cancel(self, ctx: commands.Context):
         if ctx.guild is None:

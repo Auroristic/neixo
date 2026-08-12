@@ -66,7 +66,7 @@ class AFK(commands.Cog):
                 "desc": "Optional reason people will see when they mention you.",
             },
         ],
-        note="send any non-command message when you're back and it clears itself.",
+        note="Send any non-command message when you're back and it clears itself.",
     )
     async def afk(self, ctx: commands.Context, *, reason: str = None):
         if ctx.guild is None:

@@ -85,7 +85,7 @@ class Milestones(commands.Cog):
         section="General",
         examples=[".milestone #announcements", ".milestone status"],
         params=[{"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "Channel to post milestone cards to (turns it on)."}],
-        note="admin only.",
+        note="Admin only.",
     )
     async def milestone(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if channel is not None:
@@ -99,7 +99,7 @@ class Milestones(commands.Cog):
         section="General",
         examples=[".milestone off"],
         params=[],
-        note="admin only.",
+        note="Admin only.",
     )
     async def milestone_off(self, ctx: commands.Context):
         if not await self._admin(ctx):
@@ -116,7 +116,7 @@ class Milestones(commands.Cog):
         section="General",
         examples=[".milestone status"],
         params=[],
-        note="anyone can check.",
+        note="Anyone can check.",
     )
     async def milestone_status(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -129,12 +129,12 @@ class Milestones(commands.Cog):
 
     @milestone.command(name="set", aliases=["on"])
     @help_meta(
-        usage="`.milestone <#channel>`",
+        usage="`.milestone set <#channel>`",
         desc="Turns milestone cards on for a channel.",
         section="General",
-        examples=[".milestone #announcements"],
+        examples=[".milestone set #announcements"],
         params=[{"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "Channel to post milestone cards to."}],
-        note="admin only.",
+        note="Admin only.",
     )
     async def milestone_set(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if not await self._admin(ctx):

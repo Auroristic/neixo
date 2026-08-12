@@ -333,9 +333,11 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
         except asyncio.CancelledError:
             pass
 
+    @commands.command(name="cid")
     @help_meta(
         usage="`.cid latest | number | user <id>`",
         desc="Reveals who sent a confession (DM only).",
+        section="Moderation",
         examples=[".cid latest", ".cid 42", ".cid user 123456789"],
         params=[
             {"name": "target", "type": "str", "required": True, "desc": "`latest`, a confession number, or `user`."},
@@ -344,7 +346,6 @@ class ConfessionsCog(commands.Cog, name="Confessions"):
         note="Staff only. Must be run in DMs. Uses cached config.",
         staff=True,
     )
-    @commands.command(name="cid")
     async def reveal_confession(self, ctx, target: str = None, user_id: str = None):
         if ctx.guild is not None:
             await ctx.send("forbidden.")

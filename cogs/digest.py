@@ -275,11 +275,11 @@ class Digest(commands.Cog):
     @commands.group(name="digest", invoke_without_command=True)
     @help_meta(
         usage="`.digest <#channel>`  ·  `.digest off`  ·  `.digest status`",
-        desc="Weekly server digest image card, posted every sunday.",
+        desc="Posts a weekly server digest image card every Sunday.",
         section="General",
         examples=[".digest #general", ".digest status"],
         params=[],
-        note="admin only. shows top chatters, vc time, bumps, and member growth for the week.",
+        note="Admin only. Shows top chatters, VC time, bumps, and member growth for the week.",
     )
     async def digest(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if channel is not None:
@@ -302,7 +302,7 @@ class Digest(commands.Cog):
         section="General",
         examples=[".digest off"],
         params=[],
-        note="admin only.",
+        note="Admin only.",
     )
     async def digest_off(self, ctx: commands.Context):
         if not await self._admin(ctx):
@@ -319,7 +319,7 @@ class Digest(commands.Cog):
         section="General",
         examples=[".digest status"],
         params=[],
-        note="anyone can check.",
+        note="Anyone can check.",
     )
     async def digest_status(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -337,7 +337,7 @@ class Digest(commands.Cog):
         section="General",
         examples=[".digest now"],
         params=[],
-        note="admin only. shows the same stats as the sunday card — does not affect the scheduled run.",
+        note="Admin only. Shows the same stats as the Sunday card — does not affect the scheduled run.",
     )
     async def digest_now(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -352,12 +352,12 @@ class Digest(commands.Cog):
 
     @digest.command(name="set", aliases=["on"])
     @help_meta(
-        usage="`.digest <#channel>`",
+        usage="`.digest set <#channel>`",
         desc="Turns the weekly digest on for a channel.",
         section="General",
-        examples=[".digest #general"],
+        examples=[".digest set #general"],
         params=[{"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "Channel to post the digest to."}],
-        note="admin only. posts every sunday.",
+        note="Admin only. Posts every Sunday.",
     )
     async def digest_set(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if not await self._admin(ctx):

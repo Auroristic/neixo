@@ -48,7 +48,7 @@ class Playlists(commands.Cog):
     @commands.group(invoke_without_command=True)
     @help_meta(
         section="Music",
-        usage=".playlist <name>",
+        usage="`.playlist <name>`",
         desc="Plays a saved playlist by name.",
         examples=[".playlist chill", ".playlist workout"],
         params=[
@@ -132,7 +132,7 @@ class Playlists(commands.Cog):
     @playlist.command()
     @help_meta(
         section="Music",
-        usage=".playlist save <name>",
+        usage="`.playlist save <name>`",
         desc="Saves the current music queue as a named playlist.",
         examples=[".playlist save chill", ".playlist save workout"],
         params=[
@@ -189,7 +189,7 @@ class Playlists(commands.Cog):
     @playlist.command()
     @help_meta(
         section="Music",
-        usage=".playlist load <name>",
+        usage="`.playlist load <name>`",
         desc="Loads a saved playlist into the queue.",
         examples=[".playlist load chill"],
         params=[
@@ -250,7 +250,7 @@ class Playlists(commands.Cog):
     @playlist.command(aliases=["del"])
     @help_meta(
         section="Music",
-        usage=".playlist delete <name>",
+        usage="`.playlist delete <name>`",
         desc="Deletes a saved playlist.",
         examples=[".playlist delete chill"],
         params=[
@@ -269,7 +269,7 @@ class Playlists(commands.Cog):
     @playlist.command(aliases=["ls"])
     @help_meta(
         section="Music",
-        usage=".playlist list",
+        usage="`.playlist list`",
         desc="Lists all your saved playlists.",
         examples=[".playlist list"],
         params=[],
@@ -293,7 +293,7 @@ class Playlists(commands.Cog):
     @playlist.command()
     @help_meta(
         section="Music",
-        usage=".playlist info <name>",
+        usage="`.playlist info <name>`",
         desc="Shows detailed information about a saved playlist.",
         examples=[".playlist info chill"],
         params=[

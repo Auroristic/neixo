@@ -155,13 +155,13 @@ class Translate(commands.Cog):
     @commands.command(name="translate", aliases=["tr", "trans"])
     @help_meta(
         usage="`.translate <language> <text>`  ·  reply to a message + `.translate [language]`",
-        desc="Translates text with NVIDIA riva (english <-> 36 languages). Replying to a message translates that message.",
+        desc="Translates text (English to 36 languages). Replying to a message translates it.",
         section="General",
         examples=[".translate japanese hello there", ".translate from ja this is japanese text"],
         params=[
-            {"name": "args", "type": "str", "required": True, "desc": "`<language> <text>` (source is english), `from <language> <text>` (to english), or reply to a message and use `.translate [language]` to translate it (any language -> english by default). `.translate langs` for the list."},
+            {"name": "args", "type": "str", "required": True, "desc": "`<language> <text>` (source is English), `from <language> <text>` (to English), or reply to a message and use `.translate [language]` to translate it (any language → English by default). `.translate langs` for the list."},
         ],
-        note="replying with no args translates the replied message to english. reply + `.translate <lang>` goes to that language (auto-detects the source).",
+        note="Replying with no args translates the replied message to English. Reply plus `.translate <lang>` goes to that language (source auto-detected).",
     )
     async def translate(self, ctx: commands.Context, *, args: str = None):
         key = _get_key()
