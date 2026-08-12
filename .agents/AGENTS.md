@@ -17,3 +17,15 @@ When adding or modifying commands and responses for this bot, you **MUST** stric
    - If a chat embed is strictly required (e.g., `.setcolor` outputting the new color), keep it **extremely minimal and entirely lowercase**.
    - Example: `description="nya?"`
    - **Never** use bulky titles, verbose descriptions, or `✅`/`❌` emojis inside the embed text. The UI should remain sleek, clean, and unobtrusive.
+
+### Command Help Metadata (REQUIRED)
+Every new or modified command MUST ship complete `@help_meta` metadata:
+- `usage`: starts with `.`, matches the real signature
+- `desc`: one line, ≤ 100 chars, lowercase, says what the command does
+- `section`: always set to the cog's existing section label
+- `examples`: ≤ 3, only where genuinely useful
+- `params`: one entry per documented argument, `required` matches the default
+- `note`: restrictions (admin/owner/staff/cooldown) or placeholder explanations
+When touching a command, verify `.help <command>` renders sensibly. Never leave a
+command without `@help_meta` — the bot warns on missing metadata at startup.
+Metadata changes only: never alter behavior, aliases, or signatures in a help sweep.
