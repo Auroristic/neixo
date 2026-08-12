@@ -13,11 +13,21 @@ def isolate_data_dir(monkeypatch, tmp_path):
     data_dir.mkdir()
     monkeypatch.setattr('utils.DATA_DIR', str(data_dir))
     monkeypatch.setattr('utils.DB_FILE', str(data_dir / 'bot.db'))
+    monkeypatch.setattr('utils._db_initialized', False)
     for cache_attr in ['_config_cache', '_ignore_cache', '_dm_whitelist_cache', '_aliases_cache']:
         monkeypatch.setattr(f'utils.{cache_attr}', None)
     for time_attr in ['_config_cache_time', '_ignore_cache_time', '_dm_whitelist_cache_time', '_aliases_cache_time']:
         monkeypatch.setattr(f'utils.{time_attr}', 0)
     u.init_files()
+    # leveling_settings is created by Leveling.cog_load(), which tests never
+    # call — create it here so the level-branch tests hit a real table.
+    with u._db() as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS leveling_settings ("
+            "guild_id TEXT PRIMARY KEY, "
+            "notifications_enabled INTEGER DEFAULT 1, "
+            "disabled INTEGER DEFAULT 0)"
+        )
 
 
 def test_disabled_empty_by_default():
