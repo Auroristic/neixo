@@ -343,7 +343,10 @@ Replace both methods in `cogs/leveling.py` with:
     )
     async def disable_cmd(self, ctx, *, command: str = None):
         """Disable a command for this guild, or the leveling system."""
-        # 1. level = the existing bot-global leveling system flag (creator only)
+        # 1. level = the existing bot-global leveling system flag — CREATOR-ONLY.
+        #    Pre-existing behavior (leveling.py today checks only is_creator);
+        #    the flag is bot-global so only the creator toggles it. Deliberately
+        #    differs from the per-guild path's owner/creator/whitelist permission.
         if command == "level":
             if not is_creator(ctx.author.id):
                 return await ctx.send("creator only")
@@ -389,7 +392,10 @@ Replace both methods in `cogs/leveling.py` with:
     )
     async def enable_cmd(self, ctx, *, command: str = None):
         """Re-enable a command for this guild, or the leveling system."""
-        # 1. level = the existing bot-global leveling system flag (creator only)
+        # 1. level = the existing bot-global leveling system flag — CREATOR-ONLY.
+        #    Pre-existing behavior (leveling.py today checks only is_creator);
+        #    the flag is bot-global so only the creator toggles it. Deliberately
+        #    differs from the per-guild path's owner/creator/whitelist permission.
         if command == "level":
             if not is_creator(ctx.author.id):
                 return await ctx.send("creator only")
@@ -532,8 +538,15 @@ In `cogs/welcome.py`:
 
 ```python
 async def _fetch_member_art(member) -> tuple[bytes | None, bytes | None]:
-    """Fetch a member's avatar and their guild's banner bytes (best-effort)."""
+    """Fetch a member's avatar and their guild's banner bytes (best-effort).
+
+    The outer try only guards session creation; per-URL failures are
+    tolerated inside _get so one bad URL never blanks the other.
+    """
     avatar_bytes = banner_bytes = None
+    urls = [member.display_avatar.url]
+    if member.guild.banner:
+        urls.append(member.guild.banner.url)
     try:
         async with aiohttp.ClientSession() as s:
             async def _get(url):
@@ -542,11 +555,11 @@ async def _fetch_member_art(member) -> tuple[bytes | None, bytes | None]:
                         return await r.read() if r.status == 200 else None
                 except Exception:
                     return None
-            tasks = [_get(member.display_avatar.url), _get(member.guild.banner.url) if member.guild.banner else _noop()]
-            results = await asyncio.gather(*tasks)
-            avatar_bytes, banner_bytes = results[0], results[1]
+            results = await asyncio.gather(*[_get(u) for u in urls])
     except Exception:
-        pass
+        return None, None
+    avatar_bytes = results[0]
+    banner_bytes = results[1] if len(results) > 1 else None
     return avatar_bytes, banner_bytes
 ```
 
@@ -907,7 +920,7 @@ git commit -m "help: overhaul ai/gif_editor/admin/profile command metadata"
 
 - [ ] **Step 1: Sweep `cogs/misc.py` (8), `cogs/leveling.py` (7), `cogs/reactions.py` (5), `cogs/snipe.py` (3), `cogs/serverstats.py` (3), `cogs/counting.py` (3)**
 
-Apply the quality bar exactly as in Task 5. Metadata only. Note: the `snipe.py` commands were just written to the bar — leave them unless something is clearly off.
+Apply the quality bar exactly as in Task 5. Metadata only. The `snipe.py` commands were recently written to this bar in the earlier snipe-suite work — review them anyway and only leave them if they already meet every point of the bar.
 
 - [ ] **Step 2: Run the checker script**
 

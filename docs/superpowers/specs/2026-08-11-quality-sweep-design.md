@@ -29,7 +29,11 @@ Four improvements: (1) generic per-guild `.disable <command>` / `.enable <comman
 - **Explicit dispatch branch** (identical shape for both commands):
 
 ```python
-# 1. level = the existing bot-global leveling system flag (owner/creator only)
+# 1. level = the existing bot-global leveling system flag — CREATOR-ONLY.
+#    This is pre-existing behavior (leveling.py today checks only is_creator).
+#    It deliberately differs from the per-guild path's owner/creator/
+#    whitelist permission: the flag is bot-global, so only the creator
+#    toggles it.
 if command == "level":
     if not is_creator(ctx.author.id):
         return await ctx.send("creator only")
