@@ -200,7 +200,7 @@ class Welcome(commands.Cog):
     @welcome.command(name="test")
     @commands.cooldown(1, 10, commands.BucketType.user)
     @help_meta(
-        usage="`.welcome test`",
+        usage=".welcome test",
         desc="Previews the welcome card with your own avatar.",
         section="General",
         examples=[".welcome test"],
