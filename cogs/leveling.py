@@ -465,62 +465,116 @@ class Leveling(commands.Cog):
     @commands.command(name="disable")
     @help_meta(
         section="Leveling",
-        usage=".disable level",
-        desc="Disables the entire leveling system (XP gain, leaderboard, rank, roles).",
-        examples=[".disable level"],
+        usage="`.disable <command>`  ·  `.disable`",
+        desc="Disables a command for this server (owner/creator/whitelist only).",
+        examples=[".disable rtop", ".disable welcome test"],
         params=[
-            {"name": "system", "type": "str", "required": True, "desc": "Must be `level`."},
+            {"name": "command", "type": "str", "required": False,
+             "desc": "Command to disable (subcommands like `welcome test` work). Omit to list disabled commands. `level` disables the leveling system."},
         ],
-        note="Owner/creator only. Stops all XP gain and blocks leveling commands until `.enable level` or restart.",
-        owner=True,
+        note="guild owner, creator, or whitelisted users only. `.enable <command>` turns it back on.",
     )
-    async def disable_cmd(self, ctx, system: str = None):
-        """Disable the leveling system."""
-        if system != "level":
-            return await ctx.send("Usage: `.disable level`")
-        # the flag is bot-global — only the creator can toggle it
-        if not is_creator(ctx.author.id):
-            return await ctx.send("creator only")
-        self._leveling_disabled = True
-        from utils import _db
-        with _db() as conn:
-            conn.execute(
-                "INSERT INTO leveling_settings (guild_id, notifications_enabled, disabled) "
-                "VALUES ('__global__', 1, 1) "
-                "ON CONFLICT(guild_id) DO UPDATE SET disabled = 1"
-            )
-        msg = ("❌ Leveling system **disabled**. XP gain and leveling commands "
-               "are now blocked. Use `.enable level` to re-enable.")
-        await ctx.send(msg)
+    async def disable_cmd(self, ctx, *, command: str = None):
+        """Disable a command for this guild, or the leveling system."""
+        # 1. level = the existing bot-global leveling system flag — CREATOR-ONLY.
+        #    Pre-existing behavior (leveling.py today checks only is_creator);
+        #    the flag is bot-global so only the creator toggles it. Deliberately
+        #    differs from the per-guild path's owner/creator/whitelist permission.
+        if command == "level":
+            if not is_creator(ctx.author.id):
+                return await ctx.send("creator only")
+            self._leveling_disabled = True
+            from utils import _db
+            with _db() as conn:
+                conn.execute(
+                    "INSERT INTO leveling_settings (guild_id, notifications_enabled, disabled) "
+                    "VALUES ('__global__', 1, 1) "
+                    "ON CONFLICT(guild_id) DO UPDATE SET disabled = 1"
+                )
+            return await ctx.send("❌ Leveling system **disabled**. Use `.enable level` to re-enable.")
+
+        # 2. generic per-guild command disable
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if not await self._can_disable(ctx):
+            return await ctx.send("-# no perms")
+        if command is None:
+            return await ctx.send(self._disabled_list_text(ctx))
+        cmd_name = command.lower().lstrip(".")
+        from utils import get_aliases
+        cmd_name = get_aliases().get(cmd_name, cmd_name)
+        if cmd_name in ("disable", "enable", "help"):
+            return await ctx.send("-# can't disable that")
+        if self.bot.get_command(cmd_name) is None:
+            return await ctx.send("-# no command called that")
+        from utils import add_disabled_command
+        add_disabled_command(ctx.guild.id, cmd_name)
+        await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
 
     @commands.command(name="enable")
     @help_meta(
         section="Leveling",
-        usage=".enable level",
-        desc="Re-enables the entire leveling system.",
-        examples=[".enable level"],
+        usage="`.enable <command>`  ·  `.enable`",
+        desc="Re-enables a disabled command for this server (owner/creator/whitelist only).",
+        examples=[".enable rtop"],
         params=[
-            {"name": "system", "type": "str", "required": True, "desc": "Must be `level`."},
+            {"name": "command", "type": "str", "required": False,
+             "desc": "Command to re-enable. Omit to list disabled commands. `level` re-enables the leveling system."},
         ],
-        note="Owner/creator only. Restarts XP gain and leveling commands.",
-        owner=True,
+        note="guild owner, creator, or whitelisted users only.",
     )
-    async def enable_cmd(self, ctx, system: str = None):
-        """Enable the leveling system."""
-        if system != "level":
-            return await ctx.send("Usage: `.enable level`")
-        # the flag is bot-global — only the creator can toggle it
-        if not is_creator(ctx.author.id):
-            return await ctx.send("creator only")
-        self._leveling_disabled = False
-        from utils import _db
-        with _db() as conn:
-            conn.execute(
-                "INSERT INTO leveling_settings (guild_id, notifications_enabled, disabled) "
-                "VALUES ('__global__', 1, 0) "
-                "ON CONFLICT(guild_id) DO UPDATE SET disabled = 0"
-            )
-        await ctx.send("✅ Leveling system **enabled**. XP gain and leveling commands are now active.")
+    async def enable_cmd(self, ctx, *, command: str = None):
+        """Re-enable a command for this guild, or the leveling system."""
+        # 1. level = the existing bot-global leveling system flag — CREATOR-ONLY.
+        #    Pre-existing behavior (leveling.py today checks only is_creator);
+        #    the flag is bot-global so only the creator toggles it. Deliberately
+        #    differs from the per-guild path's owner/creator/whitelist permission.
+        if command == "level":
+            if not is_creator(ctx.author.id):
+                return await ctx.send("creator only")
+            self._leveling_disabled = False
+            from utils import _db
+            with _db() as conn:
+                conn.execute(
+                    "INSERT INTO leveling_settings (guild_id, notifications_enabled, disabled) "
+                    "VALUES ('__global__', 1, 0) "
+                    "ON CONFLICT(guild_id) DO UPDATE SET disabled = 0"
+                )
+            return await ctx.send("✅ Leveling system **enabled**.")
+
+        # 2. generic per-guild command enable
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if not await self._can_disable(ctx):
+            return await ctx.send("-# no perms")
+        if command is None:
+            return await ctx.send(self._disabled_list_text(ctx))
+        cmd_name = command.lower().lstrip(".")
+        from utils import get_aliases
+        cmd_name = get_aliases().get(cmd_name, cmd_name)
+        if cmd_name in ("disable", "enable", "help"):
+            return await ctx.send("-# can't enable that")
+        if self.bot.get_command(cmd_name) is None:
+            return await ctx.send("-# no command called that")
+        from utils import remove_disabled_command
+        remove_disabled_command(ctx.guild.id, cmd_name)
+        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+
+    async def _can_disable(self, ctx) -> bool:
+        if is_creator(ctx.author.id):
+            return True
+        if ctx.author.id == ctx.guild.owner_id:
+            return True
+        from utils import get_config
+        whitelist = (get_config() or {}).get(str(ctx.guild.id), {}).get("whitelist", [])
+        return str(ctx.author.id) in {str(uid) for uid in whitelist}
+
+    def _disabled_list_text(self, ctx) -> str:
+        from utils import get_disabled_commands
+        names = get_disabled_commands(ctx.guild.id)
+        if not names:
+            return "-# nothing disabled here."
+        return "-# disabled here: " + ", ".join(f".{n}" for n in names)
 
 
 async def setup(bot):
