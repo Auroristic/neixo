@@ -12,6 +12,7 @@ def isolate_data_dir(monkeypatch, tmp_path):
     data_dir = tmp_path / 'data'
     data_dir.mkdir()
     monkeypatch.setattr('utils.DATA_DIR', str(data_dir))
+    monkeypatch.setattr('utils.DB_FILE', str(data_dir / 'bot.db'))
     for cache_attr in ['_config_cache', '_ignore_cache', '_dm_whitelist_cache', '_aliases_cache']:
         monkeypatch.setattr(f'utils.{cache_attr}', None)
     for time_attr in ['_config_cache_time', '_ignore_cache_time', '_dm_whitelist_cache_time', '_aliases_cache_time']:
