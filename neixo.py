@@ -221,6 +221,22 @@ class Neixo(commands.Bot):
 
         return True
 
+    async def _disabled_command_check(self, ctx: commands.Context) -> bool:
+        if ctx.guild is None or not ctx.command:
+            return True
+        from utils import is_command_disabled
+
+        qualified = (ctx.command.qualified_name or ctx.command.name or "").lower().strip()
+        if not qualified:
+            return True
+        if is_command_disabled(ctx.guild.id, qualified):
+            try:
+                await ctx.send(f"-# `.{qualified}` is disabled.")
+            except discord.HTTPException:
+                pass
+            return False
+        return True
+
     async def setup_hook(self) -> None:
         # ── Lavalink ──────────────────────────────────────────
         lavalink_uri  = os.getenv("LAVALINK_URI",  "http://localhost:2333")
@@ -246,6 +262,12 @@ class Neixo(commands.Bot):
             self.add_check(self._channel_rule_check)  # type: ignore[arg-type]
         except Exception:
             logging.exception("failed to register channel command rule check")
+
+        # Register global disabled-command check.
+        try:
+            self.add_check(self._disabled_command_check)  # type: ignore[arg-type]
+        except Exception:
+            logging.exception("failed to register disabled-command check")
 
         # ── Register persistent views ─────────────────────────
         if not self.persistent_views_added:

@@ -511,6 +511,40 @@ def clear_cmd_channel_rules(guild_id: int | str) -> None:
 def get_cmd_channel_rule(guild_id: int | str, target_key: str) -> dict | None:
     return get_guild_cmd_rule_targets(guild_id).get(target_key)
 
+# ── Disabled commands (per-guild) ─────────────────────────────
+
+def _disabled_file() -> str:
+    return f"{DATA_DIR}/disabled_commands.json"
+
+
+def get_disabled_commands(guild_id: int | str) -> list[str]:
+    return list((load_json(_disabled_file()) or {}).get(str(guild_id), []))
+
+
+def add_disabled_command(guild_id: int | str, name: str) -> None:
+    state = load_json(_disabled_file()) or {}
+    names = state.setdefault(str(guild_id), [])
+    if name not in names:
+        names.append(name)
+    save_json(_disabled_file(), state)
+
+
+def remove_disabled_command(guild_id: int | str, name: str) -> None:
+    state = load_json(_disabled_file()) or {}
+    names = state.get(str(guild_id), [])
+    if name in names:
+        names.remove(name)
+    if not names:
+        state.pop(str(guild_id), None)
+    save_json(_disabled_file(), state)
+
+
+def is_command_disabled(guild_id: int | str, qualified: str) -> bool:
+    for name in get_disabled_commands(guild_id):
+        if qualified == name or qualified.startswith(name + " "):
+            return True
+    return False
+
 # ── Bait moderation config (guild only) ───────────────────────────
 
 BAIT_DEFAULT_DELAY_SECONDS = 12 * 60 * 60
