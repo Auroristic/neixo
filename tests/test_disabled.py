@@ -85,10 +85,11 @@ def _make_cog(bot_commands=None):
 
     cog = Leveling(None)
     cog.bot = SimpleNamespace(get_command=lambda n: bot_commands.get(n) if bot_commands else None)
-    # discord.py 2.7 Command has no __get__: bind as add_cog would, so
+    # Cog.__new__ binds per-instance Command copies (discord.py 2.7) that are
+    # not attached to a cog; bind them as add_cog would, so
     # cog.disable_cmd(ctx, ...) invokes the callback with the cog instance.
-    type(cog).disable_cmd.cog = cog
-    type(cog).enable_cmd.cog = cog
+    cog.disable_cmd.cog = cog
+    cog.enable_cmd.cog = cog
     return cog
 
 
