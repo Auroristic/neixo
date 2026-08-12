@@ -856,7 +856,7 @@ for f in sorted(pathlib.Path('cogs').glob('*.py')):
     for i, ln in enumerate(lines):
         if pat_cmd.match(ln):
             total += 1
-            window = lines[max(0, i - 3):i + 4]
+            window = lines[max(0, i - 20):i + 21]  # wide window: multi-line @help_meta blocks run ~8-14 lines
             if not any(pat_meta.match(l) for l in window):
                 bad.append(f'{f}:{i + 1}: {ln.strip()}')
 print(f'checked {total} command decorators')
