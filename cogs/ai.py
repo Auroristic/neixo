@@ -2415,8 +2415,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="aiadd")
     @help_meta(
-        usage=".aiadd [#channel]",
+        usage="`.aiadd [#channel]`",
         desc="Enables AI chat responses in a channel.",
+        section="AI",
         owner=True,
         examples=[".aiadd", ".aiadd #general"],
         params=[
@@ -2449,8 +2450,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="airemove")
     @help_meta(
-        usage=".airemove [#channel]",
+        usage="`.airemove [#channel]`",
         desc="Disables AI chat responses in a channel.",
+        section="AI",
         owner=True,
         examples=[".airemove", ".airemove #general"],
         params=[
@@ -2480,8 +2482,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="ailist")
     @help_meta(
-        usage=".ailist",
+        usage="`.ailist`",
         desc="Shows all AI-enabled channels and DM whitelisted users.",
+        section="AI",
         owner=True,
         examples=[".ailist"],
         params=[],
@@ -2543,8 +2546,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="dmadd")
     @help_meta(
-        usage=".dmadd @user",
+        usage="`.dmadd @user`",
         desc="Enables DM AI responses for a user.",
+        section="AI",
         owner=True,
         examples=[".dmadd @user"],
         params=[
@@ -2569,8 +2573,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="dmremove")
     @help_meta(
-        usage=".dmremove @user",
+        usage="`.dmremove @user`",
         desc="Disables DM AI responses for a user.",
+        section="AI",
         owner=True,
         examples=[".dmremove @user"],
         params=[
@@ -2595,8 +2600,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="dmreset")
     @help_meta(
-        usage=".dmreset",
+        usage="`.dmreset`",
         desc="Resets your DM conversation memory.",
+        section="AI",
         owner=True,
         examples=[".dmreset"],
         params=[],
@@ -2622,8 +2628,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="dmrefresh")
     @help_meta(
-        usage=".dmrefresh",
+        usage="`.dmrefresh`",
         desc="Refreshes your DM conversation from scratch.",
+        section="AI",
         owner=True,
         examples=[".dmrefresh"],
         params=[],
@@ -2642,8 +2649,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="creset")
     @help_meta(
-        usage=".creset [@user] or .creset all",
+        usage="`.creset [@user]`  ·  `.creset #channel`  ·  `.creset all`",
         desc="Resets conversation memory for a user or everyone.",
+        section="AI",
         owner=True,
         examples=[".creset", ".creset @user", ".creset all"],
         params=[
@@ -2731,8 +2739,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="crefresh")
     @help_meta(
-        usage=".crefresh or .crefresh all",
+        usage="`.crefresh`  ·  `.crefresh all`",
         desc="Wipes conversation memory and re-reads the last 60 messages.",
+        section="AI",
         owner=True,
         examples=[".crefresh", ".crefresh all"],
         params=[
@@ -2807,8 +2816,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="crestore")
     @help_meta(
-        usage=".crestore",
+        usage="`.crestore`",
         desc="Restores conversation memory from the last backup.",
+        section="AI",
         owner=True,
         examples=[".crestore"],
         params=[],
@@ -2825,8 +2835,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="mreset")
     @help_meta(
-        usage=".mreset [@user]",
+        usage="`.mreset [@user]`",
         desc="Clears the bot's memory notes for a user.",
+        section="AI",
         owner=True,
         examples=[".mreset", ".mreset @user"],
         params=[
@@ -2858,8 +2869,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="mrestore")
     @help_meta(
-        usage=".mrestore",
+        usage="`.mrestore`",
         desc="Restores bot memory from the last backup.",
+        section="AI",
         owner=True,
         examples=[".mrestore"],
         params=[],
@@ -2877,8 +2889,9 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     # ── nvidia ────────────────────────────────────────────────
     @commands.command(name="nvidia")
     @help_meta(
-        usage=".nvidia",
+        usage="`.nvidia`",
         desc="Browse all models from build.nvidia.com.",
+        section="AI",
         owner=True,
         examples=[".nvidia"],
         note="Owner only.",

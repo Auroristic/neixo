@@ -335,9 +335,11 @@ class ProfileCog(commands.Cog, name="Profile"):
         if clear_task and not clear_task.done():
             clear_task.cancel()
 
+    @commands.command(name="presence")
     @help_meta(
         usage="`.presence <online|idle|dnd|invisible>`",
         desc="Sets the bot's online status.",
+        section="Bot Profile",
         owner=True,
         examples=[".presence online", ".presence dnd", ".presence idle"],
         params=[
@@ -345,7 +347,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only. Your current presence preference is saved and restored on restart.",
     )
-    @commands.command(name="presence")
     @_creator_only()
     async def presence(self, ctx, value: str = None):
         if not value or value.lower() not in _STATUS_MAP:
@@ -357,9 +358,11 @@ class ProfileCog(commands.Cog, name="Profile"):
         _save_presence(status=key)
         await ctx.message.add_reaction("<:7079verifiedblacksimplified:1255031445806780467>")
 
+    @commands.command(name="activity")
     @help_meta(
         usage="`.activity <playing|listening|watching|competing> <text>`  ·  `.activity none`",
         desc="Sets or clears the bot's activity status.",
+        section="Bot Profile",
         owner=True,
         examples=[".activity playing with fire", ".activity listening to music", ".activity none"],
         params=[
@@ -368,7 +371,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only. Use `.activity none` to clear the current activity.",
     )
-    @commands.command(name="activity")
     @_creator_only()
     async def activity(self, ctx, kind: str = None, *, text: str = ""):
         if not kind:
@@ -392,9 +394,11 @@ class ProfileCog(commands.Cog, name="Profile"):
         _save_presence(activity={"type": kind.lower(), "name": text})
         await ctx.message.add_reaction("<:7079verifiedblacksimplified:1255031445806780467>")
 
+    @commands.command(name="pfp", aliases=["avatar"])
     @help_meta(
         usage="`.pfp [url|attachment|reset]`",
         desc="Changes the bot's avatar.",
+        section="Bot Profile",
         owner=True,
         examples=[".pfp https://i.imgur.com/abc.png", ".pfp reset"],
         params=[
@@ -402,7 +406,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only. Discord rate-limits avatar changes to ~2 per 10 minutes.",
     )
-    @commands.command(name="pfp", aliases=["avatar"])
     @_creator_only()
     @commands.cooldown(2, 600, commands.BucketType.default)
     async def pfp(self, ctx, *, source: str = None):
@@ -427,9 +430,11 @@ class ProfileCog(commands.Cog, name="Profile"):
         except discord.HTTPException as e:
             await ctx.send(f"-# discord rejected it: {e}")
 
+    @commands.command(name="banner")
     @help_meta(
         usage="`.banner [url|attachment|reset]`",
         desc="Changes the bot's banner.",
+        section="Bot Profile",
         owner=True,
         examples=[".banner https://i.imgur.com/abc.png", ".banner reset"],
         params=[
@@ -437,7 +442,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only. Same rate-limit as avatar: ~2 per 10 minutes.",
     )
-    @commands.command(name="banner")
     @_creator_only()
     @commands.cooldown(2, 600, commands.BucketType.default)
     async def banner(self, ctx, *, source: str = None):
@@ -460,9 +464,11 @@ class ProfileCog(commands.Cog, name="Profile"):
         except discord.HTTPException as e:
             await ctx.send(f"-# discord rejected it: {e}")
 
+    @commands.command(name="setavatar")
     @help_meta(
         usage="`.setavatar [url|attachment|reset]`",
         desc="Changes the bot's server-specific avatar.",
+        section="Bot Profile",
         owner=True,
         examples=[".setavatar https://i.imgur.com/abc.png", ".setavatar reset"],
         params=[
@@ -470,7 +476,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Server Owner / Bot Creator only. Discord rate-limits apply.",
     )
-    @commands.command(name="setavatar")
     @commands.guild_only()
     @commands.check(is_owner_or_creator)
     @commands.cooldown(2, 600, commands.BucketType.default)
@@ -512,9 +517,11 @@ class ProfileCog(commands.Cog, name="Profile"):
     async def removeavatar(self, ctx):
         await self.setavatar(ctx, source="reset")
 
+    @commands.command(name="setbanner")
     @help_meta(
         usage="`.setbanner [url|attachment|reset]`",
         desc="Changes the bot's server-specific banner.",
+        section="Bot Profile",
         owner=True,
         examples=[".setbanner https://i.imgur.com/abc.png", ".setbanner reset"],
         params=[
@@ -522,7 +529,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Server Owner / Bot Creator only. Discord rate-limits apply.",
     )
-    @commands.command(name="setbanner")
     @commands.guild_only()
     @commands.check(is_owner_or_creator)
     @commands.cooldown(2, 600, commands.BucketType.default)
@@ -549,9 +555,11 @@ class ProfileCog(commands.Cog, name="Profile"):
         except discord.HTTPException as e:
             await ctx.send(f"-# discord rejected it: {e}")
 
+    @commands.command(name="username", aliases=["botname"])
     @help_meta(
         usage="`.username <name>`",
         desc="Changes the bot's username.",
+        section="Bot Profile",
         owner=True,
         examples=[".username MyBot"],
         params=[
@@ -559,7 +567,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only. Discord rate-limits username changes to ~2 per 2 hours.",
     )
-    @commands.command(name="username", aliases=["botname"])
     @_creator_only()
     @commands.cooldown(2, 7200, commands.BucketType.default)
     async def username(self, ctx, *, name: str = None):
@@ -577,11 +584,13 @@ class ProfileCog(commands.Cog, name="Profile"):
             await ctx.send(f"-# discord rejected it: {e}")
 
     # ── status rotation (.rpc) ───────────────────────────────
+    @commands.group(name="rpc", invoke_without_command=True)
     @help_meta(
         usage="`.rpc`  ·  `.rpc add [emoji] <text>`  ·  `.rpc remove <n>`  ·  `.rpc clear`  ·  `.rpc interval <secs>`",
         desc="Auto-managed status rotation. 1 entry = static, 2+ = cycles. Max 5 entries, min 5s interval.",
+        section="RPC",
         owner=True,
-        examples=[".rpc", ".rpc add 🌟 playing with fire", ".rpc remove 2", ".rpc interval 30", ".rpc clear"],
+        examples=[".rpc add 🌟 playing with fire", ".rpc remove 2", ".rpc interval 30"],
         params=[
             {"name": "action", "type": "str", "required": False, "desc": "add, remove, clear, interval, or omit to show current rotation."},
             {"name": "emoji", "type": "str", "required": False, "desc": "Optional emoji (for add action)."},
@@ -591,7 +600,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only. Statuses cycle in order. Max 5 entries, minimum 5s interval.",
     )
-    @commands.group(name="rpc", invoke_without_command=True)
     @_creator_only()
     async def rpc_group(self, ctx):
         """Default invocation: show the rotation list + state."""
@@ -623,8 +631,9 @@ class ProfileCog(commands.Cog, name="Profile"):
         embed.set_footer(text=f"{state} · {len(entries)}/{RPC_MAX_ENTRIES} entries")
         await ctx.send(embed=embed)
 
+    @rpc_group.command(name="add")
     @help_meta(
-        usage=".rpc add [emoji] <text>",
+        usage="`.rpc add [emoji] <text>`",
         desc="Adds a custom-status entry for rotation.",
         section="RPC",
         owner=True,
@@ -635,7 +644,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only. Max 5 entries.",
     )
-    @rpc_group.command(name="add")
     @_creator_only()
     async def rpc_add(self, ctx, *, text: str = ""):
         """`.rpc add [emoji] <text>` — adds a custom-status entry.
@@ -666,8 +674,9 @@ class ProfileCog(commands.Cog, name="Profile"):
             )
         await ctx.send(f"-# added entry `{n}` ({n}/{RPC_MAX_ENTRIES})")
 
+    @rpc_group.command(name="remove", aliases=["rm", "del", "delete"])
     @help_meta(
-        usage=".rpc remove <n>",
+        usage="`.rpc remove <n>`",
         desc="Removes a custom-status entry by its index number.",
         section="RPC",
         owner=True,
@@ -677,7 +686,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only. Use `.rpc` without arguments to see the list with indices.",
     )
-    @rpc_group.command(name="remove", aliases=["rm", "del", "delete"])
     @_creator_only()
     async def rpc_remove(self, ctx, index: int = None):
         if index is None:
@@ -687,8 +695,9 @@ class ProfileCog(commands.Cog, name="Profile"):
             return await ctx.send(f"-# no entry at index `{index}`")
         await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
 
+    @rpc_group.command(name="clear")
     @help_meta(
-        usage=".rpc clear",
+        usage="`.rpc clear`",
         desc="Removes all RPC entries and stops rotation.",
         section="RPC",
         owner=True,
@@ -696,14 +705,14 @@ class ProfileCog(commands.Cog, name="Profile"):
         params=[],
         note="Owner only. This cannot be undone.",
     )
-    @rpc_group.command(name="clear")
     @_creator_only()
     async def rpc_clear(self, ctx):
         n = rpc.clear_entries()
         await ctx.send(f"-# cleared {n} entries · status reset")
 
+    @rpc_group.command(name="interval")
     @help_meta(
-        usage=".rpc interval [seconds]",
+        usage="`.rpc interval [seconds]`",
         desc="Sets or checks the interval for status rotation cycling.",
         section="RPC",
         owner=True,
@@ -713,7 +722,6 @@ class ProfileCog(commands.Cog, name="Profile"):
         ],
         note="Owner only.",
     )
-    @rpc_group.command(name="interval")
     @_creator_only()
     async def rpc_interval(self, ctx, seconds: int = None):
         if seconds is None:

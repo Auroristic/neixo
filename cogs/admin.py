@@ -366,7 +366,7 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── whitelist ──────────────────────────────────────────────
     @commands.command(name="whitelist")
     @help_meta(
-        usage=".whitelist @user",
+        usage="`.whitelist @user`",
         desc="Toggles a user on or off the staff whitelist.",
         section="Server Management",
         owner=True,
@@ -412,7 +412,7 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── whitelistshow ──────────────────────────────────────────
     @commands.command(name="whitelistshow")
     @help_meta(
-        usage=".whitelistshow",
+        usage="`.whitelistshow`",
         desc="Shows all users currently on the staff whitelist.",
         section="Server Management",
         owner=True,
@@ -443,7 +443,7 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── setcolor ───────────────────────────────────────────────
     @commands.command(name='setcolor')
     @help_meta(
-        usage=".setcolor #HEX",
+        usage="`.setcolor #HEX`",
         desc="Changes the embed accent colour for this server.",
         section="Server Management",
         owner=True,
@@ -476,7 +476,7 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── ignore ─────────────────────────────────────────────────
     @commands.command(name="ignore")
     @help_meta(
-        usage=".ignore @user",
+        usage="`.ignore @user`",
         desc="Toggles ignoring a user — the bot won't respond to them in AI channels.",
         section="Server Management",
         staff=True,
@@ -508,7 +508,7 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── ignorelist ────────────────────────────────────────────
     @commands.command(name="ignorelist")
     @help_meta(
-        usage=".ignorelist",
+        usage="`.ignorelist`",
         desc="Shows all users currently ignored by the bot in AI channels.",
         section="Server Management",
         staff=True,
@@ -539,7 +539,7 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── confess set ────────────────────────────────────────────
     @commands.command(name="confess")
     @help_meta(
-        usage=".confess set #channel",
+        usage="`.confess set #channel`",
         desc="Sets the confession channel for the server.",
         section="Server Management",
         admin=True,
@@ -578,7 +578,7 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── alias ──────────────────────────────────────────────────
     @commands.command(name="alias")
     @help_meta(
-        usage=".alias .alias <new> <existing> .alias remove <name>",
+        usage="`.alias <new> <existing>`  ·  `.alias remove <name>`",
         desc="Lists, adds, or removes custom command aliases.",
         section="Server Management",
         admin=True,
@@ -681,8 +681,8 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── purge ─────────────────────────────────────────────────
     @commands.group(name="purge", invoke_without_command=True)
     @help_meta(
-        usage=".purge .purge bots [limit]",
-        desc="Root command — shows subcommands. .purge bots bulk-deletes bot and prefix messages.",
+        usage="`.purge`  ·  `.purge bots [limit]`",
+        desc="Shows purge subcommands. `.purge bots` bulk-deletes bot and prefix messages.",
         section="Moderation",
         examples=[".purge", ".purge bots 100"],
         params=[],
@@ -694,14 +694,14 @@ class AdminCog(commands.Cog, name="Admin"):
     # ── bait ──────────────────────────────────────────────────
     @commands.group(name="bait", invoke_without_command=True)
     @help_meta(
-        usage=".bait <set|off|status|logs|jailrole|exempt|unexempt|pending|banned|forgive>",
+        usage="`.bait <set|off|status|logs|jailrole|exempt|unexempt|pending|banned|forgive>`",
         desc=(
             "Configures a bait channel that deletes messages, jails or timeouts users, "
-            "then bans them after the delay."
+            "then bans them."
         ),
         section="Moderation",
         admin=True,
-        examples=[".bait set #trap 12h jail", ".bait logs #mod-logs", ".bait pending", ".bait forgive @user appealed"],
+        examples=[".bait set #trap 12h jail", ".bait pending", ".bait forgive @user appealed"],
         params=[],
         note="Admins, whitelisted members, owner/creator, bots, and exempt roles are never punished.",
     )
@@ -721,8 +721,8 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="set")
     @help_meta(
-        usage=".bait set #channel [delay] [jail|timeout]",
-        desc="Sets the bait channel. Messages are deleted, users are jailed or timed out, then banned after the delay.",
+        usage="`.bait set #channel [delay] [jail|timeout]`",
+        desc="Sets the bait channel. Users are jailed or timed out, then banned after the delay.",
         section="Moderation",
         admin=True,
         examples=[".bait set #trap", ".bait set #trap 12h jail", ".bait set #trap 6h timeout"],
@@ -785,7 +785,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="off")
     @help_meta(
-        usage=".bait off",
+        usage="`.bait off`",
         desc="Disables bait and cancels all pending bait bans.",
         section="Moderation",
         admin=True,
@@ -829,7 +829,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="status")
     @help_meta(
-        usage=".bait status",
+        usage="`.bait status`",
         desc="Shows bait channel configuration, exempt roles, and pending/banned counts.",
         section="Moderation",
         admin=True,
@@ -846,7 +846,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="logs")
     @help_meta(
-        usage=".bait logs #channel",
+        usage="`.bait logs #channel`",
         desc="Sets the channel where bait trigger, ban, and forgive events are logged.",
         section="Moderation",
         admin=True,
@@ -866,7 +866,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="jailrole")
     @help_meta(
-        usage=".bait jailrole @role",
+        usage="`.bait jailrole @role`",
         desc="Sets the role used by jail-mode bait.",
         section="Moderation",
         admin=True,
@@ -888,7 +888,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="exempt")
     @help_meta(
-        usage=".bait exempt @role",
+        usage="`.bait exempt @role`",
         desc="Adds a role that bait will ignore.",
         section="Moderation",
         admin=True,
@@ -908,7 +908,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="unexempt")
     @help_meta(
-        usage=".bait unexempt @role",
+        usage="`.bait unexempt @role`",
         desc="Removes a bait-exempt role.",
         section="Moderation",
         admin=True,
@@ -935,7 +935,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="pending")
     @help_meta(
-        usage=".bait pending",
+        usage="`.bait pending`",
         desc="Lists users waiting for delayed bait bans.",
         section="Moderation",
         admin=True,
@@ -956,7 +956,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="banned")
     @help_meta(
-        usage=".bait banned",
+        usage="`.bait banned`",
         desc="Lists users banned by the bait system.",
         section="Moderation",
         admin=True,
@@ -977,7 +977,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @bait_group.command(name="forgive")
     @help_meta(
-        usage=".bait forgive @user|user_id [reason]",
+        usage="`.bait forgive @user|user_id [reason]`",
         desc="Cancels a pending bait ban or unbans a user already banned by bait.",
         section="Moderation",
         admin=True,
@@ -1040,15 +1040,15 @@ class AdminCog(commands.Cog, name="Admin"):
         await ctx.send(f"-# forgiven `{user_id}` — {action_result}")
 
     # ── cmd channel rules ──────────────────────────────────────────
+    @commands.group(name="cmd", invoke_without_command=True)
     @help_meta(
-        usage=".cmd <allow|deny|clear|show>",
+        usage="`.cmd <allow|deny|clear|show>`",
         desc="Manages command channel rules — restrict or allow commands in specific channels.",
         section="Command Channels",
-        examples=[".cmd allow #mod purge", ".cmd deny #general .ping", ".cmd clear .ping", ".cmd show"],
+        examples=[".cmd allow #mod purge", ".cmd deny #general .ping", ".cmd show"],
         params=[],
         note="Admin only. Subcommands: allow, deny, clear, show.",
     )
-    @commands.group(name="cmd", invoke_without_command=True)
     async def cmd_group(self, ctx: commands.Context):
         if ctx.guild is None:
             return await ctx.send("-# this command is guild-only.")
@@ -1080,7 +1080,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @cmd_group.command(name="allow")
     @help_meta(
-        usage=".cmd allow <#channel>... <category|command>",
+        usage="`.cmd allow <#channel>... <category|command>`",
         desc="Restricts a category or command to only the specified channels.",
         section="Command Channels",
         examples=[".cmd allow #mod #staff purge", ".cmd allow #mod .ping"],
@@ -1115,7 +1115,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @cmd_group.command(name="deny")
     @help_meta(
-        usage=".cmd deny <#channel>... <category|command>",
+        usage="`.cmd deny <#channel>... <category|command>`",
         desc="Blocks a category or command in the specified channels.",
         section="Command Channels",
         examples=[".cmd deny #general .play", ".cmd deny #chat music"],
@@ -1150,7 +1150,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @cmd_group.command(name="clear")
     @help_meta(
-        usage=".cmd clear <category|command>",
+        usage="`.cmd clear <category|command>`",
         desc="Removes the channel rule for a category or command so it works everywhere again.",
         section="Command Channels",
         examples=[".cmd clear .ping", ".cmd clear music"],
@@ -1180,7 +1180,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @cmd_group.command(name="show")
     @help_meta(
-        usage=".cmd show [category|command]",
+        usage="`.cmd show [category|command]`",
         desc="Shows active channel rules for this server, or for a specific target.",
         section="Command Channels",
         examples=[".cmd show", ".cmd show .ping"],
@@ -1216,7 +1216,7 @@ class AdminCog(commands.Cog, name="Admin"):
 
     @purge_group.command(name="bots")
     @help_meta(
-        usage=".purge bots [limit]",
+        usage="`.purge bots [limit]`",
         desc="Bulk-deletes bot messages and prefix (`.`) messages in this channel.",
         section="Moderation",
         examples=[".purge bots", ".purge bots 100"],
