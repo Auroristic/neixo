@@ -85,6 +85,32 @@ def _render_welcome_card(
     return buf
 
 
+async def _fetch_member_art(member) -> tuple[bytes | None, bytes | None]:
+    """Fetch a member's avatar and their guild's banner bytes (best-effort).
+
+    The outer try only guards session creation; per-URL failures are
+    tolerated inside _get so one bad URL never blanks the other.
+    """
+    avatar_bytes = banner_bytes = None
+    urls = [member.display_avatar.url]
+    if member.guild.banner:
+        urls.append(member.guild.banner.url)
+    try:
+        async with aiohttp.ClientSession() as s:
+            async def _get(url):
+                try:
+                    async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                        return await r.read() if r.status == 200 else None
+                except Exception:
+                    return None
+            results = await asyncio.gather(*[_get(u) for u in urls])
+    except Exception:
+        return None, None
+    avatar_bytes = results[0]
+    banner_bytes = results[1] if len(results) > 1 else None
+    return avatar_bytes, banner_bytes
+
+
 class Welcome(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -171,6 +197,30 @@ class Welcome(commands.Cog):
         ch = ctx.guild.get_channel(int(conf["channel_id"]))
         await ctx.send(f"-# welcome cards on in {ch.mention if ch else conf['channel_id']}.")
 
+    @welcome.command(name="test")
+    @commands.cooldown(1, 10, commands.BucketType.user)
+    @help_meta(
+        usage="`.welcome test`",
+        desc="Previews the welcome card with your own avatar.",
+        section="General",
+        examples=[".welcome test"],
+        params=[],
+        note="anyone can preview — does not change settings. 1 use per 10 seconds.",
+    )
+    async def welcome_test(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        avatar_bytes, banner_bytes = await _fetch_member_art(ctx.author)
+        buf = await asyncio.to_thread(
+            _render_welcome_card,
+            avatar_bytes,
+            banner_bytes,
+            ctx.guild.name,
+            ctx.author.display_name,
+            ctx.guild.member_count or len(ctx.guild.members),
+        )
+        await ctx.send(file=discord.File(fp=buf, filename="welcome.png"))
+
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         conf = (load_json(WELCOME_FILE) or {}).get(str(member.guild.id))
@@ -180,20 +230,7 @@ class Welcome(commands.Cog):
         if channel is None:
             return
 
-        avatar_bytes = banner_bytes = None
-        try:
-            async with aiohttp.ClientSession() as s:
-                async def _get(url):
-                    try:
-                        async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
-                            return await r.read() if r.status == 200 else None
-                    except Exception:
-                        return None
-                tasks = [_get(member.display_avatar.url), _get(member.guild.banner.url) if member.guild.banner else _noop()]
-                results = await asyncio.gather(*tasks)
-                avatar_bytes, banner_bytes = results[0], results[1]
-        except Exception:
-            pass
+        avatar_bytes, banner_bytes = await _fetch_member_art(member)
 
         buf = await asyncio.to_thread(
             _render_welcome_card,
