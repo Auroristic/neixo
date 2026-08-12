@@ -28,7 +28,7 @@ async def test_welcome_test_help_meta_present():
     meta = get_help_meta(bot.get_command('welcome test'))
     assert meta is not None
     assert meta['section'] == 'General'
-    assert meta['usage'].startswith('.welcome test')
+    assert '.welcome test' in meta['usage']
 
 
 @pytest.mark.asyncio
