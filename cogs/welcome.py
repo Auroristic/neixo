@@ -117,7 +117,7 @@ class Welcome(commands.Cog):
 
     @commands.group(name="welcome", invoke_without_command=True)
     @help_meta(
-        usage="`.welcome setup #channel [message]`  ·  `.welcome off`  ·  `.welcome status`",
+        usage="`.welcome setup #channel [message]`  ·  `.welcome off`  ·  `.welcome test`  ·  `.welcome status`",
         desc="Manages image welcome cards for new members.",
         section="General",
         examples=[".welcome setup #welcome hey {user} welcome!"],
@@ -126,7 +126,8 @@ class Welcome(commands.Cog):
     )
     async def welcome(self, ctx: commands.Context):
         await ctx.send(
-            "-# welcome commands: `.welcome setup #channel [message]` · `.welcome off` · `.welcome status`"
+            "-# welcome commands: `.welcome setup #channel [message]` · `.welcome off` "
+            "· `.welcome test` · `.welcome status`"
         )
 
     async def _admin(self, ctx) -> bool:
@@ -248,10 +249,6 @@ class Welcome(commands.Cog):
                 await channel.send(file=discord.File(fp=buf, filename="welcome.png"))
         except discord.HTTPException:
             pass
-
-
-async def _noop():
-    return None
 
 
 async def setup(bot: commands.Bot):

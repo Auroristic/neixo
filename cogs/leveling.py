@@ -324,6 +324,8 @@ class Leveling(commands.Cog):
     )
     async def remove(self, ctx, level: int):
         """Remove a level role."""
+        if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
+            return await ctx.send("admin only")
         from utils import _db
         with _db() as conn:
             cursor = conn.execute(
@@ -474,7 +476,8 @@ class Leveling(commands.Cog):
             {"name": "command", "type": "str", "required": False,
              "desc": "Command to disable (subcommands like `welcome test` work). Omit to list disabled commands. `level` disables the leveling system."},
         ],
-        note="guild owner, creator, or whitelisted users only. `.enable <command>` turns it back on.",
+        note=("guild owner, creator, or whitelisted users only. `.enable <command>` turns it back on. "
+              "`.disable level` is creator-only."),
     )
     async def disable_cmd(self, ctx, *, command: str = None):
         """Disable a command for this guild, or the leveling system."""
@@ -482,6 +485,7 @@ class Leveling(commands.Cog):
         #    Pre-existing behavior (leveling.py today checks only is_creator);
         #    the flag is bot-global so only the creator toggles it. Deliberately
         #    differs from the per-guild path's owner/creator/whitelist permission.
+        command = command.lower().strip() if command else None
         if command == "level":
             if not is_creator(ctx.author.id):
                 return await ctx.send("creator only")
@@ -507,8 +511,10 @@ class Leveling(commands.Cog):
         cmd_name = get_aliases().get(cmd_name, cmd_name)
         if cmd_name in ("disable", "enable", "help"):
             return await ctx.send("-# can't disable that")
-        if self.bot.get_command(cmd_name) is None:
+        cmd = self.bot.get_command(cmd_name)
+        if cmd is None:
             return await ctx.send("-# no command called that")
+        cmd_name = cmd.qualified_name.lower()
         from utils import add_disabled_command
         add_disabled_command(ctx.guild.id, cmd_name)
         await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
@@ -531,6 +537,7 @@ class Leveling(commands.Cog):
         #    Pre-existing behavior (leveling.py today checks only is_creator);
         #    the flag is bot-global so only the creator toggles it. Deliberately
         #    differs from the per-guild path's owner/creator/whitelist permission.
+        command = command.lower().strip() if command else None
         if command == "level":
             if not is_creator(ctx.author.id):
                 return await ctx.send("creator only")
@@ -556,8 +563,10 @@ class Leveling(commands.Cog):
         cmd_name = get_aliases().get(cmd_name, cmd_name)
         if cmd_name in ("disable", "enable", "help"):
             return await ctx.send("-# can't enable that")
-        if self.bot.get_command(cmd_name) is None:
+        cmd = self.bot.get_command(cmd_name)
+        if cmd is None:
             return await ctx.send("-# no command called that")
+        cmd_name = cmd.qualified_name.lower()
         from utils import remove_disabled_command
         remove_disabled_command(ctx.guild.id, cmd_name)
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")

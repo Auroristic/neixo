@@ -274,7 +274,7 @@ class Digest(commands.Cog):
 
     @commands.group(name="digest", invoke_without_command=True)
     @help_meta(
-        usage="`.digest <#channel>`  ·  `.digest off`  ·  `.digest status`",
+        usage="`.digest <#channel>`  ·  `.digest now`  ·  `.digest off`  ·  `.digest status`",
         desc="Posts a weekly server digest image card every Sunday.",
         section="General",
         examples=[".digest #general", ".digest status"],
@@ -285,7 +285,7 @@ class Digest(commands.Cog):
         if channel is not None:
             # `.digest #channel` turns it on directly (same as `.digest set`)
             return await self.digest_set(ctx, channel)
-        await ctx.send("-# digest commands: `.digest <#channel>` · `.digest off` · `.digest status`")
+        await ctx.send("-# digest commands: `.digest <#channel>` · `.digest now` · `.digest off` · `.digest status`")
 
     async def _admin(self, ctx) -> bool:
         if ctx.guild is None:

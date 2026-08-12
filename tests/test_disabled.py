@@ -161,6 +161,7 @@ async def test_disable_no_args_lists():
 async def test_disable_level_routes_to_system_flag():
     cog = _make_cog()
     ctx = FakeCtx(author_id=123456789)  # CREATOR_ID from conftest
+    cog._leveling_disabled = False
     await cog.disable_cmd(ctx, command="level")
     assert cog._leveling_disabled is True
     assert ctx.sent[0][0][0].startswith("❌")
@@ -169,6 +170,37 @@ async def test_disable_level_routes_to_system_flag():
 async def test_enable_level_routes_to_system_flag():
     cog = _make_cog()
     ctx = FakeCtx(author_id=123456789)
+    cog._leveling_disabled = True
     await cog.enable_cmd(ctx, command="level")
     assert cog._leveling_disabled is False
     assert ctx.sent[0][0][0].startswith("✅")
+
+
+async def test_disable_whitelist_allowed():
+    from utils import CONFIG_FILE, get_disabled_commands, save_json
+
+    save_json(CONFIG_FILE, {str(111): {"whitelist": ["42"]}})
+    cog = _make_cog({"rtop": SimpleNamespace(qualified_name="rtop")})
+    ctx = FakeCtx(owner_id=99, author_id=42)  # not owner/creator — whitelisted
+    await cog.disable_cmd(ctx, command="rtop")
+    assert get_disabled_commands(111) == ["rtop"]
+    assert ctx.reacted == ["<:redlotus:1263556248310386800>"]
+    assert not ctx.sent
+
+
+async def test_disable_alias_stores_canonical_name():
+    import discord
+    from discord.ext import commands
+
+    from cogs.leveling import Leveling
+
+    bot = commands.Bot(command_prefix='.', intents=discord.Intents.all())
+    await bot.add_cog(Leveling(bot))
+    cog = bot.get_cog('Leveling')
+    ctx = FakeCtx(owner_id=99, author_id=99)  # guild owner
+    await cog.disable_cmd(ctx, command="llb")
+    from utils import get_disabled_commands
+
+    assert get_disabled_commands(111) == ['levelleaderboard']
+    assert ctx.reacted == ["<:redlotus:1263556248310386800>"]
+    cog._backfill_task.cancel()
