@@ -62,6 +62,7 @@ def isolate_data_dir(monkeypatch, tmp_path):
     data_dir = tmp_path / 'data'
     data_dir.mkdir()
     monkeypatch.setattr('utils.DATA_DIR', str(data_dir))
+    monkeypatch.setattr('utils.DB_FILE', str(data_dir / 'bot.db'))
     for cache_attr in ['_config_cache', '_ignore_cache', '_dm_whitelist_cache', '_aliases_cache']:
         monkeypatch.setattr(f'utils.{cache_attr}', None)
     for time_attr in ['_config_cache_time', '_ignore_cache_time', '_dm_whitelist_cache_time', '_aliases_cache_time']:
@@ -249,7 +250,7 @@ def _make_cog(bot_commands=None):
     return cog
 
 
-def test_disable_unknown_command():
+async def test_disable_unknown_command():
     cog = _make_cog()
     ctx = FakeCtx()
     await cog.disable_cmd(ctx, command="nonexistent")
@@ -447,7 +448,7 @@ Replace both methods in `cogs/leveling.py` with:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `ssh muixo "cd /home/ubuntu/neiXO && git pull && venv/bin/python -m pytest tests/test_disabled.py -v"`
-Expected: 14/14 PASS (5 Task-1 + 9 Task-2).
+Expected: 13/13 PASS (5 Task-1 + 8 Task-2).
 
 - [ ] **Step 5: Run the full suite**
 
