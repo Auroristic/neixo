@@ -504,18 +504,19 @@ class ReactionsCog(commands.Cog, name="Reactions"):
             return
         _rc_upsert(payload.guild_id, payload.user_id, _emoji_str(payload.emoji), -1)
 
+    @commands.command(name="rc", aliases=["reactioncount"])
+    @commands.cooldown(2, 6, commands.BucketType.user)
     @help_meta(
         usage="`.rc [@user] [emoji]`",
         desc="Shows reaction count for a user, optionally filtered by emoji.",
+        section="Reactions",
         examples=[".rc", ".rc @user", ".rc @user 😂"],
         params=[
             {"name": "user", "type": "discord.Member", "required": False, "desc": "The member to check. Defaults to yourself."},
             {"name": "emoji", "type": "str", "required": False, "desc": "Optional emoji filter."},
         ],
-        note="Shows total reaction count, server rank, and per-emoji breakdown.",
+        note="Shows total reaction count, server rank, and per-emoji breakdown. 2 uses per 6s per user.",
     )
-    @commands.command(name="rc", aliases=["reactioncount"])
-    @commands.cooldown(2, 6, commands.BucketType.user)
     async def reaction_count(self, ctx, member: discord.Member = None, emoji: str = None):
         member = member or ctx.author
         conn = _get_react_conn()
@@ -575,15 +576,16 @@ class ReactionsCog(commands.Cog, name="Reactions"):
         )
         await ctx.send(embed=embed)
 
+    @commands.command(name="rtop", aliases=["reactiontop"])
+    @commands.cooldown(1, 10, commands.BucketType.channel)
     @help_meta(
         usage="`.rtop`",
         desc="Shows the reaction leaderboard for the whole server.",
+        section="Reactions",
         examples=[".rtop"],
         params=[],
-        note="Displays the top users ranked by total reactions received.",
+        note="Displays the top users ranked by total reactions received. 10s cooldown between uses.",
     )
-    @commands.command(name="rtop", aliases=["reactiontop"])
-    @commands.cooldown(1, 10, commands.BucketType.channel)
     async def reaction_top(self, ctx):
         conn = _get_react_conn()
         cx = conn.cursor()
@@ -604,17 +606,18 @@ class ReactionsCog(commands.Cog, name="Reactions"):
         file = await view.render_file()
         view.message = await ctx.send(file=file, view=view)
 
+    @commands.command(name="rctop", aliases=["reactiontopemoji"])
+    @commands.cooldown(1, 10, commands.BucketType.channel)
     @help_meta(
         usage="`.rctop <emoji>`",
         desc="Shows the leaderboard filtered to one specific emoji.",
+        section="Reactions",
         examples=[".rctop 😂", ".rctop :sob:", ".rctop fire"],
         params=[
             {"name": "emoji", "type": "str", "required": True, "desc": "The emoji to filter by (actual emoji, emoji name, or `:name:` format)."},
         ],
-        note="Supports emoji names like `sob`, `joy`, `fire`, etc.",
+        note="Supports emoji names like `sob`, `joy`, `fire`, etc. 10s cooldown between uses.",
     )
-    @commands.command(name="rctop", aliases=["reactiontopemoji"])
-    @commands.cooldown(1, 10, commands.BucketType.channel)
     async def reaction_top_emoji(self, ctx, emoji: str = None):
         if not emoji:
             return await ctx.send("give me an emoji. `.rctop 😄` or `.rctop sob` or `.rctop :sob:`")
@@ -666,9 +669,11 @@ class ReactionsCog(commands.Cog, name="Reactions"):
         file = await view.render_file()
         view.message = await ctx.send(file=file, view=view)
 
+    @commands.command(name="rur", aliases=["resetusereaction"])
     @help_meta(
         usage="`.rur @user`",
         desc="Resets all reaction data for a specific user.",
+        section="Reactions",
         owner=True,
         examples=[".rur @user"],
         params=[
@@ -676,7 +681,6 @@ class ReactionsCog(commands.Cog, name="Reactions"):
         ],
         note="Owner only. This cannot be undone.",
     )
-    @commands.command(name="rur", aliases=["resetusereaction"])
     async def reset_user_reactions(self, ctx, member: discord.Member):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
@@ -686,15 +690,16 @@ class ReactionsCog(commands.Cog, name="Reactions"):
         conn.commit()
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
+    @commands.command(name="rsr", aliases=["resetservereactions"])
     @help_meta(
         usage="`.rsr`",
         desc="Resets ALL reaction data for this server.",
+        section="Reactions",
         owner=True,
         examples=[".rsr"],
         params=[],
         note="Owner only. Requires confirmation via `yes` before executing.",
     )
-    @commands.command(name="rsr", aliases=["resetservereactions"])
     async def reset_server_reactions(self, ctx):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")

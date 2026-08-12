@@ -1066,9 +1066,12 @@ class ServerStatsCog(commands.Cog):
 
         await star_channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
+    @commands.group(name="starboard", invoke_without_command=True)
+    @commands.has_permissions(administrator=True)
     @help_meta(
         usage="`.starboard #channel [emoji] [threshold]`\n`.starboard emoji 😭`\n`.starboard threshold 5`",
         desc="Manages the starboard: set channel, emoji, and reaction threshold.",
+        section="Server Stats",
         staff=True,
         examples=[".starboard #starboard ⭐ 3", ".starboard emoji 😭", ".starboard threshold 5"],
         params=[
@@ -1078,8 +1081,6 @@ class ServerStatsCog(commands.Cog):
         ],
         note="Admin only. Subcommands: `emoji`, `threshold`.",
     )
-    @commands.group(name="starboard", invoke_without_command=True)
-    @commands.has_permissions(administrator=True)
     async def starboard(self, ctx: commands.Context, channel: discord.TextChannel = None, emoji: str = None, threshold: int = None):
         if channel is None:
             return await ctx.send("-# `.starboard #channel [emoji] [threshold]` — or `.starboard emoji 😭` / `.starboard threshold 5`")
@@ -1098,9 +1099,12 @@ class ServerStatsCog(commands.Cog):
             conn.commit()
         await ctx.send(f"\u2b50 Starboard set to {channel.mention} \u00b7 emoji: {final_emoji} \u00b7 threshold: {final_threshold}")
 
+    @starboard.command(name="emoji")
+    @commands.has_permissions(administrator=True)
     @help_meta(
-        usage=".starboard emoji <emoji>",
+        usage="`.starboard emoji <emoji>`",
         desc="Changes the reaction emoji the starboard watches for.",
+        section="Server Stats",
         staff=True,
         examples=[".starboard emoji ⭐", ".starboard emoji 😭"],
         params=[
@@ -1108,8 +1112,6 @@ class ServerStatsCog(commands.Cog):
         ],
         note="Admin only. A starboard channel must be set first.",
     )
-    @starboard.command(name="emoji")
-    @commands.has_permissions(administrator=True)
     async def starboard_emoji(self, ctx: commands.Context, emoji: str):
         conn = _get_conn()
         existing = conn.execute(
@@ -1127,9 +1129,12 @@ class ServerStatsCog(commands.Cog):
             conn.commit()
         await ctx.send(f"\u2b50 Starboard emoji changed to {emoji}")
 
+    @starboard.command(name="threshold")
+    @commands.has_permissions(administrator=True)
     @help_meta(
-        usage=".starboard threshold <number>",
+        usage="`.starboard threshold <number>`",
         desc="Sets the minimum reactions needed for a message to appear on the starboard.",
+        section="Server Stats",
         staff=True,
         examples=[".starboard threshold 3", ".starboard threshold 5"],
         params=[
@@ -1137,8 +1142,6 @@ class ServerStatsCog(commands.Cog):
         ],
         note="Admin only. A starboard channel must be set first.",
     )
-    @starboard.command(name="threshold")
-    @commands.has_permissions(administrator=True)
     async def starboard_threshold(self, ctx: commands.Context, threshold: int):
         if threshold < 1:
             return await ctx.send("threshold must be at least 1")
@@ -1159,15 +1162,16 @@ class ServerStatsCog(commands.Cog):
         await ctx.send(f"\u2b50 Starboard threshold set to {threshold}")
 
     # ── Commands ───────────────────────────────────────────────────────────
+    @commands.command(name="seoulities")
+    @commands.cooldown(1, 15, commands.BucketType.channel)
     @help_meta(
         usage="`.seoulities`",
         desc="Shows a server info card with member stats, top emoji, top reactor, top chatter, and top VC user.",
+        section="Server Stats",
         examples=[".seoulities"],
         params=[],
         note="Cooldown: 15s per channel. Generates an info card image.",
     )
-    @commands.command(name="seoulities")
-    @commands.cooldown(1, 15, commands.BucketType.channel)
     async def seoulities(self, ctx: commands.Context):
         guild = ctx.guild
         if not guild:
@@ -1230,20 +1234,21 @@ class ServerStatsCog(commands.Cog):
         file = discord.File(fp=buf, filename="seoulities.png")
         await ctx.send(file=file)
 
+    @commands.group(name="leaderboard", aliases=["lb"])
+    @commands.cooldown(1, 10, commands.BucketType.channel)
     @help_meta(
         usage="`.lb`  ·  `.lb messages`  ·  `.lb vctime`",
         desc="Leaderboards for messages and VC time.",
         section="Leaderboards",
         examples=[".lb", ".lb messages", ".lb vctime"],
         params=[],
-        note="Subcommands: `messages`, `vctime`.",
+        note="Subcommands: `messages`, `vctime`. 10s cooldown between uses.",
     )
-    @commands.group(name="leaderboard", aliases=["lb"])
-    @commands.cooldown(1, 10, commands.BucketType.channel)
     async def leaderboard(self, ctx: commands.Context):
         if ctx.invoked_subcommand is None:
             await ctx.send("-# `.lb messages` — top 200 message senders · `.lb vctime` — voice time")
 
+    @leaderboard.command(name="messages", aliases=["msgs", "msg", "lbm"])
     @help_meta(
         usage="`.lb messages`",
         desc="Shows the top 200 message senders in the server.",
@@ -1252,7 +1257,6 @@ class ServerStatsCog(commands.Cog):
         params=[],
         note="Updates in real-time as messages are sent.",
     )
-    @leaderboard.command(name="messages", aliases=["msgs", "msg", "lbm"])
     async def lb_messages(self, ctx: commands.Context):
         rows = self._get_msg_top(ctx.guild.id, 200)
         if not rows:
@@ -1267,6 +1271,7 @@ class ServerStatsCog(commands.Cog):
         file = await view.render_file()
         view.message = await ctx.send(file=file, view=view)
 
+    @leaderboard.command(name="vctime", aliases=["vc", "voice", "lbv"])
     @help_meta(
         usage="`.lb vctime`",
         desc="Shows the top 200 VC time leaders in the server.",
@@ -1275,7 +1280,6 @@ class ServerStatsCog(commands.Cog):
         params=[],
         note="Tracks time spent in voice channels.",
     )
-    @leaderboard.command(name="vctime", aliases=["vc", "voice", "lbv"])
     async def lb_vctime(self, ctx: commands.Context):
         raw = self._get_vc_top(ctx.guild.id, 200)
         if not raw:
@@ -1291,6 +1295,7 @@ class ServerStatsCog(commands.Cog):
         file = await view.render_file()
         view.message = await ctx.send(file=file, view=view)
 
+    @leaderboard.command(name="emojis", aliases=["emj", "emoji", "lbe"])
     @help_meta(
         usage="`.lb emojis`",
         desc="Shows the most used emoji in the server, from reaction stats.",
@@ -1299,7 +1304,6 @@ class ServerStatsCog(commands.Cog):
         params=[],
         note="counts every reaction added in the server.",
     )
-    @leaderboard.command(name="emojis", aliases=["emj", "emoji", "lbe"])
     async def lb_emojis(self, ctx: commands.Context):
         try:
             conn = _get_react_conn_ro()
@@ -1323,6 +1327,7 @@ class ServerStatsCog(commands.Cog):
         file = await view.render_file()
         view.message = await ctx.send(file=file, view=view)
 
+    @leaderboard.command(name="birthdays", aliases=["bdays", "bdaylb"])
     @help_meta(
         usage="`.lb birthdays`",
         desc="Shows birthdays coming up this month in the server.",
@@ -1331,7 +1336,6 @@ class ServerStatsCog(commands.Cog):
         params=[],
         note="from the birthday registry (.bday).",
     )
-    @leaderboard.command(name="birthdays", aliases=["bdays", "bdaylb"])
     async def lb_birthdays(self, ctx: commands.Context):
         from datetime import datetime
         from cogs.reminders import BIRTHDAYS_FILE

@@ -72,10 +72,10 @@ class Counting(commands.Cog):
 
     @commands.command(name="top")
     @help_meta(
-        usage="`.counting top`",
+        usage="`.top`",
         desc="Shows the top counters from the counting channel.",
         section="Fun",
-        examples=[".counting top"],
+        examples=[".top"],
         params=[],
         note="counts correct numbers only.",
     )

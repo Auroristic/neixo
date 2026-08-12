@@ -179,7 +179,7 @@ class Leveling(commands.Cog):
     @commands.command(aliases=["lvl"])
     @help_meta(
         section="Leveling",
-        usage=".rank [@user]",
+        usage="`.rank [@user]`",
         desc="Checks your or another user's XP rank and level.",
         examples=[".rank", ".rank @user"],
         params=[
@@ -236,15 +236,17 @@ class Leveling(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    @commands.command(name="levelleaderboard", aliases=["llb", "xpleaderboard"])
     @help_meta(
         section="Leveling",
-        usage=".llb",
+        usage="`.llb [top]`",
         desc="Shows the server XP leaderboard.",
         examples=[".llb"],
-        params=[],
+        params=[
+            {"name": "top", "type": "int", "required": False, "desc": "How many entries to show. Defaults to 10, capped at 200."},
+        ],
         note="Displays the top XP earners in the server.",
     )
-    @commands.command(name="levelleaderboard", aliases=["llb", "xpleaderboard"])
     async def levelleaderboard(self, ctx, top: int = 10):
         """Show the server's top users by XP."""
         top = min(top, 200)
@@ -269,14 +271,14 @@ class Leveling(commands.Cog):
     @commands.group(invoke_without_command=True)
     @help_meta(
         section="Leveling",
-        usage=".levelrole <level> <@role>",
+        usage="`.levelrole <level> <@role>`",
         desc="Assigns a role to be awarded at a specific level.",
         examples=[".levelrole 5 @Bronze", ".levelrole 10 @Silver"],
         params=[
             {"name": "level", "type": "int", "required": True, "desc": "The level at which to award the role."},
             {"name": "role", "type": "discord.Role", "required": True, "desc": "The role to assign."},
         ],
-        note="Admin only. The role is automatically assigned when a member reaches the specified level.",
+        note="Admin only. The role is automatically assigned when a member reaches the specified level. Run with no args to list configured level roles.",
         admin=True,
     )
     async def levelrole(self, ctx, level: int = None, role: discord.Role = None):
@@ -311,7 +313,7 @@ class Leveling(commands.Cog):
     @levelrole.command()
     @help_meta(
         section="Leveling",
-        usage=".levelrole remove <level>",
+        usage="`.levelrole remove <level>`",
         desc="Removes a level role configuration.",
         examples=[".levelrole remove 5"],
         params=[
@@ -336,7 +338,7 @@ class Leveling(commands.Cog):
     @commands.group(invoke_without_command=True)
     @help_meta(
         section="Leveling",
-        usage=".levelnotify [enable|disable]",
+        usage="`.levelnotify [enable|disable]`",
         desc="Toggles or checks level-up notification status for this server.",
         examples=[".levelnotify", ".levelnotify enable", ".levelnotify disable"],
         params=[
@@ -398,7 +400,7 @@ class Leveling(commands.Cog):
     @levelnotify.command()
     @help_meta(
         section="Leveling",
-        usage=".levelnotify disable",
+        usage="`.levelnotify disable`",
         desc="Disables level-up notifications for this server.",
         examples=[".levelnotify disable"],
         params=[],
@@ -418,11 +420,11 @@ class Leveling(commands.Cog):
     @levelnotify.command()
     @help_meta(
         section="Leveling",
-        usage=".levelnotify enable",
+        usage="`.levelnotify enable`",
         desc="Enables level-up notifications for this server.",
         examples=[".levelnotify enable"],
         params=[],
-        note="Users will receive a DM when they level up.",
+        note="A level-up message is sent in the channel when someone levels up.",
     )
     async def enable(self, ctx):
         """Enable level-up notifications."""
@@ -438,7 +440,7 @@ class Leveling(commands.Cog):
     @commands.command(hidden=True)
     @help_meta(
         section="Leveling",
-        usage=".givexp <amount> [@user]",
+        usage="`.givexp <amount> [@user]`",
         desc="Manually gives XP to a user (admin only).",
         examples=[".givexp 100", ".givexp 500 @user"],
         params=[
