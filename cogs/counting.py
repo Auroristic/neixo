@@ -73,6 +73,14 @@ class Counting(commands.Cog):
         await ctx.send(f"-# counting game on in {channel.mention}. start at **1**.")
 
     @counting.command(name="off")
+    @help_meta(
+        usage="`.counting off`",
+        desc="turns off the counting game in the server",
+        section="Fun",
+        examples=[".counting off"],
+        params=[],
+        note="admin only.",
+    )
     async def counting_cmd_off(self, ctx: commands.Context):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")

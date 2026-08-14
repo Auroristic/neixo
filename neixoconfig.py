@@ -4,6 +4,7 @@ try:
     with open("neixoset.toml", "rb") as f:
         _config = tomllib.load(f)
     Neixoname = _config["neixoname"]
+    _embedcolor_raw = _config["embedcolor"]
     _raw_color = str(_embedcolor_raw).strip().lstrip("#")
     Neixocolor = _embedcolor_raw if isinstance(_embedcolor_raw, int) else int(_raw_color, 16)
     Neixoemojis        = _config["neixoemojis"]
