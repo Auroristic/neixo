@@ -124,4 +124,40 @@ def test_ask_command_help_meta():
     assert meta["section"] == "AI"
 
 
+def test_digest_card_dynamic_render():
+    from cogs.digest import _render_digest_card
+
+    # Test with 5 items in each list (the case that previously broke)
+    chatters = [(i + 1, f"User {i + 1} with long name 𓆩★𓆪", 1000 - i * 100) for i in range(5)]
+    vc_top = [(i + 1, f"VoiceUser {i + 1}", 300 - i * 30) for i in range(5)]
+    bumper_top = [(i + 1, f"BumperUser {i + 1}", 20 - i * 2) for i in range(5)]
+
+    buf = _render_digest_card(
+        icon_bytes=None,
+        guild_name="seoulities",
+        week_label="week of Aug 14",
+        msg_total=71485,
+        vc_str="26h 55m",
+        bumps_total=45,
+        member_growth=0,
+        chatters=chatters,
+        vc_top=vc_top,
+        bumper_top=bumper_top,
+    )
+    assert buf is not None
+    assert buf.getvalue().startswith(b"\x89PNG")
+
+
+def test_imagine_cog_definition():
+    import cogs.imagine
+    from utils import get_help_meta
+
+    cmd = getattr(cogs.imagine.ImagineCog, "imagine_cmd", None)
+    assert cmd is not None
+    meta = get_help_meta(cmd)
+    assert meta is not None
+    assert meta["section"] == "Image Gen"
+
+
+
 

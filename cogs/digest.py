@@ -38,6 +38,20 @@ def _week_start_iso() -> str:
     return monday.isoformat()
 
 
+def _truncate_text(font, text: str, max_width: int) -> str:
+    if font.getlength(text) <= max_width:
+        return text
+    ell = "..."
+    ell_w = font.getlength(ell)
+    if ell_w >= max_width:
+        return text[:1] if text else ""
+    for i in range(len(text) - 1, 0, -1):
+        sub = text[:i]
+        if font.getlength(sub) + ell_w <= max_width:
+            return sub + ell
+    return (text[:1] if text else "") + ell
+
+
 def _render_digest_card(
     icon_bytes: bytes | None,
     guild_name: str,
@@ -53,7 +67,22 @@ def _render_digest_card(
     from PIL import Image, ImageDraw, ImageFilter
     from cogs.serverstats import _load_font
 
-    W, H = 900, 1100
+    title_font = _load_font(42, bold=True)
+    sub_font = _load_font(22, bold=False)
+    label_font = _load_font(24, bold=True)
+    row_font = _load_font(22, bold=False)
+    small_font = _load_font(18, bold=False)
+
+    # Dynamic height calculation to prevent any overflow or overlap
+    base_header_h = 320
+    sec1_h = (45 + (len(chatters) * 40) + 24) if chatters else 0
+    sec2_h = (45 + (len(vc_top) * 40) + 24) if vc_top else 0
+    sec3_h = (45 + (len(bumper_top) * 40) + 24) if bumper_top else 0
+    footer_h = 90
+
+    W = 900
+    H = max(1100, base_header_h + sec1_h + sec2_h + sec3_h + footer_h)
+
     if icon_bytes:
         try:
             base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
@@ -67,8 +96,8 @@ def _render_digest_card(
 
     grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
-    for y in range(H):
-        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(80 * (y / H))))
+    for y_pos in range(H):
+        gd.line([(0, y_pos), (W, y_pos)], fill=(0, 0, 0, int(80 * (y_pos / H))))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -78,12 +107,6 @@ def _render_digest_card(
     cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, outline=(255, 255, 255, 45), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
-
-    title_font = _load_font(42, bold=True)
-    sub_font = _load_font(22, bold=False)
-    label_font = _load_font(24, bold=True)
-    row_font = _load_font(22, bold=False)
-    small_font = _load_font(18, bold=False)
 
     title_font.draw(draw, (90, 70), "weekly digest", fill=(255, 255, 255, 255))
     sub_font.draw(draw, (90, 130), f"{guild_name} · {week_label}", fill=(255, 255, 255, 170))
@@ -101,23 +124,29 @@ def _render_digest_card(
 
     def _section(label, rows, unit):
         nonlocal y
+        if not rows:
+            return
         label_font.draw(draw, (90, y), label, fill=(255, 255, 255, 120))
         y += 45
         for rank, name, val in rows:
             row_font.draw(draw, (90, y), f"{rank}.", fill=(255, 255, 255, 100))
-            row_font.draw(draw, (140, y), name, fill=(255, 255, 255, 230))
             v = f"{val:,}{unit}"
             vw = row_font.getlength(v)
+            # Truncate username so it never overlaps the value
+            max_name_w = W - 90 - vw - 160
+            clean_name = _truncate_text(row_font, str(name or "Unknown"), max_name_w)
+            row_font.draw(draw, (140, y), clean_name, fill=(255, 255, 255, 230))
             row_font.draw(draw, (W - 90 - vw, y), v, fill=(255, 255, 255, 200))
             y += 40
-        y += 20
+        y += 24
 
     _section("top chatters", chatters, " msgs")
     _section("most in voice", vc_top, "m")
     _section("top bumpers", bumper_top, " bumps")
 
-    draw.line([(90, H - 110), (W - 90, H - 110)], fill=(255, 255, 255, 50), width=1)
-    small_font.draw(draw, (90, H - 85), "xo", fill=(255, 255, 255, 140))
+    footer_y = y + 10
+    draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
+    small_font.draw(draw, (90, footer_y + 25), "xo", fill=(255, 255, 255, 140))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)

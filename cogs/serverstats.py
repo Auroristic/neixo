@@ -24,6 +24,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 # ── Font paths (JetBrains Mono preferred, fallback chain) ───────────
 _FONT_REG_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
     "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Regular.ttf",
     "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Regular.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
@@ -32,6 +33,7 @@ _FONT_REG_PATHS = [
     "arial.ttf",
 ]
 _FONT_BOLD_PATHS = [
+    "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Bold.ttf",
     "/usr/share/fonts/truetype/jetbrains/JetBrainsMono-Bold.ttf",
     "/usr/share/fonts/opentype/jetbrains/JetBrainsMono-Bold.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
@@ -43,9 +45,15 @@ _FONT_BOLD_PATHS = [
 # Wide-coverage fallback fonts for glyphs the main chain lacks (stylized
 # unicode names, symbols, dingbats). Used per-glyph via _FontSet.
 _FALLBACK_FONT_PATHS = [
+    "/usr/share/fonts/truetype/unifont/unifont.ttf",
+    "/usr/share/fonts/truetype/unifont/unifont_upper.ttf",
     "/usr/share/fonts/truetype/ancient-scripts/Symbola_hint.ttf",
     "/usr/share/fonts/truetype/symbola/Symbola.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols-Medium.ttf",
     "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+    "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 ]
 
 # fontTools cmap lookup for reliable glyph coverage
