@@ -1,3 +1,5 @@
+import asyncio
+import io
 import logging
 import random
 import re as _re

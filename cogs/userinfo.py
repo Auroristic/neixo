@@ -366,7 +366,8 @@ class AvatarView(discord.ui.View):
         if has_server_av:
             btn_srv = discord.ui.Button(
                 label="server",
-                style=discord.ButtonStyle.primary if self.mode == "server" else discord.ButtonStyle.secondary,
+                emoji="🏠",
+                style=discord.ButtonStyle.gray,
                 disabled=(self.mode == "server"),
                 custom_id="av_server",
             )
@@ -375,7 +376,8 @@ class AvatarView(discord.ui.View):
 
         btn_glb = discord.ui.Button(
             label="global",
-            style=discord.ButtonStyle.primary if self.mode == "global" else discord.ButtonStyle.secondary,
+            emoji="🌐",
+            style=discord.ButtonStyle.gray,
             disabled=(self.mode == "global"),
             custom_id="av_global",
         )
@@ -385,7 +387,8 @@ class AvatarView(discord.ui.View):
         if has_banner:
             btn_bnr = discord.ui.Button(
                 label="banner",
-                style=discord.ButtonStyle.primary if self.mode == "banner" else discord.ButtonStyle.secondary,
+                emoji="🖼️",
+                style=discord.ButtonStyle.gray,
                 disabled=(self.mode == "banner"),
                 custom_id="av_banner",
             )

@@ -394,13 +394,13 @@ class ProfileCog(commands.Cog, name="Profile"):
         _save_presence(activity={"type": kind.lower(), "name": text})
         await ctx.message.add_reaction("<:7079verifiedblacksimplified:1255031445806780467>")
 
-    @commands.command(name="pfp", aliases=["avatar"])
+    @commands.command(name="botpfp", aliases=["botavatar"])
     @help_meta(
-        usage="`.pfp [url|attachment|reset]`",
-        desc="Changes the bot's avatar.",
+        usage="`.botpfp [url|attachment|reset]`",
+        desc="Changes the bot's global avatar.",
         section="Bot Profile",
         owner=True,
-        examples=[".pfp https://i.imgur.com/abc.png", ".pfp reset"],
+        examples=[".botpfp https://i.imgur.com/abc.png", ".botpfp reset"],
         params=[
             {"name": "source", "type": "str", "required": False, "desc": "Image URL, attachment, or `reset` to clear."},
         ],
@@ -408,7 +408,7 @@ class ProfileCog(commands.Cog, name="Profile"):
     )
     @_creator_only()
     @commands.cooldown(2, 600, commands.BucketType.default)
-    async def pfp(self, ctx, *, source: str = None):
+    async def botpfp_cmd(self, ctx, *, source: str = None):
         # discord rate-limits avatar changes to roughly 2 per 10 minutes;
         # the cooldown above mirrors that so we surface a friendly message
         # instead of letting discord 429 us mid-call.
@@ -430,13 +430,13 @@ class ProfileCog(commands.Cog, name="Profile"):
         except discord.HTTPException as e:
             await ctx.send(f"-# discord rejected it: {e}")
 
-    @commands.command(name="banner")
+    @commands.command(name="botbanner")
     @help_meta(
-        usage="`.banner [url|attachment|reset]`",
-        desc="Changes the bot's banner.",
+        usage="`.botbanner [url|attachment|reset]`",
+        desc="Changes the bot's global banner.",
         section="Bot Profile",
         owner=True,
-        examples=[".banner https://i.imgur.com/abc.png", ".banner reset"],
+        examples=[".botbanner https://i.imgur.com/abc.png", ".botbanner reset"],
         params=[
             {"name": "source", "type": "str", "required": False, "desc": "Image URL, attachment, or `reset` to clear."},
         ],
@@ -444,7 +444,7 @@ class ProfileCog(commands.Cog, name="Profile"):
     )
     @_creator_only()
     @commands.cooldown(2, 600, commands.BucketType.default)
-    async def banner(self, ctx, *, source: str = None):
+    async def botbanner_cmd(self, ctx, *, source: str = None):
         # same rate-limit as avatar: 2 per 10 min.
         if source and source.lower() == "reset":
             try:
