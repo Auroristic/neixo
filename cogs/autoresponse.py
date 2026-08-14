@@ -3,6 +3,8 @@ cogs/autoresponse.py  —  custom trigger → reply (per server, admin managed)
 """
 
 import logging
+import random
+import re
 import time
 
 import discord
@@ -17,7 +19,7 @@ AUTO_FILE = f"{DATA_DIR}/autoresponses.json"
 COG_META = {
     "category": "admin",
     "label": "Admin",
-    "desc": "Custom keyword trigger and auto-reply system.",
+    "desc": "Custom keyword trigger and auto-reply system with dynamic template variables.",
 }
 
 _COOLDOWN_SECONDS = 5
@@ -30,6 +32,58 @@ def _load_auto() -> dict:
 
 def _save_auto(state: dict) -> None:
     save_json(AUTO_FILE, state)
+
+
+def _format_response(template: str, message: discord.Message) -> str:
+    """Formats dynamic placeholders in the autoresponse template."""
+    author = message.author
+    guild = message.guild
+    channel = message.channel
+
+    res = template
+    # User variables
+    res = res.replace("{user}", author.mention)
+    res = res.replace("{user.mention}", author.mention)
+    res = res.replace("{user.name}", author.name)
+    res = res.replace("{user.display_name}", author.display_name)
+    res = res.replace("{user.nick}", author.display_name)
+    res = res.replace("{user.id}", str(author.id))
+    res = res.replace("{user.avatar}", author.display_avatar.url)
+    res = res.replace("{avatar}", author.display_avatar.url)
+
+    # Server variables
+    if guild:
+        res = res.replace("{server}", guild.name)
+        res = res.replace("{server.name}", guild.name)
+        res = res.replace("{server.id}", str(guild.id))
+        res = res.replace("{server.count}", str(guild.member_count or 0))
+        res = res.replace("{server.members}", str(guild.member_count or 0))
+
+    # Channel variables
+    if channel:
+        res = res.replace("{channel}", channel.mention if hasattr(channel, "mention") else str(channel.name))
+        res = res.replace("{channel.mention}", channel.mention if hasattr(channel, "mention") else str(channel.name))
+        res = res.replace("{channel.name}", channel.name if hasattr(channel, "name") else "")
+
+    # Random number: {random:1-100}
+    def _repl_num(match):
+        try:
+            low = int(match.group(1))
+            high = int(match.group(2))
+            return str(random.randint(min(low, high), max(low, high)))
+        except Exception:
+            return match.group(0)
+
+    res = re.sub(r"\{random:(\d+)-(\d+)\}", _repl_num, res)
+
+    # Random choice: {random:apple|banana|cherry}
+    def _repl_choice(match):
+        choices = [c.strip() for c in match.group(1).split("|") if c.strip()]
+        return random.choice(choices) if choices else ""
+
+    res = re.sub(r"\{random:([^{}]+?\|[^{}]+?)\}", _repl_choice, res)
+
+    return res
 
 
 class AutoResponse(commands.Cog):
@@ -49,18 +103,21 @@ class AutoResponse(commands.Cog):
     @commands.group(name="auto", aliases=["autoresponse"], invoke_without_command=True)
     @help_meta(
         usage="`.auto add <trigger> => <response>`  ·  `.auto remove <trigger>`  ·  `.auto list`",
-        desc="Creates custom automated phrase responses that the bot triggers on when spoken in chat.",
+        desc="Creates automated keyword responses with rich variables like `{user.mention}`, `{server.name}`, `{server.count}`.",
         section="Server Management",
         perm_tier="admin",
         discord_perms=["manage_guild"],
         examples=[
-            ".auto add hello => Hey {user}, welcome!",
-            ".auto add rules => Please check out {channel} for rules.",
+            ".auto add hello => Hey {user.mention}, welcome to {server.name}!",
+            ".auto add count => We currently have {server.count} members.",
+            ".auto add roll => {user.name} rolled a {random:1-6}!",
+            ".auto add coin => {user.name} flipped {random:Heads|Tails}!",
             ".auto list",
+            ".auto remove hello",
         ],
         params=[
             {"name": "trigger", "type": "str", "required": False, "desc": "Keyword or phrase that triggers the bot."},
-            {"name": "response", "type": "str", "required": False, "desc": "Reply text supporting `{user}`, `{server}`, `{channel}` placeholders."},
+            {"name": "response", "type": "str", "required": False, "desc": "Reply text supporting `{user}`, `{user.name}`, `{server.name}`, `{server.count}`, `{channel}`, `{random:1-100}` placeholders."},
         ],
         note="Requires Administrator or Manage Server permission. Max 15 triggers per server.",
     )
@@ -91,7 +148,7 @@ class AutoResponse(commands.Cog):
             return await ctx.send("-# max 15 triggers per server")
         state.setdefault(gid, {})[trigger] = response
         _save_auto(state)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await ctx.message.add_reaction("✓")
 
     @auto.command(name="remove")
     @help_meta(
@@ -113,7 +170,7 @@ class AutoResponse(commands.Cog):
         gid = str(ctx.guild.id)
         if state.get(gid, {}).pop(trigger.strip().lower(), None):
             _save_auto(state)
-            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+            await ctx.message.add_reaction("✓")
         else:
             await ctx.send(f"-# no trigger named `{trigger.strip().lower()}`")
 
@@ -159,7 +216,7 @@ class AutoResponse(commands.Cog):
         gid = str(ctx.guild.id)
         if state.pop(gid, None):
             _save_auto(state)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await ctx.message.add_reaction("✓")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -177,18 +234,15 @@ class AutoResponse(commands.Cog):
             return
         low = content.lower()
         now = time.time()
-        for trigger, response in triggers.items():
+        for trigger, raw_response in triggers.items():
             if trigger not in low:
                 continue
             key = (message.guild.id, trigger)
             if now - self._cooldowns.get(key, 0.0) < _COOLDOWN_SECONDS:
                 continue
             self._cooldowns[key] = now
-            reply = (
-                response.replace("{user}", message.author.mention)
-                .replace("{server}", message.guild.name)
-                .replace("{channel}", message.channel.mention)
-            )
+
+            reply = _format_response(raw_response, message)
             try:
                 await message.channel.send(reply, allowed_mentions=discord.AllowedMentions(users=[message.author]))
             except discord.HTTPException:

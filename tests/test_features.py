@@ -63,3 +63,52 @@ def test_pick_reaction_allowed_emoji():
     assert _pick_reaction("none") is None
     assert _pick_reaction("") is None
     assert _pick_reaction("hmm maybe 👍") is None  # not a bare emoji reply
+
+
+def test_embed_builder_flag_parsing():
+    from cogs.embedmaker import _build_embed_from_text
+    
+    embed, err = _build_embed_from_text("My Title | My Description --color blurple --footer \"Custom Footer\" --thumb https://example.com/thumb.png")
+    assert err is None
+    assert embed.title == "My Title"
+    assert embed.description == "My Description"
+    assert embed.color.value == 0x5865F2
+    assert embed.footer.text == "Custom Footer"
+    assert embed.thumbnail.url == "https://example.com/thumb.png"
+
+
+def test_autoresponse_dynamic_variables():
+    from types import SimpleNamespace
+    from cogs.autoresponse import _format_response
+
+    mock_msg = SimpleNamespace(
+        author=SimpleNamespace(
+            mention="<@123>",
+            name="testuser",
+            display_name="Test User",
+            id=123,
+            display_avatar=SimpleNamespace(url="https://avatar.url/123.png"),
+        ),
+        guild=SimpleNamespace(
+            name="Super Server",
+            id=456,
+            member_count=42,
+        ),
+        channel=SimpleNamespace(
+            mention="<#789>",
+            name="general",
+        ),
+    )
+
+    template = "Hey {user.mention}, welcome to {server.name} with {server.count} members in {channel.name}!"
+    result = _format_response(template, mock_msg)
+    assert result == "Hey <@123>, welcome to Super Server with 42 members in general!"
+
+
+def test_tts_voices_definition():
+    from cogs.voice_tts import FEMALE_VOICES
+    assert "ava" in FEMALE_VOICES
+    assert "jenny" in FEMALE_VOICES
+    assert "sonia" in FEMALE_VOICES
+    assert FEMALE_VOICES["ava"]["id"] == "en-US-AvaNeural"
+
