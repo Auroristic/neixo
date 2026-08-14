@@ -873,9 +873,9 @@ class EmojiLBView(discord.ui.View):
 
 # ── Cog ─────────────────────────────────────────────────────────────
 COG_META = {
-    "category": "general",
-    "label": "Server Stats",
-    "desc": "Server info card, message & VC leaderboards.",
+    "category": "utility",
+    "label": "Utility",
+    "desc": "Server info cards, message activity & voice leaderboards.",
 }
 
 class ServerStatsCog(commands.Cog):

@@ -15,9 +15,9 @@ BIRTHDAYS_FILE = f"{DATA_DIR}/birthdays.json"
 
 # ── cogs/reminders.py ───────────────────────────────────────────
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "Core utility and reaction commands.",
+    "category": "utility",
+    "label": "Utility",
+    "desc": "Personal and server reminder scheduler.",
 }
 
 # ── time parsing ────────────────────────────────────────────────

@@ -54,6 +54,23 @@ _CAT_ICONS = {
     "general": "☆",
 }
 
+_DEFAULT_CAT_DESCRIPTIONS = {
+    "music": "High-fidelity audio streaming, queue management, and audio filters.",
+    "ai": "AI-assisted conversations, text generation, and direct messaging.",
+    "imagine": "AI image generation and creative text-to-image prompts.",
+    "profile": "User profile cards, avatars, banners, bot identity, and presence.",
+    "admin": "Server administration, moderation, channel locks, and permission controls.",
+    "theme": "Server aesthetics, custom embeds, colors, roles, and prefix configuration.",
+    "utility": "Diagnostics, latency checks, reminders, translation, and server utilities.",
+    "fun": "Interactive mini-games, counting, actions, anime reactions, and ship ratings.",
+    "leveling": "Activity leveling, XP tracking, rank cards, and leaderboard rankings.",
+    "vanity": "Automated vanity URL status tracker, announcements, and supporter roles.",
+    "confessions": "Anonymous server confessions with interactive reply threads.",
+    "reverse": "AI-powered image search and character identification.",
+    "gif_editor": "High-performance GIF and media processing tools.",
+    "general": "Core bot utilities, diagnostics, and general commands.",
+}
+
 def process_command(cmd, cat_id, cat_label, categories, cog):
     count = 0
     meta = get_help_meta(cmd)
@@ -184,9 +201,9 @@ async def main():
         if not meta or not isinstance(meta, dict):
             continue
 
-        cat_id = str(meta.get("category", cog_class.__name__.lower())).strip()
+        cat_id = str(meta.get("category", cog_class.__name__.lower())).strip().lower()
         cat_label = str(meta.get("label", cat_id.title())).strip()
-        cat_desc = str(meta.get("desc", "")).strip()
+        cat_desc = _DEFAULT_CAT_DESCRIPTIONS.get(cat_id) or str(meta.get("desc", "")).strip()
         cat_staff = meta.get("staff", False)
         cat_owner = meta.get("owner", False)
         cat_admin = meta.get("admin", False)

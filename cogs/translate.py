@@ -17,9 +17,9 @@ TRANSLATE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 TRANSLATE_MODEL = "nvidia/riva-translate-4b-instruct-v2"
 
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "Translation via NVIDIA riva.",
+    "category": "utility",
+    "label": "Utility",
+    "desc": "Language translation tools via NVIDIA Riva.",
 }
 
 # riva language codes (en <-> 36 others)
