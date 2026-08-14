@@ -194,6 +194,262 @@ class UserInfo(commands.Cog):
         )
         await ctx.send(file=discord.File(fp=buf, filename="userinfo.png"))
 
+    @commands.command(name="avatar", aliases=["av", "pfp"])
+    @help_meta(
+        usage="`.avatar [@user]`",
+        desc="shows full-resolution avatar with server/global toggles and download links",
+        section="General",
+        examples=[".avatar", ".av @someone"],
+        params=[
+            {
+                "name": "user",
+                "type": "discord.User",
+                "required": False,
+                "desc": "User to fetch avatar for. Defaults to you.",
+            },
+        ],
+        note="aliases: `.av`, `.pfp`",
+    )
+    async def avatar_cmd(self, ctx: commands.Context, user: discord.User = None):
+        target = user or ctx.author
+        member = ctx.guild.get_member(target.id) if ctx.guild else None
+        view = AvatarView(ctx.author.id, member or target, ctx.guild.id if ctx.guild else 0)
+        embed = view.build_embed()
+        view.message = await ctx.send(embed=embed, view=view if len(view.children) > 0 else None)
+
+    @commands.command(name="banner", aliases=["userbanner"])
+    @help_meta(
+        usage="`.banner [@user]`",
+        desc="shows user profile banner with high-resolution download links",
+        section="General",
+        examples=[".banner", ".banner @someone"],
+        params=[
+            {
+                "name": "user",
+                "type": "discord.User",
+                "required": False,
+                "desc": "User to fetch banner for. Defaults to you.",
+            },
+        ],
+        note="alias: `.userbanner`",
+    )
+    async def banner_cmd(self, ctx: commands.Context, user: discord.User = None):
+        target = user or ctx.author
+        try:
+            full_user = await self.bot.fetch_user(target.id)
+        except Exception:
+            full_user = target
+
+        from utils import get_embed_color
+        color = get_embed_color(ctx.guild.id if ctx.guild else 0)
+
+        if full_user.banner:
+            banner_url = full_user.banner.url
+            png_url = full_user.banner.replace(format="png", size=4096).url
+            webp_url = full_user.banner.replace(format="webp", size=4096).url
+            links = f"[png]({png_url}) · [webp]({webp_url})"
+            if full_user.banner.is_animated():
+                gif_url = full_user.banner.replace(format="gif", size=4096).url
+                links += f" · [gif]({gif_url})"
+
+            embed = discord.Embed(
+                description=f"-# {full_user.name}'s banner · {links}",
+                color=color,
+            )
+            embed.set_image(url=banner_url)
+            await ctx.send(embed=embed)
+        elif getattr(full_user, "accent_color", None):
+            hex_c = f"#{full_user.accent_color.value:06x}"
+            embed = discord.Embed(
+                description=f"-# {full_user.name} has no banner (accent: `{hex_c}`)",
+                color=full_user.accent_color.value,
+            )
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send(f"-# {full_user.name} has no banner")
+
+    @commands.command(name="roleinfo", aliases=["role", "roles"])
+    @help_meta(
+        usage="`.roleinfo <@role>`",
+        desc="shows detailed metadata, members, and key permissions for a role",
+        section="General",
+        examples=[".roleinfo @Member", ".role @VIP"],
+        params=[
+            {
+                "name": "role",
+                "type": "discord.Role",
+                "required": True,
+                "desc": "The role to inspect.",
+            },
+        ],
+        note="aliases: `.role`, `.roles`",
+    )
+    async def roleinfo_cmd(self, ctx: commands.Context, *, role: discord.Role = None):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers")
+        if role is None:
+            return await ctx.send("-# usage: `.roleinfo <@role>`")
+
+        from utils import get_embed_color
+        color = role.color.value if role.color.value != 0 else get_embed_color(ctx.guild.id)
+        total_members = len(ctx.guild.members) or 1
+        member_count = len(role.members)
+        pct = (member_count / total_members) * 100
+
+        key_perms = []
+        p = role.permissions
+        if p.administrator:
+            key_perms.append("administrator")
+        if p.manage_guild:
+            key_perms.append("manage server")
+        if p.manage_roles:
+            key_perms.append("manage roles")
+        if p.manage_channels:
+            key_perms.append("manage channels")
+        if p.ban_members:
+            key_perms.append("ban members")
+        if p.kick_members:
+            key_perms.append("kick members")
+        if p.manage_messages:
+            key_perms.append("manage messages")
+        if p.mention_everyone:
+            key_perms.append("mention everyone")
+        if p.manage_webhooks:
+            key_perms.append("manage webhooks")
+        if p.manage_expressions:
+            key_perms.append("manage emojis")
+        if p.mute_members:
+            key_perms.append("mute members")
+        if p.deafen_members:
+            key_perms.append("deafen members")
+        if p.move_members:
+            key_perms.append("move members")
+
+        perms_str = ", ".join(key_perms) if key_perms else "standard member perms"
+
+        created_ts = int(role.created_at.timestamp())
+        hex_color = f"#{role.color.value:06x}" if role.color.value != 0 else "default"
+
+        embed = discord.Embed(
+            title=role.name.lower(),
+            description=(
+                f"-# id: `{role.id}` · mention: {role.mention}\n\n"
+                f"**members:** {member_count} ({pct:.1f}%)\n"
+                f"**color:** `{hex_color}` · **position:** {role.position}\n"
+                f"**hoisted:** {'yes' if role.hoist else 'no'} · **mentionable:** {'yes' if role.mentionable else 'no'}\n"
+                f"**key perms:** {perms_str}\n"
+                f"**created:** <t:{created_ts}:R>"
+            ),
+            color=color,
+        )
+        if role.icon:
+            embed.set_thumbnail(url=role.icon.url)
+        embed.set_footer(text=f"server: {ctx.guild.name.lower()}")
+        await ctx.send(embed=embed)
+
+
+class AvatarView(discord.ui.View):
+    def __init__(self, author_id: int, user: discord.User | discord.Member, guild_id: int):
+        super().__init__(timeout=90)
+        self.author_id = author_id
+        self.user = user
+        self.guild_id = guild_id
+        self.mode = "server" if (isinstance(user, discord.Member) and user.guild_avatar) else "global"
+        self.message: discord.Message | None = None
+        self._refresh_items()
+
+    def _refresh_items(self):
+        self.clear_items()
+        has_server_av = isinstance(self.user, discord.Member) and self.user.guild_avatar is not None
+        has_banner = getattr(self.user, "banner", None) is not None
+
+        if has_server_av:
+            btn_srv = discord.ui.Button(
+                label="server",
+                style=discord.ButtonStyle.primary if self.mode == "server" else discord.ButtonStyle.secondary,
+                disabled=(self.mode == "server"),
+                custom_id="av_server",
+            )
+            btn_srv.callback = self._switch_server
+            self.add_item(btn_srv)
+
+        btn_glb = discord.ui.Button(
+            label="global",
+            style=discord.ButtonStyle.primary if self.mode == "global" else discord.ButtonStyle.secondary,
+            disabled=(self.mode == "global"),
+            custom_id="av_global",
+        )
+        btn_glb.callback = self._switch_global
+        self.add_item(btn_glb)
+
+        if has_banner:
+            btn_bnr = discord.ui.Button(
+                label="banner",
+                style=discord.ButtonStyle.primary if self.mode == "banner" else discord.ButtonStyle.secondary,
+                disabled=(self.mode == "banner"),
+                custom_id="av_banner",
+            )
+            btn_bnr.callback = self._switch_banner
+            self.add_item(btn_bnr)
+
+    def build_embed(self) -> discord.Embed:
+        from utils import get_embed_color
+        color = get_embed_color(self.guild_id)
+
+        if self.mode == "server" and isinstance(self.user, discord.Member) and self.user.guild_avatar:
+            asset = self.user.guild_avatar
+            label = "server avatar"
+        elif self.mode == "banner" and getattr(self.user, "banner", None):
+            asset = self.user.banner
+            label = "banner"
+        else:
+            asset = self.user.avatar or self.user.default_avatar
+            label = "global avatar"
+
+        png_url = asset.replace(format="png", size=4096).url
+        webp_url = asset.replace(format="webp", size=4096).url
+        links = f"[png]({png_url}) · [webp]({webp_url})"
+        if asset.is_animated():
+            gif_url = asset.replace(format="gif", size=4096).url
+            links += f" · [gif]({gif_url})"
+
+        embed = discord.Embed(
+            description=f"-# {self.user.name}'s {label} · {links}",
+            color=color,
+        )
+        embed.set_image(url=asset.url)
+        return embed
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("-# only the command author can switch views", ephemeral=True)
+            return False
+        return True
+
+    async def _switch_server(self, interaction: discord.Interaction):
+        self.mode = "server"
+        self._refresh_items()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    async def _switch_global(self, interaction: discord.Interaction):
+        self.mode = "global"
+        self._refresh_items()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    async def _switch_banner(self, interaction: discord.Interaction):
+        self.mode = "banner"
+        self._refresh_items()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(UserInfo(bot))

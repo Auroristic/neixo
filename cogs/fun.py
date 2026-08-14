@@ -412,5 +412,180 @@ class FunCog(commands.Cog, name="Fun"):
             import traceback
             traceback.print_exc()
 
+    @commands.command(name="ship")
+    @help_meta(
+        usage="`.ship <@user1> [@user2]`",
+        desc="calculates compatibility between two members and renders a ship card",
+        section="Fun",
+        examples=[".ship @someone", ".ship @user1 @user2"],
+        params=[
+            {
+                "name": "user1",
+                "type": "discord.User",
+                "required": True,
+                "desc": "First user to ship.",
+            },
+            {
+                "name": "user2",
+                "type": "discord.User",
+                "required": False,
+                "desc": "Second user to ship. Defaults to you.",
+            },
+        ],
+        note="generates a dark aesthetic compatibility card with percentage meter.",
+    )
+    async def ship_cmd(self, ctx: commands.Context, user1: discord.User = None, user2: discord.User = None):
+        if user1 is None:
+            return await ctx.send("-# usage: `.ship @user1 [@user2]`")
+
+        target1 = ctx.author if user2 is None else user1
+        target2 = user1 if user2 is None else user2
+
+        if target1.id == target2.id:
+            return await ctx.send("-# shipping yourself with yourself? self love is real ig")
+
+        # Deterministic percentage based on user IDs
+        min_id, max_id = min(target1.id, target2.id), max(target1.id, target2.id)
+        # Hash combining IDs with day of the month for subtle daily drift or pure static
+        seed_val = (min_id * 31 + max_id) % 101
+        pct = int(seed_val)
+
+        if pct <= 15:
+            comment = "zero compatibility... don't even try"
+        elif pct <= 35:
+            comment = "dry conversation speedrun"
+        elif pct <= 55:
+            comment = "awkward friendship vibes"
+        elif pct <= 75:
+            comment = "there's definitely a spark here"
+        elif pct <= 90:
+            comment = "dangerously compatible"
+        else:
+            comment = "soulmates fr no cap"
+
+        av1_bytes = None
+        av2_bytes = None
+        try:
+            async with _aiohttp.ClientSession() as s:
+                tasks = [
+                    s.get(target1.display_avatar.url, timeout=_aiohttp.ClientTimeout(total=8)),
+                    s.get(target2.display_avatar.url, timeout=_aiohttp.ClientTimeout(total=8)),
+                ]
+                resps = await asyncio.gather(*tasks, return_exceptions=True)
+                if not isinstance(resps[0], Exception) and resps[0].status == 200:
+                    av1_bytes = await resps[0].read()
+                if not isinstance(resps[1], Exception) and resps[1].status == 200:
+                    av2_bytes = await resps[1].read()
+        except Exception:
+            pass
+
+        import io
+        import asyncio
+        buf = await asyncio.to_thread(
+            _render_ship_card,
+            av1_bytes,
+            av2_bytes,
+            target1.display_name,
+            target2.display_name,
+            pct,
+            comment,
+        )
+
+        await ctx.send(file=discord.File(fp=buf, filename=f"ship_{target1.name}_{target2.name}.png"))
+
+
+def _render_ship_card(
+    av1_bytes: bytes | None,
+    av2_bytes: bytes | None,
+    name1: str,
+    name2: str,
+    percentage: int,
+    comment: str,
+) -> io.BytesIO:
+    import io
+    from PIL import Image, ImageDraw, ImageFilter
+    from cogs.serverstats import _load_font, _circle_avatar
+
+    W, H = 840, 360
+    bg = Image.new("RGB", (W, H), (14, 16, 22))
+
+    # Background gradient
+    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    for y in range(H):
+        alpha = int(70 * (y / H))
+        gd.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+
+    # Glass container
+    card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(card)
+    pad_x, pad_y = 30, 25
+    cd.rounded_rectangle(
+        [pad_x, pad_y, W - pad_x, H - pad_y],
+        radius=28,
+        fill=(255, 255, 255, 10),
+        outline=(255, 255, 255, 35),
+        width=1,
+    )
+    bg = Image.alpha_composite(bg, card)
+    draw = ImageDraw.Draw(bg)
+
+    f_title = _load_font(36, bold=True)
+    f_sub = _load_font(20, bold=False)
+    f_name = _load_font(22, bold=True)
+
+    av_size = 120
+    # Left avatar
+    av1_x, av1_y = pad_x + 50, pad_y + 40
+    if av1_bytes:
+        try:
+            av1 = _circle_avatar(av1_bytes, av_size)
+            bg.paste(av1, (av1_x, av1_y), av1)
+            draw.ellipse([av1_x, av1_y, av1_x + av_size, av1_y + av_size], outline=(255, 255, 255, 60), width=2)
+        except Exception:
+            pass
+
+    # Right avatar
+    av2_x, av2_y = W - pad_x - 50 - av_size, pad_y + 40
+    if av2_bytes:
+        try:
+            av2 = _circle_avatar(av2_bytes, av_size)
+            bg.paste(av2, (av2_x, av2_y), av2)
+            draw.ellipse([av2_x, av2_y, av2_x + av_size, av2_y + av_size], outline=(255, 255, 255, 60), width=2)
+        except Exception:
+            pass
+
+    # Names under avatars
+    w1 = f_name.measure(name1[:15])
+    f_name.draw(draw, (av1_x + (av_size - w1) // 2, av1_y + av_size + 15), name1[:15], fill=(255, 255, 255, 220))
+
+    w2 = f_name.measure(name2[:15])
+    f_name.draw(draw, (av2_x + (av_size - w2) // 2, av2_y + av_size + 15), name2[:15], fill=(255, 255, 255, 220))
+
+    # Center percentage
+    pct_text = f"{percentage}%"
+    pct_w = f_title.measure(pct_text)
+    f_title.draw(draw, ((W - pct_w) // 2, pad_y + 55), pct_text, fill=(255, 120, 160, 255))
+
+    # Progress Bar in Center Bottom
+    bar_w, bar_h = 320, 14
+    bar_x = (W - bar_w) // 2
+    bar_y = pad_y + 115
+    draw.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=7, fill=(255, 255, 255, 25))
+    fill_w = int(bar_w * (percentage / 100))
+    if fill_w > 0:
+        draw.rounded_rectangle([bar_x, bar_y, bar_x + fill_w, bar_y + bar_h], radius=7, fill=(255, 105, 155, 230))
+
+    # Comment text at bottom
+    com_w = f_sub.measure(comment)
+    f_sub.draw(draw, ((W - com_w) // 2, H - pad_y - 45), comment, fill=(255, 255, 255, 160))
+
+    buf = io.BytesIO()
+    bg.convert("RGB").save(buf, format="PNG", quality=95)
+    buf.seek(0)
+    return buf
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(FunCog(bot))
