@@ -363,11 +363,13 @@ class AvatarView(discord.ui.View):
         has_server_av = isinstance(self.user, discord.Member) and self.user.guild_avatar is not None
         has_banner = getattr(self.user, "banner", None) is not None
 
+        from neixoconfig import Neixoemojis
+
         if has_server_av:
             btn_srv = discord.ui.Button(
                 label="server",
-                emoji="🏠",
-                style=discord.ButtonStyle.gray,
+                emoji=Neixoemojis.get("home", "<:MekoHome:1370292713768878110>"),
+                style=discord.ButtonStyle.secondary,
                 disabled=(self.mode == "server"),
                 custom_id="av_server",
             )
@@ -376,8 +378,8 @@ class AvatarView(discord.ui.View):
 
         btn_glb = discord.ui.Button(
             label="global",
-            emoji="🌐",
-            style=discord.ButtonStyle.gray,
+            emoji=Neixoemojis.get("user", "<:user:1372815179242274946>"),
+            style=discord.ButtonStyle.secondary,
             disabled=(self.mode == "global"),
             custom_id="av_global",
         )
@@ -387,8 +389,8 @@ class AvatarView(discord.ui.View):
         if has_banner:
             btn_bnr = discord.ui.Button(
                 label="banner",
-                emoji="🖼️",
-                style=discord.ButtonStyle.gray,
+                emoji=Neixoemojis.get("category", "<:Category:1370079955333157036>"),
+                style=discord.ButtonStyle.secondary,
                 disabled=(self.mode == "banner"),
                 custom_id="av_banner",
             )
