@@ -377,8 +377,13 @@ def detect_prefix(channel_name: str) -> str | None:
     """
     result = []
     for ch in channel_name:
-        # ascii letter, digit, or hyphen = start of real name
-        if ch == "-" or (ch.isascii() and (ch.isalpha() or ch.isdigit())):
+        # ascii letter, digit, hyphen, or styled unicode font letter/zwnj = start of real name
+        if (
+            ch == "-"
+            or ch in _REVERSE_FONT_MAP
+            or ch == "\u200c"
+            or (ch.isascii() and (ch.isalpha() or ch.isdigit()))
+        ):
             break
         # reject plain ascii chars that aren't emoji/unicode symbols
         if ch.isascii():

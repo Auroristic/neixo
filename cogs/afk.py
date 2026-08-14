@@ -97,26 +97,28 @@ class AFK(commands.Cog):
             self.bot.user and content.startswith(f"{self.bot.user.mention} ")
         )
 
+        if is_cmd:
+            return
+
         # returning: any non-command message clears the afk status
-        if not is_cmd:
-            entry = self._afk_of(message.guild.id, message.author.id)
-            if entry:
-                state = _load_afk()
-                state.get(str(message.guild.id), {}).pop(str(message.author.id), None)
-                _save_afk(state)
-                embed = discord.Embed(
-                    description=(
-                        f"welcome back {message.author.mention} — was "
-                        f"afk for {_ago(entry['since'])}"
-                        + (f" (\u201c{entry['reason']}\u201d)" if entry["reason"] else "")
-                    ),
-                    color=get_embed_color(message.guild.id),
-                )
-                try:
-                    await message.reply(embed=embed)
-                except discord.HTTPException:
-                    pass
-                return
+        entry = self._afk_of(message.guild.id, message.author.id)
+        if entry:
+            state = _load_afk()
+            state.get(str(message.guild.id), {}).pop(str(message.author.id), None)
+            _save_afk(state)
+            embed = discord.Embed(
+                description=(
+                    f"welcome back {message.author.mention} — was "
+                    f"afk for {_ago(entry['since'])}"
+                    + (f" (\u201c{entry['reason']}\u201d)" if entry["reason"] else "")
+                ),
+                color=get_embed_color(message.guild.id),
+            )
+            try:
+                await message.reply(embed=embed)
+            except discord.HTTPException:
+                pass
+            return
 
         # someone mentioned an afk member
         state = _load_afk()

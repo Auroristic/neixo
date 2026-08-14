@@ -15,7 +15,7 @@ class OnTag(commands.Cog):
             return
         if not message.guild:
             return
-        if message.content == f"<@{self.bot.user.id}>":
+        if self.bot.user and message.content.strip() in (f"<@{self.bot.user.id}>", f"<@!{self.bot.user.id}>"):
             embed = discord.Embed(
                 description=(
                     f"{Neixoemojis.get('love')} hey {message.author.mention}, my prefix is `.`\n\n"

@@ -49,7 +49,7 @@ class EmbedMaker(commands.Cog):
             return await ctx.send("-# usage: `.embed <title> | <description>` — optional `--color #hex`")
 
         color = 0x121516
-        m = re.search(r"--color\s+([0-9a-fA-F]{6})$", content)
+        m = re.search(r"--color\s+#?([0-9a-fA-F]{6})$", content)
         if m:
             color = int(m.group(1), 16)
             content = content[: m.start()].rstrip()
@@ -65,10 +65,13 @@ class EmbedMaker(commands.Cog):
             embed.description = desc
         embed.set_footer(text=f"posted by {ctx.author.display_name}")
         try:
-            await ctx.message.delete()
-        except discord.HTTPException:
-            pass
-        await ctx.send(embed=embed)
+            await ctx.send(embed=embed)
+            try:
+                await ctx.message.delete()
+            except discord.HTTPException:
+                pass
+        except discord.HTTPException as e:
+            await ctx.send(f"-# couldn't send embed: {str(e).lower()}")
 
 
 async def setup(bot: commands.Bot):

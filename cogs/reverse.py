@@ -176,12 +176,23 @@ class Reverse(commands.Cog):
     async def reverse(self, ctx: commands.Context, url: str = None, *, question: str = None):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")
-        ai_mode = url is not None and not url.startswith(("http://", "https://"))
-        ask_what = None
-        if ai_mode:
-            ask_what = url
-            url = None
-        source = _resolve_source(ctx, url)
+
+        is_direct_url = url is not None and url.startswith(("http://", "https://"))
+        ai_mode = False
+        user_query = None
+
+        if is_direct_url:
+            source = url
+            if question:
+                ai_mode = True
+                user_query = question.strip()
+        else:
+            source = _resolve_source(ctx, None)
+            parts = [p for p in (url, question) if p]
+            if parts:
+                ai_mode = True
+                user_query = " ".join(parts).strip()
+
         if not source:
             return await ctx.send("-# attach an image, pass a url, or reply to a message with one.")
 
@@ -197,12 +208,7 @@ class Reverse(commands.Cog):
         if ai_mode:
             if not results and not api_key:
                 return await ctx.send("-# ai mode needs a saucenao key for context. set SAUCENAO_KEY in .env.")
-            if question:
-                q = f"what {ask_what} is this? {question}"
-            elif ask_what and ask_what != "anime":
-                q = f"what {ask_what} is this? identify it."
-            else:
-                q = "what is this? identify the anime, character, or artist."
+            q = user_query if (user_query and len(user_query) > 10) else f"what is this? {user_query or 'identify the anime, character, or artist.'}"
             answer, status_msg = await _ai_identify(ctx.bot, ctx.channel, data, strong, weak, q)
             if answer:
                 embed = discord.Embed(
@@ -307,6 +313,7 @@ async def _ai_identify(bot, channel, data: bytes, strong: list[dict], weak: list
             ],
         },
     ]
+    status_msg = None
     try:
         response, status_msg, _used_fallback = await ai._call_with_status(
             channel, payload, has_images=True, max_tokens=3000
@@ -315,6 +322,11 @@ async def _ai_identify(bot, channel, data: bytes, strong: list[dict], weak: list
         return (text.strip() or None), status_msg
     except Exception:
         log.warning("reverse: ai identify failed", exc_info=True)
+        if status_msg is not None:
+            try:
+                await status_msg.delete()
+            except discord.HTTPException:
+                pass
         return None, None
 
 

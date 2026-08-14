@@ -200,15 +200,15 @@ class Digest(commands.Cog):
         delta_vc: dict[int, int] = {}
         delta_bumps: dict[int, int] = {}
         for uid, cur in msgs.items():
-            prev = base.get(str(uid), {}).get("msgs", cur)
+            prev = base.get(str(uid), {}).get("msgs", 0)
             if cur - prev > 0:
                 delta_msgs[uid] = cur - prev
         for uid, cur in vc.items():
-            prev = base.get(str(uid), {}).get("vc", cur)
+            prev = base.get(str(uid), {}).get("vc", 0)
             if cur - prev > 0:
                 delta_vc[uid] = cur - prev
         for uid, cur in bumps.items():
-            prev = base.get(str(uid), {}).get("bumps", cur)
+            prev = base.get(str(uid), {}).get("bumps", 0)
             if cur - prev > 0:
                 delta_bumps[int(uid)] = cur - prev
 
@@ -365,12 +365,14 @@ class Digest(commands.Cog):
         if channel is None:
             return await ctx.send("-# usage: `.digest #channel`")
         state = _load_digest()
-        state[str(ctx.guild.id)] = {
+        gid = str(ctx.guild.id)
+        state[gid] = {
             "channel_id": str(channel.id),
             "baselines": {},
             "member_base": ctx.guild.member_count or len(ctx.guild.members),
             "last_run_iso": "",
         }
+        self._baselines(gid, state[gid], update=True)
         _save_digest(state)
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 

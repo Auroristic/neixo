@@ -119,8 +119,10 @@ def _render_user_card(
     _row(y, "server boosting", "yes" if boost else "no")
 
     if member and member.activity:
-        y += 60
-        f["sub"].draw(draw, (90, y), f"playing: {member.activity.name[:60]}", fill=(255, 255, 255, 170))
+        act_name = getattr(member.activity, "name", "") or getattr(member.activity, "state", "") or ""
+        if act_name:
+            y += 60
+            f["sub"].draw(draw, (90, y), f"playing: {act_name[:60]}", fill=(255, 255, 255, 170))
 
     footer_y = H - 120
     draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)

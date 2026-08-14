@@ -142,9 +142,11 @@ class Milestones(commands.Cog):
         if channel is None:
             return await ctx.send("-# usage: `.milestone #channel`")
         state = load_json(MILESTONES_FILE) or {}
+        count = ctx.guild.member_count or len(ctx.guild.members)
+        passed = [m for m in MILESTONES if m <= count]
         state[str(ctx.guild.id)] = {
             "channel_id": str(channel.id),
-            "last": 0,
+            "last": max(passed, default=0),
         }
         save_json(MILESTONES_FILE, state)
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")

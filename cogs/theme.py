@@ -1582,18 +1582,12 @@ class ThemeCog(commands.Cog, name="Theme"):
         if not channels_to_edit:
             return await ctx.send("-# no channels to edit in that scope")
 
-        # confirmation preview
-        sample = channels_to_edit[:3]
-        preview_lines = [
-            f"`{ch.name}` → `{tm.convert_font(tm.strip_font(ch.name), font_key)}`"
-            for ch in sample
-        ]
-        if len(channels_to_edit) > 3:
-            preview_lines.append(f"... and {len(channels_to_edit)-3} more")
-
-        # show a 3-item before→after preview
-        changes = [(ch.name, tm.convert_font(tm.strip_font(ch.name), font_key)) for ch in sample]
-        view = PreviewView(ctx.author.id, f"font set {font_key}", changes)
+        # show before→after preview
+        changes = [(ch.name, tm.convert_font(tm.strip_font(ch.name), font_key)) for ch in channels_to_edit]
+        changes_filtered = [(b, a) for b, a in changes if b != a]
+        if not changes_filtered:
+            return await ctx.send("-# no font changes needed")
+        view = PreviewView(ctx.author.id, f"font set {font_key}", changes_filtered)
         preview_msg = await ctx.send(embed=view.build_embed(), view=view)
         await view.wait()
 
@@ -1673,9 +1667,11 @@ class ThemeCog(commands.Cog, name="Theme"):
             return await ctx.send("-# no channels found in that scope")
 
         # preview before applying
-        sample = channels_to_edit[:3]
-        changes = [(ch.name, tm.strip_font(ch.name)) for ch in sample]
-        view = PreviewView(ctx.author.id, "font reset", changes)
+        changes = [(ch.name, tm.strip_font(ch.name)) for ch in channels_to_edit]
+        changes_filtered = [(b, a) for b, a in changes if b != a]
+        if not changes_filtered:
+            return await ctx.send("-# no font changes needed")
+        view = PreviewView(ctx.author.id, "font reset", changes_filtered)
         preview_msg = await ctx.send(embed=view.build_embed(), view=view)
         await view.wait()
 

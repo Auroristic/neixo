@@ -99,13 +99,13 @@ class Leveling(commands.Cog):
 
     async def cog_check(self, ctx):
         if ctx.guild is None:
-            await ctx.send("This command only works in servers.")
+            await ctx.send("-# this command only works in servers.")
             return False
         # Allow .disable and .enable commands even when leveling is disabled
-        if ctx.command and ctx.command.name in ("disable", "enable"):
+        if ctx.command and ctx.command.qualified_name in ("disable", "enable", "disable level", "enable level"):
             return True
         if self._leveling_disabled:
-            await ctx.send("Leveling system is currently disabled. Use `.enable level` to turn it on.")
+            await ctx.send("-# leveling is disabled. use `.enable level` to turn it on.")
             return False
         return True
 

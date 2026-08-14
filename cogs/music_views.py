@@ -64,7 +64,7 @@ class NowPlayingView(View):
 
             self.cog._prev_pressed.add(player.guild.id)
             try:
-                await player.play(prev_track, replace=True)
+                await player.play(prev_track)
             except Exception:
                 self.cog._prev_pressed.discard(player.guild.id)
                 history.append(prev_track)

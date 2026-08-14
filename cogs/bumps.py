@@ -75,13 +75,29 @@ def _get_conn() -> _sql.Connection:
     return _bump_conn
 
 
-def _extract_bumper(content: str, mentions: list) -> int | None:
-    """Return the bumper's user id from message mentions, with a raw
-    content fallback for messages whose mentions didn't resolve."""
-    for u in mentions:
+def _extract_bumper(message_or_content, text_or_mentions=None) -> int | None:
+    """Return the bumper's user id from interaction metadata, mentions, or text regex."""
+    if isinstance(message_or_content, str):
+        content = message_or_content
+        mentions = text_or_mentions or []
+        for u in mentions:
+            if not getattr(u, "bot", False):
+                return u.id
+        m = _MENTION_RE.search(content or "")
+        if m:
+            return int(m.group(1))
+        return None
+
+    message = message_or_content
+    text = text_or_mentions if isinstance(text_or_mentions, str) else (message.content or "")
+    meta_user = getattr(getattr(message, "interaction_metadata", None), "user", None) or \
+                getattr(getattr(message, "interaction", None), "user", None)
+    if meta_user and not getattr(meta_user, "bot", False):
+        return meta_user.id
+    for u in getattr(message, "mentions", []):
         if not getattr(u, "bot", False):
             return u.id
-    m = _MENTION_RE.search(content or "")
+    m = _MENTION_RE.search(text or "")
     if m:
         return int(m.group(1))
     return None
@@ -101,12 +117,19 @@ class Bumps(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.guild is None:
             return
-        low = (message.content or "").lower()
 
-        if message.author.id == DISBOARD_ID and DISBOARD_SIGNAL in low:
-            bumper_id = _extract_bumper(message.content, message.mentions)
-        elif message.author.bot and BLEED_SIGNAL in low:
-            bumper_id = _extract_bumper(message.content, message.mentions)
+        embed_texts = []
+        for e in message.embeds:
+            if e.description:
+                embed_texts.append(e.description)
+            if e.title:
+                embed_texts.append(e.title)
+        full_text = f"{message.content or ''} {' '.join(embed_texts)}".lower()
+
+        if message.author.id == DISBOARD_ID and DISBOARD_SIGNAL in full_text:
+            bumper_id = _extract_bumper(message, full_text)
+        elif message.author.bot and BLEED_SIGNAL in full_text:
+            bumper_id = _extract_bumper(message, full_text)
         else:
             return
 

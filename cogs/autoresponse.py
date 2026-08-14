@@ -56,13 +56,18 @@ class AutoResponse(commands.Cog):
         note="Admin only. Placeholders: `{user}`, `{server}`, `{channel}`. Max 15 triggers per server.",
     )
     async def auto(self, ctx: commands.Context, *, args: str = None):
+        if not await self._admin(ctx):
+            return await ctx.send("-# admin only")
         if not args:
             return await ctx.send("-# usage: `.auto add <trigger> => <response>` · `.auto remove <trigger>` · `.auto list`")
-        parts = args.split("=>", 1)
+        raw = args.strip()
+        if raw.lower().startswith("add "):
+            raw = raw[4:].strip()
+        parts = raw.split("=>", 1)
         if len(parts) == 2:
             trigger, response = parts[0].strip().lower(), parts[1].strip()
         else:
-            words = args.split(None, 1)
+            words = raw.split(None, 1)
             trigger, response = words[0].strip().lower(), (words[1].strip() if len(words) > 1 else "")
         if not trigger or not response:
             return await ctx.send("-# usage: `.auto add <trigger> => <response>`")

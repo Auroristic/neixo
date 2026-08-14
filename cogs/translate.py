@@ -173,8 +173,11 @@ class Translate(commands.Cog):
         replied = await self._resolved_reply_content(ctx.message)
         if replied:
             if not args:
-                # no args -> any language -> english (auto detection works for ->en)
-                src, tgt, text = "auto", "en", replied
+                async with ctx.typing():
+                    detected = await self._detect_lang(key, replied)
+                if not detected:
+                    return await ctx.send("-# couldn't detect the source language, try `.translate from <lang>`")
+                src, tgt, text = detected, "en", replied
             elif args.strip().lower().startswith("from "):
                 lang = LANG_CODES.get(args.strip()[5:].strip().lower())
                 if not lang:
@@ -191,7 +194,7 @@ class Translate(commands.Cog):
                 if not detected:
                     return await ctx.send("-# couldn't detect the source language, try `.translate from <lang>`")
                 src, tgt, text = detected, lang, replied
-            direction = f"auto -> {tgt}" if src == "auto" else f"{src} -> {tgt}"
+            direction = f"{src} -> {tgt}"
             async with ctx.typing():
                 result = await self._call_translate(key, src, tgt, text)
             if result is None:

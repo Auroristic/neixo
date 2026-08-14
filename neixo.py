@@ -202,15 +202,21 @@ class Neixo(commands.Bot):
                 return False
             return True
 
-        # command-specific override
-        cmd_allowed = await _apply_rule(
-            get_cmd_channel_rule(ctx.guild.id, qualified),
-            f"-# `.{ctx.command.qualified_name}` is disabled in this channel.",
-        )
-        if cmd_allowed is not None:
-            return cmd_allowed
+        # command-specific override (check full qualified name, then parent groups)
+        parts = qualified.split()
+        candidates = [qualified] + [" ".join(parts[:i]) for i in range(len(parts) - 1, 0, -1)]
+
+        for target in candidates:
+            cmd_allowed = await _apply_rule(
+                get_cmd_channel_rule(ctx.guild.id, target),
+                f"-# `.{ctx.command.qualified_name}` is disabled in this channel.",
+            )
+            if cmd_allowed is not None:
+                return cmd_allowed
 
         cat_id = self._cmd_to_category.get(qualified)
+        if not cat_id and len(parts) > 1:
+            cat_id = self._cmd_to_category.get(parts[0])
         if cat_id:
             cat_allowed = await _apply_rule(
                 get_cmd_channel_rule(ctx.guild.id, cat_id),
@@ -312,10 +318,8 @@ class Neixo(commands.Bot):
             return
 
         # ── Ignore list (block ALL commands and AI for ignored users) ─
-        if message.guild:
-            ignore_list = get_ignore_list()
-            if message.author.id in ignore_list:
-                return
+        if message.author.id in get_ignore_list():
+            return
 
         # ── Custom alias rewrite ──────────────────────────────
         # One-shot only (no chained alias→alias expansion).
@@ -403,7 +407,7 @@ class Neixo(commands.Bot):
         # to avoid double-running anything that already worked.
         if after.author.bot:
             return
-        if after.guild and after.author.id in get_ignore_list():
+        if after.author.id in get_ignore_list():
             return
         if before.content == after.content:
             return

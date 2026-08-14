@@ -31,15 +31,15 @@ COG_META = {
 # ── uwulock state (persisted) ───────────────────────────────────
 UWULOCKED_FILE = f"{DATA_DIR}/uwulocked.json"
 
-# user_id -> {"all": bool, "channels": set[int]}
-_lock_scopes: dict[int, dict] = {}
+# (guild_id, user_id) -> {"all": bool, "channels": set[int]}
+_lock_scopes: dict[tuple[int, int], dict] = {}
 
 # (user_id, channel_id) -> Webhook  (lazy cache; rebuilt on demand)
 _webhooks: dict[tuple[int, int], discord.Webhook] = {}
 
 
-def _is_locked(user_id: int, channel_id: int) -> bool:
-    s = _lock_scopes.get(user_id)
+def _is_locked(guild_id: int, user_id: int, channel_id: int) -> bool:
+    s = _lock_scopes.get((guild_id, user_id))
     if not s:
         return False
     return s.get("all", False) or channel_id in s.get("channels", set())
@@ -48,13 +48,13 @@ def _is_locked(user_id: int, channel_id: int) -> bool:
 def _save_state() -> None:
     """Persist current lock scopes + cached webhook URLs."""
     data = {}
-    for uid, scope in _lock_scopes.items():
+    for (gid, uid), scope in _lock_scopes.items():
         whs = {
             str(cid): wh.url
             for (u, cid), wh in _webhooks.items()
             if u == uid
         }
-        data[str(uid)] = {
+        data[f"{gid}_{uid}"] = {
             "all": bool(scope.get("all", False)),
             "channels": [str(c) for c in scope.get("channels", set())],
             "webhooks": whs,
@@ -67,12 +67,21 @@ def _load_state(bot: commands.Bot) -> None:
     _lock_scopes.clear()
     _webhooks.clear()
     raw = load_json(UWULOCKED_FILE) or {}
-    for uid_str, info in raw.items():
-        try:
-            uid = int(uid_str)
-        except (TypeError, ValueError):
-            continue
-        _lock_scopes[uid] = {
+    for key_str, info in raw.items():
+        if "_" in key_str:
+            parts = key_str.split("_", 1)
+            try:
+                gid = int(parts[0])
+                uid = int(parts[1])
+            except ValueError:
+                continue
+        else:
+            try:
+                gid = 0
+                uid = int(key_str)
+            except (TypeError, ValueError):
+                continue
+        _lock_scopes[(gid, uid)] = {
             "all": bool(info.get("all", False)),
             "channels": {
                 int(c) for c in info.get("channels", []) if str(c).isdigit()
@@ -268,8 +277,9 @@ class FunCog(commands.Cog, name="Fun"):
         if member.bot:
             return await ctx.send("can't uwulock bots silly!")
 
+        key = (ctx.guild.id, member.id)
         scope = _lock_scopes.setdefault(
-            member.id, {"all": False, "channels": set()}
+            key, {"all": False, "channels": set()}
         )
 
         if channel is None:
@@ -291,7 +301,7 @@ class FunCog(commands.Cog, name="Fun"):
 
         # drop the user entirely if nothing is locked anymore
         if not scope["all"] and not scope["channels"]:
-            _lock_scopes.pop(member.id, None)
+            _lock_scopes.pop(key, None)
 
         await self._gc_webhooks_for(member.id)
         _save_state()
@@ -317,7 +327,11 @@ class FunCog(commands.Cog, name="Fun"):
         if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.manage_messages:
             return await ctx.send("no perms")
 
-        if not _lock_scopes:
+        guild_locks = {
+            uid: scope for (gid, uid), scope in _lock_scopes.items() if gid == ctx.guild.id
+        }
+
+        if not guild_locks:
             embed = discord.Embed(
                 description="no one is uwulocked rn",
                 color=get_embed_color(ctx.guild.id),
@@ -325,7 +339,7 @@ class FunCog(commands.Cog, name="Fun"):
             return await ctx.send(embed=embed)
 
         lines = []
-        for uid, scope in _lock_scopes.items():
+        for uid, scope in guild_locks.items():
             if scope.get("all"):
                 scope_str = "all channels"
             else:
@@ -343,7 +357,7 @@ class FunCog(commands.Cog, name="Fun"):
     async def on_message(self, message):
         if message.author.bot or not message.guild:
             return
-        if not _is_locked(message.author.id, message.channel.id):
+        if not _is_locked(message.guild.id, message.author.id, message.channel.id):
             return
         if message.content.startswith("."):
             return
@@ -372,7 +386,7 @@ class FunCog(commands.Cog, name="Fun"):
                 log.warning(f"uwulock webhook issue: {e}")
                 return
 
-            uwufied = _uwufy(message.content) if message.content else ""
+            uwufied = _uwufy(message.content)[:2000] if message.content else ""
 
             files = []
             for att in message.attachments:

@@ -236,8 +236,10 @@ class Vanity(commands.Cog):
             None,
         )
 
-        has_vanity = custom_status and substring.lower() in (custom_status.name or "").lower()
+        status_text = f"{custom_status.state or ''} {custom_status.name or ''}".lower() if custom_status else ""
+        has_vanity = custom_status is not None and substring.lower() in status_text
 
+        user_key = (after.guild.id, after.id)
         if has_vanity:
             if role_id:
                 role = after.guild.get_role(role_id)
@@ -247,7 +249,7 @@ class Vanity(commands.Cog):
                             await after.add_roles(role, reason="Vanity substring matched.")
                     except discord.Forbidden:
                         pass
-            if channel_id and channel_msg and after.id not in self._welcomed:
+            if channel_id and channel_msg and user_key not in self._welcomed:
                 channel = self.bot.get_channel(channel_id)
                 if channel:
                     try:
@@ -259,8 +261,9 @@ class Vanity(commands.Cog):
                         return
                     # mark only after a successful send so a transient
                     # failure doesn't permanently skip this user's welcome
-                    self._welcomed.add(after.id)
+                    self._welcomed.add(user_key)
         else:
+            self._welcomed.discard(user_key)
             if role_id:
                 role = after.guild.get_role(role_id)
                 if role and role in after.roles:

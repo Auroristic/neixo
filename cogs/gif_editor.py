@@ -165,9 +165,14 @@ async def get_image_from_ctx(ctx, all_images: bool = False):
         return data, _attachment_is_gif(att)
 
     if ctx.message.reference:
-        replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
-        # Try image attachments on the replied message first
-        replied_images = [a for a in replied_msg.attachments if _is_image_attachment(a)]
+        try:
+            replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            replied_msg = None
+
+        if replied_msg:
+            # Try image attachments on the replied message first
+            replied_images = [a for a in replied_msg.attachments if _is_image_attachment(a)]
         if replied_images:
             if all_images:
                 images = []
@@ -375,15 +380,23 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
             "blue": (0, 0, 255, 255), "yellow": (255, 255, 0, 255),
             "purple": (128, 0, 128, 255), "orange": (255, 165, 0, 255),
         }
-        color = color.lower()
-        if color not in COLORS:
-            return await ctx.send('❌ Choose from: black, white, red, green, blue, yellow, purple, orange')
+        color_lower = color.lower()
+        if color_lower in COLORS:
+            target_color = COLORS[color_lower]
+        else:
+            try:
+                from PIL import ImageColor
+                c_str = color if color.startswith("#") else f"#{color}" if len(color) in (3, 6, 8) else color
+                rgb = ImageColor.getrgb(c_str)
+                target_color = (rgb[0], rgb[1], rgb[2], 255)
+            except Exception:
+                return await ctx.send("-# invalid color. use a hex code (#ff0000) or name (black, white, red, green, blue, yellow, purple, orange)")
 
         async with ctx.typing():
             try:
                 images = await get_image_from_ctx(ctx, all_images=True)
                 if not images:
-                    return await ctx.send("❌ Attach or reply to an image to create a fade GIF.")
+                    return await ctx.send("-# attach or reply to an image to create a fade gif")
 
                 steps = 20
                 multi = len(images) > 1
@@ -392,7 +405,7 @@ class GifEditorCog(commands.Cog, name="GifEditor"):
                         img_obj = img.convert("RGBA")
                     img_obj.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
-                    bg_layer = Image.new("RGBA", img_obj.size, COLORS[color])
+                    bg_layer = Image.new("RGBA", img_obj.size, target_color)
                     final_frames = []
                     for i in range(steps):
                         alpha = i / (steps - 1)

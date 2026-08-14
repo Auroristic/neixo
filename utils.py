@@ -297,21 +297,19 @@ def get_embed_color(guild_id):
 
 
 def get_next_confession_id(guild_id):
-    with _db() as conn:
-        row = conn.execute(
-            "SELECT data FROM kv WHERE filepath = ?", (CONFESSIONS_FILE,)
-        ).fetchone()
-        confessions = json.loads(row[0]) if row else {}
-        max_id = 0
-        for c in confessions.values():
-            if c.get("guild_id") == str(guild_id):
-                try:
-                    cid = int(c.get("id", 0))
-                except (TypeError, ValueError):
-                    cid = 0
-                if cid > max_id:
-                    max_id = cid
-        return max_id + 1
+    confessions = load_json(CONFESSIONS_FILE)
+    if not isinstance(confessions, dict):
+        confessions = {}
+    max_id = 0
+    for c in confessions.values():
+        if isinstance(c, dict) and c.get("guild_id") == str(guild_id):
+            try:
+                cid = int(c.get("id", 0))
+            except (TypeError, ValueError):
+                cid = 0
+            if cid > max_id:
+                max_id = cid
+    return max_id + 1
 
 
 def get_next_reply_id():

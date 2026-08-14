@@ -379,6 +379,8 @@ class AdminCog(commands.Cog, name="Admin"):
     async def whitelist(self, ctx, user: discord.Member = None):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
+        if ctx.guild is None:
+            return await ctx.send("-# this command is guild-only.")
 
         async with self._config_lock:
             config = load_json(CONFIG_FILE)
@@ -423,6 +425,8 @@ class AdminCog(commands.Cog, name="Admin"):
     async def whitelist_show(self, ctx):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
+        if ctx.guild is None:
+            return await ctx.send("-# this command is guild-only.")
 
         async with self._config_lock:
             config = load_json(CONFIG_FILE)
@@ -456,6 +460,8 @@ class AdminCog(commands.Cog, name="Admin"):
     async def setcolor(self, ctx, color: str):
         if not is_owner_or_creator(ctx):
             return await ctx.send("no perms")
+        if ctx.guild is None:
+            return await ctx.send("-# this command is guild-only.")
 
         color = color.strip('#')
         try:
@@ -479,12 +485,12 @@ class AdminCog(commands.Cog, name="Admin"):
         usage="`.ignore @user`",
         desc="Toggles ignoring a user — the bot won't respond to them in AI channels.",
         section="Server Management",
-        staff=True,
+        owner=True,
         examples=[".ignore @user"],
         params=[
             {"name": "user", "type": "discord.Member", "required": True, "desc": "The member to ignore or unignore."},
         ],
-        note="Staff only (whitelisted users).",
+        note="Bot creator only.",
     )
     async def ignore_user(self, ctx, user: discord.Member = None):
         # the ignore list is GLOBAL (all guilds) — only the creator can manage it
@@ -1099,12 +1105,19 @@ class AdminCog(commands.Cog, name="Admin"):
         if len(args) < 2:
             return await ctx.send("-# usage: `.cmd allow <#channel>... <category|command>`")
 
-        target = args[-1].strip().lower().lstrip(".")
-        channel_parts = list(args[:-1])
-        channel_ids = self._parse_channel_ids(channel_parts)
+        channel_ids = []
+        target_parts = []
+        for a in args:
+            parsed = self._parse_channel_ids([a])
+            if parsed and not target_parts:
+                channel_ids.extend(parsed)
+            else:
+                target_parts.append(a)
 
-        if not channel_ids:
+        if not channel_ids or not target_parts:
             return await ctx.send("-# couldn't resolve any channels. use mentions or ids.")
+
+        target = " ".join(target_parts).strip().lower().lstrip(".")
 
         known = getattr(self.bot, "_known_rule_targets", set()) or set()
         if known and target not in known:
@@ -1134,12 +1147,19 @@ class AdminCog(commands.Cog, name="Admin"):
         if len(args) < 2:
             return await ctx.send("-# usage: `.cmd deny <#channel>... <category|command>`")
 
-        target = args[-1].strip().lower().lstrip(".")
-        channel_parts = list(args[:-1])
-        channel_ids = self._parse_channel_ids(channel_parts)
+        channel_ids = []
+        target_parts = []
+        for a in args:
+            parsed = self._parse_channel_ids([a])
+            if parsed and not target_parts:
+                channel_ids.extend(parsed)
+            else:
+                target_parts.append(a)
 
-        if not channel_ids:
+        if not channel_ids or not target_parts:
             return await ctx.send("-# couldn't resolve any channels. use mentions or ids.")
+
+        target = " ".join(target_parts).strip().lower().lstrip(".")
 
         known = getattr(self.bot, "_known_rule_targets", set()) or set()
         if known and target not in known:
@@ -1226,7 +1246,10 @@ class AdminCog(commands.Cog, name="Admin"):
         note="Requires manage_messages permission. Only deletes bot messages and messages starting with `.`.",
     )
     async def purge_bots(self, ctx, limit: int = 50):
-        if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.manage_messages:
+        if ctx.guild is None:
+            return await ctx.send("-# this command is guild-only.")
+        perms = getattr(ctx.author, "guild_permissions", None)
+        if not is_owner_or_creator(ctx) and not getattr(perms, "manage_messages", False):
             return await ctx.send("-# need `manage_messages` perm")
 
         # Fast predicate: only delete bot messages or messages that *start* with '.'

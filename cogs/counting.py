@@ -34,10 +34,10 @@ class Counting(commands.Cog):
     def _save(self):
         save_json(COUNTING_FILE, self._state)
 
-    @commands.command(name="counting")
+    @commands.group(name="counting", invoke_without_command=True)
     @help_meta(
         usage="`.counting <#channel>`  ·  `.counting off`",
-        desc="Turns a channel into a counting game: numbers must go up by 1.",
+        desc="turns a channel into a counting game: numbers must go up by 1",
         section="Fun",
         examples=[".counting #counting", ".counting off", ".counting"],
         params=[
@@ -62,13 +62,27 @@ class Counting(commands.Cog):
             return await ctx.send(
                 f"-# counting is on in {ch.mention if ch else cur['channel']} — current count: **{cur['current']}**"
             )
-        if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.administrator:
+        if not is_owner_or_creator(ctx) and not getattr(getattr(ctx.author, "guild_permissions", None), "administrator", False):
             return await ctx.send("-# admin only")
         if channel.id == ctx.channel.id:
             return await ctx.send("-# can't use this channel, it'd be chaos")
-        self._state[gid] = {"channel": str(channel.id), "current": 0, "last_user": None}
+
+        scores = self._state.get(gid, {}).get("scores", {})
+        self._state[gid] = {"channel": str(channel.id), "current": 0, "last_user": None, "scores": scores}
         self._save()
         await ctx.send(f"-# counting game on in {channel.mention}. start at **1**.")
+
+    @counting.command(name="off")
+    async def counting_cmd_off(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if not is_owner_or_creator(ctx) and not getattr(getattr(ctx.author, "guild_permissions", None), "administrator", False):
+            return await ctx.send("-# admin only")
+        gid = str(ctx.guild.id)
+        if gid in self._state:
+            del self._state[gid]
+            self._save()
+        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @commands.command(name="top")
     @help_meta(

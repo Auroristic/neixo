@@ -88,9 +88,10 @@ def _reaction_emoji_str(emoji) -> str:
 
 
 def _render_reaction_embed(snap: dict, guild_id: int, n: int) -> discord.Embed:
+    author_name = getattr(snap.get("message_author"), "display_name", "someone")
     embed = discord.Embed(
         description=(
-            f"removed {snap['emoji']} on **{snap['message_author'].display_name}**'s "
+            f"removed {snap['emoji']} on **{author_name}**'s "
             f"[message]({snap['message_jump_url']})"
         ),
         color=get_embed_color(guild_id),

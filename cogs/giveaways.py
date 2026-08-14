@@ -94,7 +94,7 @@ class Giveaways(commands.Cog):
             entry_reaction = next((r for r in message.reactions if str(r.emoji) == ENTRY_EMOJI), None)
             reactors = []
             if entry_reaction:
-                reactors = [u for u in await entry_reaction.users().flatten() if not u.bot]
+                reactors = [u async for u in entry_reaction.users() if not u.bot]
         except discord.HTTPException:
             reactors = []
         if reactors:

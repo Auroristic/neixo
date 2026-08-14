@@ -543,9 +543,10 @@ class LBPageView(discord.ui.View):
         return interaction.user.id == self.ctx.author.id
 
     async def fetch_assets(self):
+        guild_icon_url = self.ctx.guild.icon.url if self.ctx.guild and self.ctx.guild.icon else self.bot.user.display_avatar.url
         async with aiohttp.ClientSession() as s:
             tasks = [
-                self._fetch(s, self.bot.user.display_avatar.url),
+                self._fetch(s, guild_icon_url),
                 self._fetch(s, self.ctx.author.display_avatar.url),
             ]
             results = await asyncio.gather(*tasks)
@@ -774,9 +775,10 @@ class EmojiLBView(discord.ui.View):
         return interaction.user.id == self.ctx.author.id
 
     async def fetch_assets(self):
+        guild_icon_url = self.ctx.guild.icon.url if self.ctx.guild and self.ctx.guild.icon else self.bot.user.display_avatar.url
         async with aiohttp.ClientSession() as s:
             tasks = [
-                self._fetch(s, self.bot.user.display_avatar.url),
+                self._fetch(s, guild_icon_url),
                 self._fetch(s, self.ctx.author.display_avatar.url),
             ]
             results = await asyncio.gather(*tasks)
@@ -1354,7 +1356,11 @@ class ServerStatsCog(commands.Cog):
                 label = datetime.strptime(md, "%m-%d").strftime("%b %d")
             except ValueError:
                 continue
-            rows.append((int(it["user_id"]), label))
+            target_id = it.get("target_id") or it.get("creator_id")
+            if target_id and str(target_id).isdigit():
+                uid = int(target_id)
+                if ctx.guild.get_member(uid):
+                    rows.append((uid, label))
         if not rows:
             return await ctx.send("-# no birthdays this month. check back later.")
         rows.sort(key=lambda x: x[1])

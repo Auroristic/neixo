@@ -2491,6 +2491,11 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         note="Owner only.",
     )
     async def ai_list(self, ctx):
+        if not is_owner_or_creator(ctx):
+            return await ctx.send("owner only")
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+
         config       = load_json(CONFIG_FILE)
         guild_cfg    = config.get(str(ctx.guild.id), {})
         ai_channels  = guild_cfg.get('ai_channels', [])
@@ -2860,10 +2865,8 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         bot_memory = load_json(BOT_MEMORY_FILE)
         save_json(f"{DATA_DIR}/bot_memory_backup.json", bot_memory)
         mem_key = f"{ctx.guild.id}_{ctx.channel.id}_{target.id}"
-        dm_key  = f"dm_{target.id}"
-        for k in [mem_key, dm_key]:
-            if k in bot_memory:
-                del bot_memory[k]
+        if mem_key in bot_memory:
+            del bot_memory[mem_key]
         save_json(BOT_MEMORY_FILE, bot_memory)
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
