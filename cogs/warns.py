@@ -65,14 +65,16 @@ class Warns(commands.Cog):
     @commands.group(name="warn", invoke_without_command=True)
     @help_meta(
         usage="`.warn <@user> <reason>`  ·  `.warnings [@user]`  ·  `.unwarn <@user>`",
-        desc="Warns a user. 3 warns = 1h timeout, 5 warns = ban.",
+        desc="Warns a member with automatic progressive penalties (3 warns = 1h timeout, 5 warns = ban).",
         section="Moderation",
-        examples=[".warn @someone spamming", ".warnings", ".unwarn @someone"],
+        perm_tier="admin",
+        discord_perms=["moderate_members", "ban_members"],
+        examples=[".warn @someone spamming", ".warn @someone breaking rule 3"],
         params=[
-            {"name": "user", "type": "discord.Member", "required": True, "desc": "User to warn."},
-            {"name": "reason", "type": "str", "required": True, "desc": "Why they're being warned."},
+            {"name": "user", "type": "user", "required": True, "desc": "Member to issue a warning to."},
+            {"name": "reason", "type": "str", "required": True, "desc": "Reason for the warning."},
         ],
-        note="Staff only. Use `.warn log #channel` to get a log channel.",
+        note="Requires Administrator or Moderate Members permission. Use `.warn log #channel` to configure staff logs.",
     )
     async def warn(self, ctx: commands.Context, user: discord.Member = None, *, reason: str = None):
         if not await self._staff(ctx):
@@ -125,13 +127,15 @@ class Warns(commands.Cog):
     @warn.group(name="log", invoke_without_command=True)
     @help_meta(
         usage="`.warn log [#channel]`",
-        desc="Shows or sets the warn log channel.",
+        desc="Shows or sets the audit log channel where warning actions are broadcasted.",
         section="Moderation",
-        examples=[".warn log", ".warn log #staff-logs"],
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".warn log", ".warn log #mod-logs"],
         params=[
-            {"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "Channel to post warn logs to. Omit to show the current one."},
+            {"name": "channel", "type": "channel", "required": False, "desc": "Channel to post warning logs to. Omit to view current channel."},
         ],
-        note="Staff only.",
+        note="Requires Administrator or Manage Server permission.",
     )
     async def warn_log(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if not await self._staff(ctx):
@@ -150,13 +154,15 @@ class Warns(commands.Cog):
     @warn.command(name="clear")
     @help_meta(
         usage="`.warn clear <@user>`",
-        desc="Clears all warns for a user.",
+        desc="Clears all active warnings and resets the penalty counter for a member.",
         section="Moderation",
+        perm_tier="admin",
+        discord_perms=["moderate_members"],
         examples=[".warn clear @someone"],
         params=[
-            {"name": "user", "type": "discord.Member", "required": True, "desc": "User whose warns to clear."},
+            {"name": "user", "type": "user", "required": True, "desc": "Member whose warnings should be cleared."},
         ],
-        note="Staff only. This cannot be undone.",
+        note="Requires Administrator permission. This action cannot be undone.",
     )
     async def warn_clear(self, ctx: commands.Context, user: discord.Member = None):
         if not await self._staff(ctx):
@@ -175,11 +181,13 @@ class Warns(commands.Cog):
     @commands.command(name="unwarn")
     @help_meta(
         usage="`.unwarn <@user>`",
-        desc="Removes the most recent warn from a user.",
+        desc="Removes the most recent warning from a member.",
         section="Moderation",
+        perm_tier="admin",
+        discord_perms=["moderate_members"],
         examples=[".unwarn @someone"],
-        params=[{"name": "user", "type": "discord.Member", "required": True, "desc": "User to unwarn."}],
-        note="staff only.",
+        params=[{"name": "user", "type": "user", "required": True, "desc": "Member to remove latest warning from."}],
+        note="Requires Administrator or Moderate Members permission.",
     )
     async def unwarn(self, ctx: commands.Context, user: discord.Member = None):
         if not await self._staff(ctx):
@@ -199,11 +207,12 @@ class Warns(commands.Cog):
     @commands.command(name="warnings", aliases=["warns"])
     @help_meta(
         usage="`.warnings [@user]`",
-        desc="Shows warns for a user (or your own).",
+        desc="Shows warning history for a member (or yourself).",
         section="Moderation",
+        perm_tier="public",
         examples=[".warnings", ".warnings @someone"],
-        params=[{"name": "user", "type": "discord.Member", "required": False, "desc": "User to check. Defaults to you."}],
-        note="Staff can check anyone's warns.",
+        params=[{"name": "user", "type": "user", "required": False, "desc": "Member to inspect. Defaults to yourself."}],
+        note="Staff with admin permissions can check anyone's warning log.",
     )
     async def warnings(self, ctx: commands.Context, user: discord.Member = None):
         if ctx.guild is None:

@@ -158,19 +158,20 @@ class Quote(commands.Cog):
 
     @commands.command(name="quote")
     @help_meta(
-        usage="`.quote [message_link/id]`  ·  reply w/ `.quote`",
-        desc="renders an aesthetic dark quote card from a message or reply",
+        usage="`.quote [message_link|message_id]`  ·  Reply with `.quote`",
+        desc="Renders an aesthetic dark monochrome quote card from a message reply, jump link, or text.",
         section="Fun",
+        perm_tier="public",
         examples=[".quote", ".quote https://discord.com/channels/...", '.quote "wisdom" - @user'],
         params=[
             {
                 "name": "target",
                 "type": "str",
                 "required": False,
-                "desc": "Message link, ID, or custom quote text.",
+                "desc": "Message link, message ID, or custom quote text formatted as `\"text\" - @user`.",
             }
         ],
-        note="reply to any message with `.quote` for instant card generation.",
+        note="Reply to any message with `.quote` for instant card generation.",
     )
     async def quote_cmd(self, ctx: commands.Context, *, target: str = None):
         target_msg: discord.Message | None = None

@@ -19,9 +19,9 @@ GIVEAWAYS_FILE = f"{DATA_DIR}/giveaways.json"
 ENTRY_EMOJI = "\U0001f389"  # 🎉
 
 COG_META = {
-    "category": "fun",
-    "label": "Fun",
-    "desc": "Reaction-based giveaways.",
+    "category": "utility",
+    "label": "Utility",
+    "desc": "Reaction-based giveaways with automatic winner selection.",
 }
 
 
@@ -118,14 +118,16 @@ class Giveaways(commands.Cog):
     @commands.command(name="giveaway")
     @help_meta(
         usage="`.giveaway <duration> <prize>`",
-        desc="Starts a giveaway. React 🎉 to enter, winner picked at random.",
-        section="Fun",
-        examples=[".giveaway 1h nitro", ".giveaway 2d discord mod role"],
+        desc="Starts a reaction-based giveaway. Members react to enter; a winner is picked automatically on conclusion.",
+        section="Utility",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".giveaway 1h Discord Nitro", ".giveaway 2d VIP Role", ".giveaway 30m 500 Credits"],
         params=[
-            {"name": "duration", "type": "str", "required": True, "desc": "How long it runs: `30m`, `2h`, `1d`, `1w`."},
-            {"name": "prize", "type": "str", "required": True, "desc": "The prize."},
+            {"name": "duration", "type": "str", "required": True, "desc": "Duration string: `30m`, `2h`, `1d`, `1w`."},
+            {"name": "prize", "type": "str", "required": True, "desc": "Name or description of the giveaway prize."},
         ],
-        note="Anyone can host. Winners are picked randomly from 🎉 reactors.",
+        note="Requires Administrator or Manage Server permission. Automatically selects winners from active entries.",
     )
     async def giveaway(self, ctx: commands.Context, duration: str = None, *, prize: str = None):
         if ctx.guild is None:
@@ -167,11 +169,13 @@ class Giveaways(commands.Cog):
     @commands.command(name="giveawaycancel")
     @help_meta(
         usage="`.giveawaycancel`",
-        desc="Cancels the most recent active giveaway in this channel.",
-        section="Fun",
+        desc="Cancels the most recent active giveaway in the current channel.",
+        section="Utility",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".giveawaycancel"],
         params=[],
-        note="Admin only.",
+        note="Requires Administrator or Manage Server permission.",
     )
     async def giveaway_cancel(self, ctx: commands.Context):
         if ctx.guild is None:

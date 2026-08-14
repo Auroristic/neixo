@@ -2416,19 +2416,19 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="aiadd")
     @help_meta(
         usage="`.aiadd [#channel]`",
-        desc="Enables AI chat responses in a channel.",
+        desc="Enables AI chat responses in a server channel.",
         section="AI",
-        owner=True,
-        examples=[".aiadd", ".aiadd #general"],
+        perm_tier="guild_owner",
+        examples=[".aiadd", ".aiadd #general", ".aiadd #lounge"],
         params=[
             {
                 "name": "channel",
-                "type": "discord.TextChannel",
+                "type": "channel",
                 "required": False,
-                "desc": "The channel to enable AI in. Defaults to current channel.",
+                "desc": "The channel to enable AI in. Defaults to the current channel.",
             },
         ],
-        note="Owner only.",
+        note="Server Owner / Creator only.",
     )
     async def ai_add(self, ctx, channel: discord.TextChannel = None):
         if not is_owner_or_creator(ctx):
@@ -2451,19 +2451,19 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="airemove")
     @help_meta(
         usage="`.airemove [#channel]`",
-        desc="Disables AI chat responses in a channel.",
+        desc="Disables AI chat responses in a server channel.",
         section="AI",
-        owner=True,
+        perm_tier="guild_owner",
         examples=[".airemove", ".airemove #general"],
         params=[
             {
                 "name": "channel",
-                "type": "discord.TextChannel",
+                "type": "channel",
                 "required": False,
-                "desc": "The channel to disable AI in. Defaults to current channel.",
+                "desc": "The channel to disable AI in. Defaults to the current channel.",
             },
         ],
-        note="Owner only.",
+        note="Server Owner / Creator only.",
     )
     async def ai_remove(self, ctx, channel: discord.TextChannel = None):
         if not is_owner_or_creator(ctx):
@@ -2483,12 +2483,12 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="ailist")
     @help_meta(
         usage="`.ailist`",
-        desc="Shows all AI-enabled channels and DM whitelisted users.",
+        desc="Shows all AI-enabled channels in the current server and active DM whitelisted users.",
         section="AI",
-        owner=True,
+        perm_tier="guild_owner",
         examples=[".ailist"],
         params=[],
-        note="Owner only.",
+        note="Server Owner / Creator only.",
     )
     async def ai_list(self, ctx):
         if not is_owner_or_creator(ctx):
@@ -2551,15 +2551,15 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="dmadd")
     @help_meta(
-        usage="`.dmadd @user`",
-        desc="Enables DM AI responses for a user.",
+        usage="`.dmadd <@user>`",
+        desc="Enables direct-message AI conversation access for a specific user.",
         section="AI",
-        owner=True,
-        examples=[".dmadd @user"],
+        perm_tier="creator",
+        examples=[".dmadd @retro"],
         params=[
-            {"name": "user", "type": "discord.User", "required": True, "desc": "The user to enable DM AI for."},
+            {"name": "user", "type": "user", "required": True, "desc": "The user to whitelist for DM AI access."},
         ],
-        note="Owner only.",
+        note="Bot Creator only.",
     )
     async def dm_add(self, ctx, user: discord.User = None):
         # global bot-wide list — only the creator can touch it, not any guild owner
@@ -2578,15 +2578,15 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="dmremove")
     @help_meta(
-        usage="`.dmremove @user`",
-        desc="Disables DM AI responses for a user.",
+        usage="`.dmremove <@user>`",
+        desc="Disables direct-message AI conversation access for a user.",
         section="AI",
-        owner=True,
-        examples=[".dmremove @user"],
+        perm_tier="creator",
+        examples=[".dmremove @retro"],
         params=[
-            {"name": "user", "type": "discord.User", "required": True, "desc": "The user to disable DM AI for."},
+            {"name": "user", "type": "user", "required": True, "desc": "The user to remove from DM AI access."},
         ],
-        note="Owner only.",
+        note="Bot Creator only.",
     )
     async def dm_remove(self, ctx, user: discord.User = None):
         # global bot-wide list — only the creator can touch it
@@ -2606,12 +2606,12 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="dmreset")
     @help_meta(
         usage="`.dmreset`",
-        desc="Resets your DM conversation memory.",
+        desc="Resets your private DM conversation memory and history with the bot.",
         section="AI",
-        owner=True,
+        perm_tier="creator",
         examples=[".dmreset"],
         params=[],
-        note="Owner only. Clears the conversation history.",
+        note="Bot Creator / Whitelisted DM users only.",
     )
     async def dm_memory_reset(self, ctx):
         creator_id   = CREATOR_ID
@@ -2634,12 +2634,12 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="dmrefresh")
     @help_meta(
         usage="`.dmrefresh`",
-        desc="Refreshes your DM conversation from scratch.",
+        desc="Refreshes your private DM conversation session from scratch.",
         section="AI",
-        owner=True,
+        perm_tier="creator",
         examples=[".dmrefresh"],
         params=[],
-        note="Owner only. Wipes and re-reads recent messages.",
+        note="Bot Creator / Whitelisted DM users only.",
     )
     async def dm_refresh(self, ctx):
         creator_id   = CREATOR_ID
@@ -2654,15 +2654,15 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
 
     @commands.command(name="creset")
     @help_meta(
-        usage="`.creset [@user]`  ·  `.creset #channel`  ·  `.creset all`",
-        desc="Resets conversation memory for a user or everyone.",
+        usage="`.creset [@user]`  ·  `.creset <#channel>`  ·  `.creset all`",
+        desc="Resets AI conversation memory for a user, a specific channel, or the whole server.",
         section="AI",
-        owner=True,
-        examples=[".creset", ".creset @user", ".creset all"],
+        perm_tier="guild_owner",
+        examples=[".creset", ".creset @someone", ".creset #general", ".creset all"],
         params=[
-            {"name": "target", "type": "str", "required": False, "desc": "A user mention or `all` to reset everyone."},
+            {"name": "target", "type": "str", "required": False, "desc": "A user mention, channel mention, or `all` to wipe everyone."},
         ],
-        note="Owner only. Clears the AI's memory of past conversations.",
+        note="Server Owner / Creator only.",
     )
     async def convo_reset(self, ctx, subcommand: str = None, user: discord.Member = None):
         if ctx.guild is None:
@@ -2745,19 +2745,19 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="crefresh")
     @help_meta(
         usage="`.crefresh`  ·  `.crefresh all`",
-        desc="Wipes conversation memory and re-reads the last 60 messages.",
+        desc="Wipes channel conversation memory and re-indexes the last 60 messages for fresh context.",
         section="AI",
-        owner=True,
+        perm_tier="guild_owner",
         examples=[".crefresh", ".crefresh all"],
         params=[
             {
-                "name": "target",
+                "name": "mode",
                 "type": "str",
                 "required": False,
-                "desc": "Set to `all` to refresh conversations for all users.",
+                "desc": "Pass `all` to refresh all AI channels, or omit for current channel.",
             },
         ],
-        note="Owner only.",
+        note="Server Owner / Creator only.",
     )
     async def convo_refresh(self, ctx, subcommand: str = None):
         if ctx.guild is None:
@@ -2822,12 +2822,12 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="crestore")
     @help_meta(
         usage="`.crestore`",
-        desc="Restores conversation memory from the last backup.",
+        desc="Restores conversation memory from the last automatic backup file.",
         section="AI",
-        owner=True,
+        perm_tier="guild_owner",
         examples=[".crestore"],
         params=[],
-        note="Owner only. Restores from the auto-backup file.",
+        note="Server Owner / Creator only.",
     )
     async def convo_restore(self, ctx):
         if not is_owner_or_creator(ctx):
@@ -2841,19 +2841,19 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="mreset")
     @help_meta(
         usage="`.mreset [@user]`",
-        desc="Clears the bot's memory notes for a user.",
+        desc="Clears long-term AI memory notes for a specific user or yourself.",
         section="AI",
-        owner=True,
-        examples=[".mreset", ".mreset @user"],
+        perm_tier="guild_owner",
+        examples=[".mreset", ".mreset @someone"],
         params=[
             {
                 "name": "user",
-                "type": "discord.User",
+                "type": "user",
                 "required": False,
-                "desc": "The user to clear memory for. Omit for self.",
+                "desc": "The user to clear memory for. Defaults to yourself.",
             },
         ],
-        note="Owner only. Memory notes are stored separately from conversation history.",
+        note="Server Owner / Creator only for clearing other members' notes.",
     )
     async def memory_reset(self, ctx, user: discord.Member = None):
         if ctx.guild is None:
@@ -2873,12 +2873,12 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="mrestore")
     @help_meta(
         usage="`.mrestore`",
-        desc="Restores bot memory from the last backup.",
+        desc="Restores AI long-term memory notes from the last automatic backup file.",
         section="AI",
-        owner=True,
+        perm_tier="guild_owner",
         examples=[".mrestore"],
         params=[],
-        note="Owner only. Restores memory notes from the auto-backup.",
+        note="Server Owner / Creator only.",
     )
     async def memory_restore(self, ctx):
         if not is_owner_or_creator(ctx):
@@ -2893,11 +2893,12 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     @commands.command(name="nvidia")
     @help_meta(
         usage="`.nvidia`",
-        desc="Browse all models from build.nvidia.com.",
+        desc="Displays information about active NVIDIA AI inference models.",
         section="AI",
-        owner=True,
+        perm_tier="creator",
         examples=[".nvidia"],
-        note="Owner only.",
+        params=[],
+        note="Bot Creator only.",
     )
     async def nvidia_cmd(self, ctx):
         if not is_owner_or_creator(ctx):

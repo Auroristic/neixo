@@ -16,9 +16,9 @@ from utils import help_meta
 log = logging.getLogger(__name__)
 
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "User info cards.",
+    "category": "profile",
+    "label": "Profile",
+    "desc": "User profile cards, avatars, banners, and role details.",
 }
 
 _STATUS = {

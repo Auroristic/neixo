@@ -31,12 +31,14 @@ _CAT_ICONS = {
     "utility": "■",
     "miscellaneous": "▪",
     "misc": "▪",
-    "help": "?",
+    "help": "✦",
     "setup": "⚙",
     "support": "♥",
     "server": "▼",
-    "ai": "▲",
+    "ai": "✦",
     "imagine": "✦",
+    "image": "✦",
+    "media": "○",
     "vanity": "◆",
     "reminders": "●",
     "reactions": "♥",
@@ -45,8 +47,10 @@ _CAT_ICONS = {
     "serverstats": "▧",
     "funimage": "✦",
     "gifs": "○",
-    "memory": "◆",
+    "memory": "◈",
     "config": "⚙",
+    "leveling": "▲",
+    "staff": "★",
     "general": "☆",
 }
 
@@ -59,6 +63,8 @@ def process_command(cmd, cat_id, cat_label, categories, cog):
     owner = False
     admin = False
     staff = False
+    perm_tier = "public"
+    discord_perms = []
     examples = []
     params = []
     note = None
@@ -70,6 +76,8 @@ def process_command(cmd, cat_id, cat_label, categories, cog):
         owner = meta.get("owner", False)
         admin = meta.get("admin", False)
         staff = meta.get("staff", False)
+        perm_tier = meta.get("perm_tier") or ("creator" if owner else "admin" if admin else "whitelist" if staff else "public")
+        discord_perms = meta.get("discord_perms") or []
         examples = meta.get("examples") or []
         params = meta.get("params") or []
         note = meta.get("note")
@@ -100,8 +108,28 @@ def process_command(cmd, cat_id, cat_label, categories, cog):
 
     cog_file = cog.__class__.__module__.split(".")[-1] + ".py"
 
+    # Extract subcommands details if Group
+    subcmds_list = []
+    if isinstance(cmd, commands.Group):
+        for sc in cmd.commands:
+            sc_meta = get_help_meta(sc) or {}
+            sc_desc = sc_meta.get("desc") or sc.help or "No description."
+            sc_usage = sc_meta.get("usage") or f".{sc.qualified_name}"
+            sc_perm_tier = sc_meta.get("perm_tier") or ("creator" if sc_meta.get("owner") else "admin" if sc_meta.get("admin") else "whitelist" if sc_meta.get("staff") else perm_tier)
+            subcmds_list.append({
+                "name": sc.name,
+                "qualified_name": sc.qualified_name,
+                "usage": sc_usage,
+                "description": sc_desc,
+                "perm_tier": sc_perm_tier,
+                "aliases": sc.aliases,
+                "params": sc_meta.get("params") or [],
+                "examples": sc_meta.get("examples") or [],
+            })
+
     cmd_obj = {
         "name": cmd.name,
+        "qualified_name": cmd.qualified_name,
         "usage": usage_str,
         "usage_parts": usage_parts,
         "description": desc,
@@ -109,6 +137,8 @@ def process_command(cmd, cat_id, cat_label, categories, cog):
         "owner": owner,
         "admin": admin,
         "staff": staff,
+        "perm_tier": perm_tier,
+        "discord_perms": discord_perms,
         "examples": examples,
         "params": params,
         "note": note,
@@ -117,6 +147,7 @@ def process_command(cmd, cat_id, cat_label, categories, cog):
         "group": cmd.parent.name if is_subcmd else None,
         "is_subcommand": is_subcmd,
         "has_subcommands": isinstance(cmd, commands.Group),
+        "subcommands": subcmds_list,
         "cog_file": cog_file
     }
 

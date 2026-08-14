@@ -41,9 +41,9 @@ _bump_conn: _sql.Connection | None = None
 _MENTION_RE = re.compile(r"<@!?(\d+)>")
 
 COG_META = {
-    "category": "general",
-    "label": "Server Stats",
-    "desc": "Disboard bump tracking & bump leaderboard.",
+    "category": "utility",
+    "label": "Utility",
+    "desc": "Disboard bump tracking and bump leaderboards.",
 }
 
 
@@ -212,18 +212,19 @@ class Bumps(commands.Cog):
     @commands.command(name="bumps")
     @help_meta(
         usage="`.bumps [@user]`",
-        desc="Shows the disboard bump leaderboard, or one user's bump count.",
-        section="Leaderboards",
+        desc="Shows the server Disboard bump leaderboard or a specific member's bump count and streak.",
+        section="Utility",
+        perm_tier="public",
         examples=[".bumps", ".bumps @someone"],
         params=[
             {
                 "name": "user",
-                "type": "discord.Member",
+                "type": "user",
                 "required": False,
-                "desc": "Show a specific user's bump count and rank.",
+                "desc": "Member to inspect bump count and streak for. Omit to view server leaderboard.",
             },
         ],
-        note="Tracks Disboard bumps. One bump every 2 hours, so it's a fair race.",
+        note="Tracks Disboard `/bump` commands with a 2-hour anti-double-count window.",
     )
     async def bumps(self, ctx: commands.Context, user: discord.Member = None):
         if ctx.guild is None:

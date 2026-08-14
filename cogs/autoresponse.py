@@ -15,9 +15,9 @@ log = logging.getLogger(__name__)
 AUTO_FILE = f"{DATA_DIR}/autoresponses.json"
 
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "Custom auto-responses.",
+    "category": "admin",
+    "label": "Admin",
+    "desc": "Custom keyword trigger and auto-reply system.",
 }
 
 _COOLDOWN_SECONDS = 5
@@ -49,11 +49,20 @@ class AutoResponse(commands.Cog):
     @commands.group(name="auto", aliases=["autoresponse"], invoke_without_command=True)
     @help_meta(
         usage="`.auto add <trigger> => <response>`  ·  `.auto remove <trigger>`  ·  `.auto list`",
-        desc="Creates custom auto-responses — the bot replies when someone says the trigger.",
-        section="General",
-        examples=[".auto add hello => hi there", ".auto remove hello", ".auto list"],
-        params=[],
-        note="Admin only. Placeholders: `{user}`, `{server}`, `{channel}`. Max 15 triggers per server.",
+        desc="Creates custom automated phrase responses that the bot triggers on when spoken in chat.",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[
+            ".auto add hello => Hey {user}, welcome!",
+            ".auto add rules => Please check out {channel} for rules.",
+            ".auto list",
+        ],
+        params=[
+            {"name": "trigger", "type": "str", "required": False, "desc": "Keyword or phrase that triggers the bot."},
+            {"name": "response", "type": "str", "required": False, "desc": "Reply text supporting `{user}`, `{server}`, `{channel}` placeholders."},
+        ],
+        note="Requires Administrator or Manage Server permission. Max 15 triggers per server.",
     )
     async def auto(self, ctx: commands.Context, *, args: str = None):
         if not await self._admin(ctx):
@@ -87,11 +96,13 @@ class AutoResponse(commands.Cog):
     @auto.command(name="remove")
     @help_meta(
         usage="`.auto remove <trigger>`",
-        desc="Removes an auto-response trigger.",
-        section="General",
+        desc="Removes a configured auto-response trigger.",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".auto remove hello"],
-        params=[{"name": "trigger", "type": "str", "required": True, "desc": "The trigger to remove."}],
-        note="Admin only.",
+        params=[{"name": "trigger", "type": "str", "required": True, "desc": "The trigger keyword to delete."}],
+        note="Requires Administrator permission.",
     )
     async def auto_remove(self, ctx: commands.Context, trigger: str = None):
         if not await self._admin(ctx):
@@ -109,11 +120,12 @@ class AutoResponse(commands.Cog):
     @auto.command(name="list")
     @help_meta(
         usage="`.auto list`",
-        desc="Lists all auto-responses in this server.",
-        section="General",
+        desc="Lists all active auto-responses configured in this server.",
+        section="Server Management",
+        perm_tier="public",
         examples=[".auto list"],
         params=[],
-        note="Anyone can view.",
+        note="Available to all members.",
     )
     async def auto_list(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -132,11 +144,13 @@ class AutoResponse(commands.Cog):
     @auto.command(name="clear")
     @help_meta(
         usage="`.auto clear`",
-        desc="Removes every auto-response in this server.",
-        section="General",
+        desc="Removes all auto-response triggers from this server.",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".auto clear"],
         params=[],
-        note="Admin only.",
+        note="Requires Administrator permission. This cannot be undone.",
     )
     async def auto_clear(self, ctx: commands.Context):
         if not await self._admin(ctx):

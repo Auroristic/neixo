@@ -29,11 +29,12 @@ class Check(commands.Cog):
     @commands.command()
     @help_meta(
         usage="`.anilist`",
-        desc="Checks AniList API status and latency.",
-        section="General",
+        desc="Checks the operational status, response latency, and rate limits of the AniList GraphQL API.",
+        section="Utility",
+        perm_tier="public",
         examples=[".anilist"],
         params=[],
-        note="No authentication required. Uses the AniList GraphQL API.",
+        note="Performs live introspection request against graphql.anilist.co.",
     )
     async def anilist(self, ctx: commands.Context):
         """Check AniList API status."""

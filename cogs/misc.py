@@ -25,9 +25,9 @@ from utils import (
 
 # ── cogs/misc.py ──────────────────────────────────────────────
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "Core utility and reaction commands.",
+    "category": "utility",
+    "label": "Utility",
+    "desc": "Core bot diagnostics, latency checks, and utility tools.",
 }
 
 async def _tcp_ping(host: str, port: int, timeout: float = 3.0):
@@ -76,11 +76,12 @@ class MiscCog(commands.Cog, name="Misc"):
     @commands.command(name="ping")
     @help_meta(
         usage="`.ping`",
-        desc="Shows the bot's current WebSocket and round-trip latency.",
-        section="General",
+        desc="Measures WebSocket heartbeat latency and live message round-trip time.",
+        section="Utility",
+        perm_tier="public",
         examples=[".ping"],
         params=[],
-        note="Displays both heartbeat latency and message edit RTT. The ping target is purely flavour text.",
+        note="Displays heartbeat latency and Discord REST round-trip acknowledgement time.",
     )
     async def ping_prefix(self, ctx):
         # `ws_ms` = websocket heartbeat to Discord (bot.latency).
@@ -98,20 +99,20 @@ class MiscCog(commands.Cog, name="Misc"):
             # Ensure no accidental mentions trigger in the edit
             await msg.edit(
                 content=f"took `{ws_ms}ms` to ping **{target}** (edit: `{rtt_ms:.1f}ms`)",
-                allowed_mentions=discord.AllowedMentions.none()
             )
-        except discord.HTTPException:
+        except Exception:
             pass
 
     # ── link ────────────────────────────────────────────────
     @commands.command(name="link")
     @help_meta(
         usage="`.link`",
-        desc="Sends the Seoulities website link with an info embed.",
-        section="General",
+        desc="Displays official Seoulities platform links and streaming portal information.",
+        section="Utility",
+        perm_tier="public",
         examples=[".link"],
         params=[],
-        note="The image is loaded from local assets.",
+        note="Permanent direct link to seoulities.com.",
     )
     async def link(self, ctx):
         embed = discord.Embed(
@@ -144,11 +145,12 @@ class MiscCog(commands.Cog, name="Misc"):
     @commands.command(name="status")
     @help_meta(
         usage="`.status`",
-        desc="Shows uptime, latency, memory usage, and Lavalink status.",
-        section="General",
+        desc="Displays comprehensive system statistics: uptime, RSS memory, Lavalink node metrics, and voice states.",
+        section="Utility",
+        perm_tier="public",
         examples=[".status"],
         params=[],
-        note="Memory is read from /proc/self/status (Linux only). Lavalink RAM uses the /v4/stats endpoint.",
+        note="Reads memory from `/proc/self/status` and polls live Lavalink REST `/v4/stats`.",
     )
     async def status(self, ctx):
         bot = self.bot
@@ -261,11 +263,12 @@ class MiscCog(commands.Cog, name="Misc"):
     @commands.command(name='random')
     @help_meta(
         usage="`.random`",
-        desc="Picks a random non-bot member in the server and mentions them.",
-        section="General",
+        desc="Picks a random active member from the server and tags them.",
+        section="Fun",
+        perm_tier="public",
         examples=[".random"],
         params=[],
-        note="Has a GIF cooldown per user.",
+        note="Picks randomly among non-bot guild members.",
     )
     async def random_member(self, ctx):
         cooldown = check_gif_cooldown(ctx.author.id)
@@ -284,15 +287,15 @@ class MiscCog(commands.Cog, name="Misc"):
     @commands.command(name='dm')
     @help_meta(
         usage="`.dm @user <message>`",
-        desc="Sends a DM to a user as the bot.",
-        section="General",
-        examples=[".dm @fw_u hello!"],
+        desc="Sends a direct message to a user through the bot.",
+        section="Utility",
+        perm_tier="whitelist",
+        examples=[".dm @username hello!"],
         params=[
-            {"name": "user", "type": "discord.User", "required": True, "desc": "The user to DM."},
-            {"name": "message", "type": "str", "required": True, "desc": "The message content to send."},
+            {"name": "user", "type": "user", "required": True, "desc": "The recipient user."},
+            {"name": "message", "type": "str", "required": True, "desc": "The message content to deliver."},
         ],
-        note="Staff only. Requires whitelist.",
-        staff=True,
+        note="Whitelisted staff only.",
     )
     async def dm_user(self, ctx, user: discord.User, *, message: str):
         if ctx.guild:
@@ -321,14 +324,14 @@ class MiscCog(commands.Cog, name="Misc"):
     @commands.command(name='dmcheck')
     @help_meta(
         usage="`.dmcheck @user`",
-        desc="Exports DM history with a user as a .txt file.",
-        section="General",
-        examples=[".dmcheck @fw_u"],
+        desc="Exports recent direct message conversation history with a user into a text transcript file.",
+        section="Utility",
+        perm_tier="whitelist",
+        examples=[".dmcheck @username"],
         params=[
-            {"name": "user", "type": "discord.User", "required": True, "desc": "The user whose DM history to export."},
+            {"name": "user", "type": "user", "required": True, "desc": "The user whose direct message history to export."},
         ],
-        note="Staff only. Fetches up to 100 most recent messages.",
-        staff=True,
+        note="Whitelisted staff only. Fetches up to 100 recent messages.",
     )
     async def dm_check(self, ctx, user: discord.User):
         if ctx.guild:
@@ -429,10 +432,9 @@ class EchoButton(discord.ui.View):
 
 class EchoCog(commands.Cog):
     COG_META = {
-        "category": "misc",
-        "label": "Echo",
-        "desc": "Staff utility to echo messages through the bot.",
-        "staff": True,
+        "category": "utility",
+        "label": "Utility",
+        "desc": "Staff utility to send messages through the bot via interactive modal.",
     }
 
     def __init__(self, bot):
@@ -440,13 +442,14 @@ class EchoCog(commands.Cog):
 
     @commands.command(name="echo")
     @help_meta(
-        usage="`.echo <message>`",
-        desc="Opens a modal to send a message as the bot.",
-        section="General",
+        usage="`.echo`",
+        desc="Opens an interactive modal to broadcast a message in the channel through the bot.",
+        section="Utility",
+        perm_tier="admin",
+        discord_perms=["manage_messages"],
         examples=[".echo"],
         params=[],
-        note="Admin only. Opens an interactive modal for message input.",
-        admin=True,
+        note="Requires Administrator or Manage Messages permission.",
     )
     async def echo_prefix(self, ctx):
         if not ctx.guild:
@@ -461,13 +464,15 @@ class EchoCog(commands.Cog):
     # ── anime ────────────────────────────────────────────────
     @commands.command(name="anime")
     @help_meta(
-        usage="`.anime <search>`",
-        desc="Search for an anime and get the seoulities.com link.",
-        section="General",
-        examples=[".anime aot", ".anime steins gate"],
+        usage="`.anime <query>`",
+        desc="Searches for an anime and returns its official Seoulities streaming link.",
+        section="Utility",
+        perm_tier="public",
+        examples=[".anime attack on titan", ".anime steins gate", ".anime solo leveling"],
         params=[
-            {"name": "query", "type": "str", "required": True, "desc": "Anime title to search for."},
+            {"name": "query", "type": "str", "required": True, "desc": "Anime title or keywords to search for."},
         ],
+        note="Uses the Jikan API connected with seoulities.com.",
     )
     async def anime(self, ctx, *, query: str):
         if not query:

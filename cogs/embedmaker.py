@@ -13,9 +13,9 @@ from utils import help_meta, is_owner_or_creator
 log = logging.getLogger(__name__)
 
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "Staff embed builder.",
+    "category": "theme",
+    "label": "Theme",
+    "desc": "Custom embed generation and server theme layouts.",
 }
 
 
@@ -33,14 +33,19 @@ class EmbedMaker(commands.Cog):
 
     @commands.command(name="embed")
     @help_meta(
-        usage="`.embed <title> | <description>`",
-        desc="Posts a clean embed. Split title and description with ` | `.",
-        section="General",
-        examples=[".embed Announcement | we're having a movie night friday"],
-        params=[
-            {"name": "content", "type": "str", "required": True, "desc": "`title | description` — optional `--color #hex` at the end."},
+        usage="`.embed <title> | <description> [--color #hex]`",
+        desc="Posts a sleek custom embed in the current channel. Separates title and description with ` | `.",
+        section="Theme",
+        perm_tier="admin",
+        discord_perms=["manage_messages"],
+        examples=[
+            ".embed Announcement | Movie night this Friday at 8 PM UTC",
+            ".embed Server Rules | 1. Be respectful\n2. No spam --color #707080",
         ],
-        note="Staff only.",
+        params=[
+            {"name": "content", "type": "str", "required": True, "desc": "`<title> | <description>` format with optional `--color #hex` flag at the end."},
+        ],
+        note="Requires Administrator or Manage Messages permission. Automatically deletes the invoking command.",
     )
     async def embed(self, ctx: commands.Context, *, content: str = None):
         if not await self._staff(ctx):

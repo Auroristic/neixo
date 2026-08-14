@@ -20,9 +20,9 @@ MILESTONES_FILE = f"{DATA_DIR}/milestones.json"
 MILESTONES = [50, 100, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000]
 
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "Member milestone celebration cards.",
+    "category": "admin",
+    "label": "Admin",
+    "desc": "Member milestone celebration cards and announcements.",
 }
 
 
@@ -81,11 +81,13 @@ class Milestones(commands.Cog):
     @commands.group(name="milestone", aliases=["milestones"], invoke_without_command=True)
     @help_meta(
         usage="`.milestone <#channel>`  ·  `.milestone off`  ·  `.milestone status`",
-        desc="Posts an image card when the server hits member milestones (100, 250, 500...).",
-        section="General",
-        examples=[".milestone #announcements", ".milestone status"],
-        params=[{"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "Channel to post milestone cards to (turns it on)."}],
-        note="Admin only.",
+        desc="Automatically posts a celebratory dark milestone card when the server reaches member goals (100, 250, 500...).",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".milestone #announcements", ".milestone status", ".milestone off"],
+        params=[{"name": "channel", "type": "channel", "required": False, "desc": "Channel to send milestone cards to (enables milestones)."}],
+        note="Requires Administrator or Manage Server permission.",
     )
     async def milestone(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if channel is not None:
@@ -95,11 +97,13 @@ class Milestones(commands.Cog):
     @milestone.command(name="off")
     @help_meta(
         usage="`.milestone off`",
-        desc="Turns milestone cards off.",
-        section="General",
+        desc="Disables milestone celebration cards in the server.",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".milestone off"],
         params=[],
-        note="Admin only.",
+        note="Requires Administrator permission.",
     )
     async def milestone_off(self, ctx: commands.Context):
         if not await self._admin(ctx):
@@ -112,11 +116,12 @@ class Milestones(commands.Cog):
     @milestone.command(name="status")
     @help_meta(
         usage="`.milestone status`",
-        desc="Shows whether milestone cards are on and where they post.",
-        section="General",
+        desc="Shows whether milestone celebration cards are enabled and which channel they post to.",
+        section="Server Management",
+        perm_tier="public",
         examples=[".milestone status"],
         params=[],
-        note="Anyone can check.",
+        note="Available to all members.",
     )
     async def milestone_status(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -130,11 +135,13 @@ class Milestones(commands.Cog):
     @milestone.command(name="set", aliases=["on"])
     @help_meta(
         usage="`.milestone set <#channel>`",
-        desc="Turns milestone cards on for a channel.",
-        section="General",
-        examples=[".milestone set #announcements"],
-        params=[{"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "Channel to post milestone cards to."}],
-        note="Admin only.",
+        desc="Turns on milestone celebration cards and sets the announcement channel.",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".milestone set #announcements", ".milestone on #general"],
+        params=[{"name": "channel", "type": "channel", "required": True, "desc": "Channel to post milestone cards to."}],
+        note="Requires Administrator or Manage Server permission.",
     )
     async def milestone_set(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if not await self._admin(ctx):

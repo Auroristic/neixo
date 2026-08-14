@@ -141,18 +141,19 @@ def _build_command(name: str, verb: str) -> commands.Command:
     func = _action_func(name, verb)
     help_meta(
         usage=f".{name} [@user]",
-        desc=f"Anime gif — {verb} someone.",
+        desc=f"Anime reaction GIF — {verb} someone or react to a situation.",
         section="Fun",
-        examples=[f".{name} @someone"],
+        perm_tier="public",
+        examples=[f".{name}", f".{name} @someone"],
         params=[
             {
                 "name": "user",
-                "type": "discord.Member",
+                "type": "user",
                 "required": False,
-                "desc": "Who to do it to. Leave empty for the void.",
+                "desc": "Member to direct the action towards. Omit to perform on yourself.",
             },
         ],
-        note="anime gifs via gifukai (gender-paired) with nekos.best fallback.",
+        note="Anime reaction GIFs via gifukai with nekos.best fallback.",
     )(func)
     return commands.Command(func, name=name)
 

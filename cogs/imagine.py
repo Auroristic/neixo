@@ -16,9 +16,9 @@ log = logging.getLogger(__name__)
 
 
 COG_META = {
-    "category": "image",
-    "label": "Image",
-    "desc": "AI image generation.",
+    "category": "ai",
+    "label": "AI",
+    "desc": "AI text and image generation.",
 }
 
 
@@ -37,13 +37,18 @@ class ImagineCog(commands.Cog, name="Imagine"):
     @commands.command(name="imagine", aliases=["draw", "gen"])
     @help_meta(
         usage="`.imagine <prompt>`",
-        desc="generate an image using ai",
-        section="Image",
-        examples=[".imagine a cat in space", ".imagine cyberpunk city rain"],
-        params=[
-            {"name": "prompt", "type": "str", "required": True, "desc": "Description of the image to generate."},
+        desc="Generate high-quality artwork using the NVIDIA FLUX AI image generation model.",
+        section="Image Gen",
+        perm_tier="public",
+        examples=[
+            ".imagine cyberpunk city in the rain at midnight",
+            ".imagine aesthetic anime bedroom with warm sunset lighting",
+            ".draw futuristic mechanical butterfly glowing neon blue",
         ],
-        note="Uses NVIDIA FLUX.2 model. Per-user cooldown applies.",
+        params=[
+            {"name": "prompt", "type": "str", "required": True, "desc": "Detailed text description of the image to generate."},
+        ],
+        note="Uses NVIDIA FLUX.2 Klein model. Per-user cooldown applies.",
     )
     async def imagine_cmd(self, ctx: commands.Context, *, prompt: str):
         """Generate an image using AI."""

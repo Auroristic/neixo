@@ -352,3 +352,30 @@ class TestHelpMeta:
 
         meta = get_help_meta(ping_cmd)
         assert meta['examples'] == ['.ping']
+
+    def test_help_meta_perm_tiers(self):
+        from utils import get_help_meta, help_meta
+
+        @help_meta(usage='.botpfp', desc='Set bot avatar', perm_tier='creator')
+        async def creator_cmd(ctx):
+            pass
+
+        @help_meta(usage='.setcolor', desc='Set server theme color', perm_tier='guild_owner')
+        async def owner_cmd(ctx):
+            pass
+
+        @help_meta(usage='.warn', desc='Warn user', perm_tier='admin', discord_perms=['moderate_members'])
+        async def warn_cmd(ctx):
+            pass
+
+        meta_creator = get_help_meta(creator_cmd)
+        assert meta_creator['perm_tier'] == 'creator'
+        assert meta_creator['owner'] is True
+
+        meta_owner = get_help_meta(owner_cmd)
+        assert meta_owner['perm_tier'] == 'guild_owner'
+
+        meta_warn = get_help_meta(warn_cmd)
+        assert meta_warn['perm_tier'] == 'admin'
+        assert meta_warn['discord_perms'] == ['moderate_members']
+        assert meta_warn['admin'] is True

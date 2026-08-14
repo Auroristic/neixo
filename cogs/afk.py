@@ -15,9 +15,9 @@ log = logging.getLogger(__name__)
 AFK_FILE = f"{DATA_DIR}/afk.json"
 
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "AFK status: set it, get pinged replies, auto-clear on return.",
+    "category": "utility",
+    "label": "Utility",
+    "desc": "AFK status management with auto-mentions and auto-clear.",
 }
 
 
@@ -55,18 +55,19 @@ class AFK(commands.Cog):
     @commands.command(name="afk")
     @help_meta(
         usage="`.afk [reason]`",
-        desc="Sets you as AFK. Mentioned people get told you're gone.",
-        section="General",
-        examples=[".afk", ".afk eating lunch"],
+        desc="Sets your status to AFK. Informs members who mention you and auto-clears on return.",
+        section="Utility",
+        perm_tier="public",
+        examples=[".afk", ".afk grabbing food", ".afk sleeping"],
         params=[
             {
                 "name": "reason",
                 "type": "str",
                 "required": False,
-                "desc": "Optional reason people will see when they mention you.",
+                "desc": "Optional status message displayed when someone pings you.",
             },
         ],
-        note="Send any non-command message when you're back and it clears itself.",
+        note="Send any standard message in the server to automatically remove your AFK status.",
     )
     async def afk(self, ctx: commands.Context, *, reason: str = None):
         if ctx.guild is None:

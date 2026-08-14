@@ -37,18 +37,20 @@ class Counting(commands.Cog):
     @commands.group(name="counting", invoke_without_command=True)
     @help_meta(
         usage="`.counting <#channel>`  ·  `.counting off`",
-        desc="turns a channel into a counting game: numbers must go up by 1",
+        desc="Turns a channel into an interactive counting game where numbers must increment by 1.",
         section="Fun",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".counting #counting", ".counting off", ".counting"],
         params=[
             {
                 "name": "channel",
-                "type": "discord.TextChannel",
+                "type": "channel",
                 "required": False,
-                "desc": "Channel to use as the counting channel, or `off` to disable.",
+                "desc": "Channel to designate for counting, or omit to check current count status.",
             },
         ],
-        note="wrong number or counting twice in a row resets the count to 0.",
+        note="Wrong numbers or consecutive turns by the same user resets the counter to 0.",
     )
     async def counting(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if ctx.guild is None:
@@ -75,11 +77,13 @@ class Counting(commands.Cog):
     @counting.command(name="off")
     @help_meta(
         usage="`.counting off`",
-        desc="turns off the counting game in the server",
+        desc="Disables the counting game for this server.",
         section="Fun",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".counting off"],
         params=[],
-        note="admin only.",
+        note="Requires Administrator permission.",
     )
     async def counting_cmd_off(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -95,11 +99,12 @@ class Counting(commands.Cog):
     @commands.command(name="top")
     @help_meta(
         usage="`.top`",
-        desc="Shows the top counters from the counting channel.",
+        desc="Shows the leaderboard of top counters in the server.",
         section="Fun",
+        perm_tier="public",
         examples=[".top"],
         params=[],
-        note="counts correct numbers only.",
+        note="Counts valid successive numbers only.",
     )
     async def counting_top(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -126,11 +131,12 @@ class Counting(commands.Cog):
     @commands.command(name="countingoff", hidden=True)
     @help_meta(
         usage="`.countingoff`",
-        desc="Turns the counting game off (creator only).",
+        desc="Turns the counting game off (bot creator only).",
         section="Fun",
+        perm_tier="creator",
         examples=[".countingoff"],
         params=[],
-        note="creator only. alternative to `.counting off`.",
+        note="Bot Creator only. Alias for `.counting off`.",
     )
     @commands.check(lambda ctx: is_owner_or_creator(ctx))
     async def counting_off(self, ctx):

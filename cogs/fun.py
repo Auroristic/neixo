@@ -247,16 +247,17 @@ class FunCog(commands.Cog, name="Fun"):
 
     @commands.command(name="uwulock")
     @help_meta(
-        usage="`.uwulock @user [#channel]`",
-        desc="Toggles uwulock on a user — all their messages become uwufied.",
-        examples=[".uwulock @user", ".uwulock @user #general"],
-        params=[
-            {"name": "member", "type": "discord.Member", "required": False, "desc": "The member to uwulock."},
-            {"name": "channel", "type": "discord.TextChannel", "required": False, "desc": "Specific channel to restrict it to (optional — omit for all channels)."},
-        ],
-        note="Staff only. Uses webhooks to rewrite messages. If no channel is given, toggles all-channel lock.",
+        usage="`.uwulock <@user> [#channel]`",
+        desc="Toggles uwulock on a user — all their messages are converted to uwu format via webhooks.",
         section="Moderation",
-        staff=True,
+        perm_tier="whitelist",
+        discord_perms=["manage_messages"],
+        examples=[".uwulock @someone", ".uwulock @someone #general"],
+        params=[
+            {"name": "member", "type": "user", "required": True, "desc": "The member to uwulock."},
+            {"name": "channel", "type": "channel", "required": False, "desc": "Specific channel to restrict lock to (omit for all channels)."},
+        ],
+        note="Whitelisted / Server Owner only. Webhooks are automatically managed and garbage collected.",
     )
     async def uwulock(
         self,
@@ -316,12 +317,13 @@ class FunCog(commands.Cog, name="Fun"):
     @commands.command(name="uwulist")
     @help_meta(
         usage="`.uwulist`",
-        desc="Shows who is currently uwulocked.",
+        desc="Shows all members who are currently uwulocked in this server.",
+        section="Moderation",
+        perm_tier="whitelist",
+        discord_perms=["manage_messages"],
         examples=[".uwulist"],
         params=[],
-        note="Staff only.",
-        section="Moderation",
-        staff=True,
+        note="Whitelisted / Server Staff with Manage Messages permission.",
     )
     async def uwulist(self, ctx):
         if not ctx.guild:
@@ -417,24 +419,25 @@ class FunCog(commands.Cog, name="Fun"):
     @commands.command(name="ship")
     @help_meta(
         usage="`.ship <@user1> [@user2]`",
-        desc="calculates compatibility between two members and renders a ship card",
+        desc="Calculates romantic compatibility between two members and renders a custom dark PIL card.",
         section="Fun",
+        perm_tier="public",
         examples=[".ship @someone", ".ship @user1 @user2"],
         params=[
             {
                 "name": "user1",
-                "type": "discord.User",
+                "type": "user",
                 "required": True,
                 "desc": "First user to ship.",
             },
             {
                 "name": "user2",
-                "type": "discord.User",
+                "type": "user",
                 "required": False,
-                "desc": "Second user to ship. Defaults to you.",
+                "desc": "Second user to ship. Defaults to yourself if omitted.",
             },
         ],
-        note="generates a dark aesthetic compatibility card with percentage meter.",
+        note="Generates a dark aesthetic compatibility card with percentage meter and custom love status.",
     )
     async def ship_cmd(self, ctx: commands.Context, user1: discord.User = None, user2: discord.User = None):
         if user1 is None:

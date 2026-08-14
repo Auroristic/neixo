@@ -831,25 +831,42 @@ def help_meta(
     section: str = None,
     usage: str = None,
     desc: str = None,
+    perm_tier: str = None,
+    discord_perms: list[str] | None = None,
     staff: bool = False,
     owner: bool = False,
     admin: bool = False,
     examples: list[str] | None = None,
     params: list[dict] | None = None,
     note: str | None = None,
+    subcommands: list[dict] | None = None,
 ):
-    """Decorator to attach help metadata to a command."""
+    """Decorator to attach rich help metadata to a command."""
+    # Infer perm_tier if not explicitly provided
+    if not perm_tier:
+        if owner:
+            perm_tier = "creator"
+        elif admin:
+            perm_tier = "admin"
+        elif staff:
+            perm_tier = "whitelist"
+        else:
+            perm_tier = "public"
+
     def decorator(func):
         meta = {
             "section": section,
             "usage": usage,
             "desc": desc,
-            "staff": staff,
-            "owner": owner,
-            "admin": admin,
+            "perm_tier": perm_tier,
+            "discord_perms": discord_perms or [],
+            "staff": staff or (perm_tier in ("whitelist", "staff", "guild_owner", "creator", "owner")),
+            "owner": owner or (perm_tier in ("creator", "owner", "guild_owner")),
+            "admin": admin or (perm_tier in ("admin", "guild_owner", "creator", "owner")),
             "examples": examples or [],
             "params": params or [],
             "note": note,
+            "subcommands": subcommands or [],
         }
         func.__dict__["help_meta"] = meta
         callback = getattr(func, "callback", None)

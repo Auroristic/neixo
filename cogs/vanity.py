@@ -96,12 +96,13 @@ class Vanity(commands.Cog):
     @commands.group(name="vanity", invoke_without_command=True)
     @help_meta(
         usage="`.vanity [config|substring|channel|message|role|reset]`",
-        desc="Vanity status tracker — root command for all vanity subcommands.",
+        desc="Automated vanity URL status tracker — assigns roles and announces when members represent your server.",
         section="Vanity",
-        staff=True,
-        examples=[".vanity", ".vanity config"],
+        perm_tier="admin",
+        discord_perms=["manage_guild", "manage_roles"],
+        examples=[".vanity", ".vanity config", ".vanity substring .gg/seoulities"],
         params=[],
-        note="Staff only. Subcommands: config, substring, channel, message, role, reset.",
+        note="Requires Administrator or Manage Server permissions. Subcommands: `config`, `substring`, `channel`, `message`, `role`, `reset`.",
     )
     async def vanity(self, ctx):
         await ctx.send("**Vanity commands:** `config`, `substring`, `channel`, `message`, `role`, `reset`")
@@ -110,12 +111,13 @@ class Vanity(commands.Cog):
     @is_admin()
     @help_meta(
         usage="`.vanity config`",
-        desc="Shows the current vanity configuration for this server.",
+        desc="Shows the current vanity URL tracker configuration for this server.",
         section="Vanity",
-        staff=True,
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".vanity config"],
         params=[],
-        note="Staff only.",
+        note="Requires Administrator permission.",
     )
     async def vanity_config(self, ctx):
         await self.ensure_rule(ctx.guild.id)
@@ -136,14 +138,15 @@ class Vanity(commands.Cog):
     @is_admin()
     @help_meta(
         usage="`.vanity substring <text>`",
-        desc="Sets the status substring the bot watches for.",
+        desc="Sets the status text substring the bot watches for in member custom statuses.",
         section="Vanity",
-        staff=True,
-        examples=[".vanity substring seoulities", ".vanity substring .gg/"],
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".vanity substring seoulities", ".vanity substring .gg/myguild"],
         params=[
-            {"name": "text", "type": "str", "required": True, "desc": "The substring to match in member statuses."},
+            {"name": "text", "type": "str", "required": True, "desc": "The text snippet to match inside member statuses."},
         ],
-        note="Staff only. Members whose status contains this text will trigger the configured notification.",
+        note="Requires Administrator permission. When matched, the vanity role is automatically awarded.",
     )
     async def set_substring(self, ctx, *, substring: str):
         await self.ensure_rule(ctx.guild.id)
@@ -154,14 +157,15 @@ class Vanity(commands.Cog):
     @is_admin()
     @help_meta(
         usage="`.vanity channel <#channel>`",
-        desc="Sets the notification channel for vanity matches.",
+        desc="Sets the announcement channel where vanity status promotions are posted.",
         section="Vanity",
-        staff=True,
-        examples=[".vanity channel #announcements"],
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".vanity channel #announcements", ".vanity channel #reps"],
         params=[
-            {"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "The channel to send vanity match notifications to."},
+            {"name": "channel", "type": "channel", "required": True, "desc": "The channel to send vanity match alerts to."},
         ],
-        note="Staff only.",
+        note="Requires Administrator permission.",
     )
     async def set_channel(self, ctx, channel: discord.TextChannel):
         await self.ensure_rule(ctx.guild.id)
@@ -172,14 +176,15 @@ class Vanity(commands.Cog):
     @is_admin()
     @help_meta(
         usage="`.vanity message <text>`",
-        desc="Sets the vanity match notification message. Placeholders: `{{user}}`, `{{username}}`, `{{server}}`.",
+        desc="Sets the vanity announcement message template. Placeholders: `{{user}}`, `{{username}}`, `{{server}}`.",
         section="Vanity",
-        staff=True,
-        examples=[".vanity message {{user}} is repping {{server}}!"],
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".vanity message {{user}} is now repping {{server}}!"],
         params=[
-            {"name": "text", "type": "str", "required": True, "desc": "The message template. Supports `{{user}}`, `{{username}}`, and `{{server}}` placeholders."},
+            {"name": "text", "type": "str", "required": True, "desc": "Message template supporting `{{user}}`, `{{username}}`, and `{{server}}` placeholders."},
         ],
-        note="Staff only.",
+        note="Requires Administrator permission.",
     )
     async def set_message(self, ctx, *, message: str):
         await self.ensure_rule(ctx.guild.id)
@@ -190,14 +195,15 @@ class Vanity(commands.Cog):
     @is_admin()
     @help_meta(
         usage="`.vanity role <@role>`",
-        desc="Sets the role to assign when a status match is found.",
+        desc="Sets the reward role auto-assigned to members who put the vanity in their custom status.",
         section="Vanity",
-        staff=True,
-        examples=[".vanity role @Member"],
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[".vanity role @Vanity Rep", ".vanity role @Supporter"],
         params=[
-            {"name": "role", "type": "discord.Role", "required": True, "desc": "The role to assign on status match."},
+            {"name": "role", "type": "role", "required": True, "desc": "The role to automatically grant."},
         ],
-        note="Staff only.",
+        note="Requires Administrator and Manage Roles permissions. Bot role must be higher than the target role.",
     )
     async def set_role(self, ctx, role: discord.Role):
         await self.ensure_rule(ctx.guild.id)
@@ -208,12 +214,13 @@ class Vanity(commands.Cog):
     @is_admin()
     @help_meta(
         usage="`.vanity reset`",
-        desc="Resets all vanity configuration for this server.",
+        desc="Completely resets all vanity tracker settings for this server.",
         section="Vanity",
-        staff=True,
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".vanity reset"],
         params=[],
-        note="Staff only. This cannot be undone.",
+        note="Requires Administrator permission. This cannot be undone.",
     )
     async def reset_config(self, ctx):
         await self.conn.execute("DELETE FROM vanity_rules WHERE guild_id = ?", (ctx.guild.id,))

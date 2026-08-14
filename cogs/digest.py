@@ -18,9 +18,9 @@ log = logging.getLogger(__name__)
 DIGEST_FILE = f"{DATA_DIR}/digest.json"
 
 COG_META = {
-    "category": "general",
-    "label": "General",
-    "desc": "Weekly server digest.",
+    "category": "admin",
+    "label": "Admin",
+    "desc": "Weekly server statistics digest and visual summary cards.",
 }
 
 
@@ -275,11 +275,13 @@ class Digest(commands.Cog):
     @commands.group(name="digest", invoke_without_command=True)
     @help_meta(
         usage="`.digest <#channel>`  ·  `.digest now`  ·  `.digest off`  ·  `.digest status`",
-        desc="Posts a weekly server digest image card every Sunday.",
-        section="General",
-        examples=[".digest #general", ".digest status"],
+        desc="Automated weekly server analytics card (top chatters, voice activity, bumps, member growth).",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".digest #general", ".digest now", ".digest status", ".digest off"],
         params=[],
-        note="Admin only. Shows top chatters, VC time, bumps, and member growth for the week.",
+        note="Requires Administrator or Manage Server permission. Automatically broadcasts every Sunday.",
     )
     async def digest(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if channel is not None:
@@ -298,11 +300,13 @@ class Digest(commands.Cog):
     @digest.command(name="off")
     @help_meta(
         usage="`.digest off`",
-        desc="Turns the weekly digest off.",
-        section="General",
+        desc="Disables scheduled weekly digest cards.",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".digest off"],
         params=[],
-        note="Admin only.",
+        note="Requires Administrator permission.",
     )
     async def digest_off(self, ctx: commands.Context):
         if not await self._admin(ctx):
@@ -315,11 +319,12 @@ class Digest(commands.Cog):
     @digest.command(name="status")
     @help_meta(
         usage="`.digest status`",
-        desc="Shows whether the weekly digest is on and where it posts.",
-        section="General",
+        desc="Shows whether weekly digest cards are active and where they post.",
+        section="Server Management",
+        perm_tier="public",
         examples=[".digest status"],
         params=[],
-        note="Anyone can check.",
+        note="Available to all members.",
     )
     async def digest_status(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -333,11 +338,13 @@ class Digest(commands.Cog):
     @digest.command(name="now")
     @help_meta(
         usage="`.digest now`",
-        desc="Sends the current week's digest card on demand.",
-        section="General",
+        desc="Generates and sends an on-demand preview of this week's server digest card.",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
         examples=[".digest now"],
         params=[],
-        note="Admin only. Shows the same stats as the Sunday card — does not affect the scheduled run.",
+        note="Requires Administrator permission. Does not reset current weekly tracking baselines.",
     )
     async def digest_now(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -353,11 +360,13 @@ class Digest(commands.Cog):
     @digest.command(name="set", aliases=["on"])
     @help_meta(
         usage="`.digest set <#channel>`",
-        desc="Turns the weekly digest on for a channel.",
-        section="General",
-        examples=[".digest set #general"],
-        params=[{"name": "channel", "type": "discord.TextChannel", "required": True, "desc": "Channel to post the digest to."}],
-        note="Admin only. Posts every Sunday.",
+        desc="Enables the weekly digest card and sets the destination announcement channel.",
+        section="Server Management",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".digest set #general", ".digest on #announcements"],
+        params=[{"name": "channel", "type": "channel", "required": True, "desc": "Channel where digest cards will be published every Sunday."}],
+        note="Requires Administrator or Manage Server permission.",
     )
     async def digest_set(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if not await self._admin(ctx):
