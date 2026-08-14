@@ -2413,6 +2413,32 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     # COMMANDS
     # ═══════════════════════════════════════════════════════════
 
+    @commands.command(name="ask", aliases=["ai"])
+    @help_meta(
+        usage="`.ask <question>`",
+        desc="Directly queries Neixo AI with live web search, memory, and creative tool execution.",
+        section="AI",
+        perm_tier="public",
+        examples=[
+            ".ask What is quantum computing in simple terms?",
+            ".ask Search the web for latest discoveries in astrophysics",
+            ".ask Explain recursion with a simple Python code example",
+        ],
+        params=[
+            {
+                "name": "question",
+                "type": "str",
+                "required": True,
+                "desc": "Question, prompt, or task for the AI to process.",
+            }
+        ],
+        note="Available to all server members. Leverages NVIDIA NIM models and real-time tools.",
+    )
+    async def ask_cmd(self, ctx: commands.Context, *, question: str = None):
+        if not question:
+            return await ctx.send("-# usage: `.ask <question>`")
+        await self.handle_ai_response(ctx.message)
+
     @commands.command(name="aiadd")
     @help_meta(
         usage="`.aiadd [#channel]`",

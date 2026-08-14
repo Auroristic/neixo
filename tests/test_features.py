@@ -112,3 +112,16 @@ def test_tts_voices_definition():
     assert "sonia" in FEMALE_VOICES
     assert FEMALE_VOICES["ava"]["id"] == "en-US-AvaNeural"
 
+
+def test_ask_command_help_meta():
+    import cogs.ai
+    from utils import get_help_meta
+
+    cmd = getattr(cogs.ai.AICog, "ask_cmd", None)
+    assert cmd is not None
+    meta = get_help_meta(cmd)
+    assert meta is not None
+    assert meta["section"] == "AI"
+
+
+
