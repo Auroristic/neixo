@@ -164,7 +164,70 @@ def get_conversation_lock(key: str) -> asyncio.Lock:
             _conversation_locks_last_access.pop(k, None)
     return lock
 
-MAIN_MODEL = "mimo-v2.5-free"
+NVIDIA_MODELS = {
+    "minimaxai/minimax-m3": {
+        "name": "MiniMax M3",
+        "desc": "Unrestricted, witty Discord banter & roleplay",
+        "provider": "nvidia",
+        "vision": False,
+    },
+    "thinkingmachines/inkling": {
+        "name": "Inkling",
+        "desc": "Creative persona & narrative writing",
+        "provider": "nvidia",
+        "vision": False,
+    },
+}
+
+ZEN_FREE_MODELS = {
+    "deepseek-v4-flash-free": {
+        "name": "DeepSeek v4 Flash",
+        "desc": "Fast & unrestricted chat",
+        "provider": "zen",
+        "vision": False,
+    },
+    "mimo-v2.5-free": {
+        "name": "MiMo v2.5",
+        "desc": "Vision-capable reasoning & multi-modal",
+        "provider": "zen",
+        "vision": True,
+    },
+    "nemotron-3.5-lightning-free": {
+        "name": "Nemotron 3.5 Lightning",
+        "desc": "Fast instruction following",
+        "provider": "zen",
+        "vision": False,
+    },
+    "nemotron-3-ultra-free": {
+        "name": "Nemotron 3 Ultra",
+        "desc": "Heavy deep reasoning model",
+        "provider": "zen",
+        "vision": False,
+    },
+    "laguna-s-2.1-free": {
+        "name": "Laguna 2.1",
+        "desc": "Creative synthesis model",
+        "provider": "zen",
+        "vision": False,
+    },
+    "hy3-free": {
+        "name": "Hunyuan 3",
+        "desc": "Conversational assistant model",
+        "provider": "zen",
+        "vision": False,
+    },
+    "longcat-2.0-free": {
+        "name": "Longcat 2.0",
+        "desc": "Long-context conversational model",
+        "provider": "zen",
+        "vision": False,
+    },
+}
+
+ALL_SUPPORTED_MODELS = {**NVIDIA_MODELS, **ZEN_FREE_MODELS}
+DEFAULT_MODEL = "minimaxai/minimax-m3"
+DEFAULT_FALLBACK = "thinkingmachines/inkling"
+MAIN_MODEL = DEFAULT_MODEL
 FALLBACK_MODEL = "deepseek-v4-flash-free"
 
 STATUS_EMOJIS = [
@@ -666,6 +729,7 @@ class AICog(commands.Cog, name="AI"):
             os.getenv("NVIDIA_API_KEY_3"),
         ]
         self._nvidia_keys = [k for k in nvidia_keys if k]
+        self._nv_key_idx = 0
         if self._nvidia_keys:
             self._keys_list = list(self._nvidia_keys)
             self.key_cycle = itertools.cycle(self._keys_list)
@@ -674,7 +738,21 @@ class AICog(commands.Cog, name="AI"):
             self.key_cycle = None
             print("⚠️ No NVIDIA API keys — image generation will be unavailable")
 
+        # Load active model from ai_config.json
+        ai_cfg = load_json(AI_CONFIG_FILE) or {}
+        self.primary_model = ai_cfg.get("primary_model", DEFAULT_MODEL)
+        if self.primary_model not in ALL_SUPPORTED_MODELS:
+            self.primary_model = DEFAULT_MODEL
+
         self.session: aiohttp.ClientSession | None = None
+
+    def set_primary_model(self, model_id: str):
+        """Save the chosen primary model to config."""
+        if model_id in ALL_SUPPORTED_MODELS:
+            self.primary_model = model_id
+            cfg = load_json(AI_CONFIG_FILE) or {}
+            cfg["primary_model"] = model_id
+            save_json(AI_CONFIG_FILE, cfg)
 
     async def cog_load(self):
         self.session = aiohttp.ClientSession()
@@ -693,22 +771,20 @@ class AICog(commands.Cog, name="AI"):
 
     # ── Core API call ──────────────────────────────────────────
 
-    async def primary_complete(self, messages_payload, max_tokens=8192, tools=None, model=None):
-        """Primary model call via Zen API. Defaults to MAIN_MODEL if no model override."""
-        client = self._get_zen_client()
-        kwargs = dict(
-            model=model or MAIN_MODEL,
-            messages=messages_payload,
-            max_tokens=max_tokens,
-            temperature=1.0,
-            top_p=0.95,
+    def _get_nvidia_client(self) -> AsyncOpenAI:
+        if not self._nvidia_keys:
+            raise ValueError("No NVIDIA_API_KEY configured in environment")
+        key = self._nvidia_keys[self._nv_key_idx % len(self._nvidia_keys)]
+        return AsyncOpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=key,
+            timeout=45.0,
+            max_retries=0,
         )
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
-        return await client.chat.completions.create(**kwargs)
 
-    # ── Zen / DeepSeek fallback ────────────────────────────────
+    def _rotate_nvidia_key(self):
+        if self._nvidia_keys:
+            self._nv_key_idx = (self._nv_key_idx + 1) % len(self._nvidia_keys)
 
     def _get_zen_client(self) -> AsyncOpenAI:
         if not hasattr(self, "_zen_client"):
@@ -735,40 +811,82 @@ class AICog(commands.Cog, name="AI"):
                 msg["content"] = " ".join(text_parts) or "(image was sent)"
         return stripped
 
+    async def primary_complete(self, messages_payload, max_tokens=8192, tools=None, model=None):
+        """Primary model call supporting both NVIDIA NIM and OpenCode Zen with key rotation."""
+        target_model = model or self.primary_model
+        model_info = ALL_SUPPORTED_MODELS.get(target_model, {"provider": "nvidia" if "minimax" in target_model or "inkling" in target_model else "zen", "vision": False})
+        provider = model_info.get("provider", "zen")
+
+        # Strip vision if model is not vision-capable
+        clean_payload = messages_payload if model_info.get("vision") else self._strip_vision_content(messages_payload)
+
+        if provider == "nvidia":
+            last_err = None
+            for _ in range(max(1, len(self._nvidia_keys))):
+                try:
+                    client = self._get_nvidia_client()
+                    kwargs = dict(
+                        model=target_model,
+                        messages=clean_payload,
+                        max_tokens=max_tokens,
+                        temperature=0.95,
+                        top_p=0.95,
+                    )
+                    if tools:
+                        kwargs["tools"] = tools
+                        kwargs["tool_choice"] = "auto"
+                    return await client.chat.completions.create(**kwargs)
+                except Exception as e:
+                    last_err = e
+                    err_str = str(e).lower()
+                    if any(s in err_str for s in ("429", "rate limit", "rate_limit", "timeout", "503", "502")):
+                        self._rotate_nvidia_key()
+                        await asyncio.sleep(0.3)
+                        continue
+                    raise
+            raise last_err
+        else:
+            client = self._get_zen_client()
+            kwargs = dict(
+                model=target_model,
+                messages=clean_payload,
+                max_tokens=max_tokens,
+                temperature=1.0,
+                top_p=0.95,
+            )
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+            return await client.chat.completions.create(**kwargs)
+
     async def _fallback_complete(self, messages_payload, max_tokens=8192, tools=None):
-        """Fallback to deepseek-v4-flash-free. Strips vision content since DeepSeek doesn't support it."""
-        # Strip any image/video content — DeepSeek is text-only
-        clean_payload = self._strip_vision_content(messages_payload)
-        last_error: Exception | None = None
-        for attempt in range(3):
+        """Intelligent multi-tier fallback across NVIDIA NIM and Zen free models."""
+        active = self.primary_model
+
+        candidates = []
+        if active in NVIDIA_MODELS:
+            for m in NVIDIA_MODELS:
+                if m != active:
+                    candidates.append(m)
+            candidates.extend(["deepseek-v4-flash-free", "mimo-v2.5-free", "nemotron-3.5-lightning-free"])
+        else:
+            candidates.extend(["minimaxai/minimax-m3", "thinkingmachines/inkling", "deepseek-v4-flash-free"])
+
+        last_error = None
+        for cand in candidates:
             try:
-                client = self._get_zen_client()
-                kwargs = dict(
-                    model=FALLBACK_MODEL,
-                    messages=clean_payload,
-                    max_tokens=max_tokens,
-                    temperature=1.0,
-                    top_p=0.95,
-                )
-                if tools:
-                    kwargs["tools"] = tools
-                    kwargs["tool_choice"] = "auto"
-                return await client.chat.completions.create(**kwargs)
+                return await self.primary_complete(messages_payload, max_tokens=max_tokens, tools=tools, model=cand)
             except Exception as e:
                 last_error = e
                 err_str = str(e).lower()
-                transient = any(
-                    s in err_str for s in (
-                        "429", "rate limit", "rate_limit", "timeout",
-                        "503", "502", "504", "overloaded", "temporarily",
-                        "does not exist", "model_not_found", "404"
-                    )
-                )
-                if transient and attempt < 2:
-                    await asyncio.sleep(0.5 * (attempt + 1) * 2)
+                transient = any(s in err_str for s in ("429", "rate limit", "rate_limit", "timeout", "503", "502", "404", "model_not_found"))
+                if transient:
+                    await asyncio.sleep(0.3)
                     continue
                 raise
-        raise last_error
+        if last_error:
+            raise last_error
+        raise RuntimeError("All AI model fallbacks exhausted.")
 
     # ── Status-message system ──────────────────────────────────
 
@@ -833,11 +951,11 @@ class AICog(commands.Cog, name="AI"):
         max_tokens: int = 350,
         is_dm: bool = False,
     ):
-        # In DMs: use DeepSeek (faster for text), switch to mimo only for images/video
-        if is_dm and not has_images and not has_video:
-            primary_model = FALLBACK_MODEL  # deepseek-v4-flash-free
+        # If media attached, route to vision-capable model; otherwise use chosen primary_model
+        if has_images or has_video:
+            primary_model = "mimo-v2.5-free"
         else:
-            primary_model = None  # default (MAIN_MODEL / mimo)
+            primary_model = self.primary_model
 
         status_msg = await channel.send(f"{random.choice(STATUS_EMOJIS)} *typing...*")  # noqa: S311
         cycle_task = asyncio.create_task(
@@ -2915,7 +3033,49 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
         save_json(BOT_MEMORY_FILE, load_json(backup))
         await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
-    # ── nvidia ────────────────────────────────────────────────
+    # ── model command with interactive dropdown ───────────────
+
+    @commands.command(name="model", aliases=["models", "aimodel"])
+    @help_meta(
+        usage="`.model [model_name]`",
+        desc="View or switch the active AI model across NVIDIA NIM and OpenCode Zen with a dropdown menu.",
+        section="AI",
+        perm_tier="guild_owner",
+        examples=[".model", ".model minimax", ".model inkling", ".model v4", ".model mimo"],
+        params=[{"name": "model_name", "type": "str", "required": False, "desc": "Model name or keyword to switch to."}],
+        note="Server Owner / Creator only.",
+    )
+    async def model_cmd(self, ctx: commands.Context, *, model_name: str = None):
+        if not is_owner_or_creator(ctx):
+            return await ctx.send("-# staff/owner only")
+
+        if model_name:
+            target = model_name.strip().lower()
+            matched = None
+            for mid, info in ALL_SUPPORTED_MODELS.items():
+                short = mid.split("/")[-1].lower()
+                if target == mid.lower() or target in info["name"].lower() or target in short or target == short.replace("-free", ""):
+                    matched = mid
+                    break
+            if not matched:
+                avail = ", ".join(f"`{info['name']}`" for info in ALL_SUPPORTED_MODELS.values())
+                return await ctx.send(f"-# unknown model `{model_name}`. Available: {avail}")
+            self.set_primary_model(matched)
+            info = ALL_SUPPORTED_MODELS[matched]
+            prov = "NVIDIA NIM (3-Key Rotation)" if info["provider"] == "nvidia" else "OpenCode Zen"
+            return await ctx.send(f"-# active model set to **{info['name']}** (`{matched}`) via **{prov}**")
+
+        current = self.primary_model
+        info = ALL_SUPPORTED_MODELS.get(current, {"name": current, "provider": "unknown", "desc": ""})
+        prov = "NVIDIA NIM (3-Key Rotation)" if info.get("provider") == "nvidia" else "OpenCode Zen"
+
+        view = ModelSelectView(self, current)
+        await ctx.send(
+            content=f"-# current active model: **{info['name']}** (`{current}`) · provider: **{prov}**\n-# select a model below to change active inference model:",
+            view=view,
+        )
+
+    # ── nvidia legacy command ──────────────────────────────────
     @commands.command(name="nvidia")
     @help_meta(
         usage="`.nvidia`",
@@ -2929,7 +3089,51 @@ current user: {user_name_safe} (display: {user_display_safe}, id: {message.autho
     async def nvidia_cmd(self, ctx):
         if not is_owner_or_creator(ctx):
             return await ctx.send("owner only")
-        await ctx.send("nvidia model browser: single model mode — minimaxai/minimax-m3 is always used")
+        await ctx.send("active models: `minimaxai/minimax-m3` & `thinkingmachines/inkling` via NVIDIA NIM (3-key failover). Use `.model` to switch.")
+
+
+# ── Model Selection UI Components ──────────────────────────────
+
+class ModelSelect(discord.ui.Select):
+    def __init__(self, cog: AICog, current_model: str):
+        self.cog = cog
+        options = []
+        for model_id, info in ALL_SUPPORTED_MODELS.items():
+            is_active = (model_id == current_model)
+            prefix = "[NVIDIA]" if info["provider"] == "nvidia" else "[ZEN]"
+            desc = f"{prefix} {info['desc'][:45]}"
+            options.append(
+                discord.SelectOption(
+                    label=f"{info['name']} {'(Active)' if is_active else ''}",
+                    value=model_id,
+                    description=desc,
+                    default=is_active,
+                )
+            )
+        super().__init__(
+            placeholder="Select active AI model...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if not is_owner_or_creator(interaction):
+            return await interaction.response.send_message("-# staff/owner only", ephemeral=True)
+        selected_model = self.values[0]
+        self.cog.set_primary_model(selected_model)
+        info = ALL_SUPPORTED_MODELS[selected_model]
+        provider_name = "NVIDIA NIM (3-Key Rotation)" if info["provider"] == "nvidia" else "OpenCode Zen"
+        await interaction.response.edit_message(
+            content=f"-# active ai model set to **{info['name']}** (`{selected_model}`) via **{provider_name}**\n-# select a model below to change active inference model:",
+            view=ModelSelectView(self.cog, selected_model),
+        )
+
+
+class ModelSelectView(discord.ui.View):
+    def __init__(self, cog: AICog, current_model: str):
+        super().__init__(timeout=180)
+        self.add_item(ModelSelect(cog, current_model))
 
 
 # ── Setup ─────────────────────────────────────────────────────
