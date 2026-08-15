@@ -512,13 +512,26 @@ def _render_ship_card(
     from cogs.serverstats import _load_font, _circle_avatar
 
     W, H = 840, 360
-    bg = Image.new("RGB", (W, H), (14, 16, 22))
+    source_bytes = av1_bytes or av2_bytes
+    if source_bytes:
+        try:
+            src = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+            thumb = src.resize((180, 80), Image.Resampling.BILINEAR)
+            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
+            bg = blurred.resize((W, H), Image.Resampling.BICUBIC)
+        except Exception:
+            bg = Image.new("RGB", (W, H), (14, 15, 18))
+    else:
+        bg = Image.new("RGB", (W, H), (14, 15, 18))
+
+    overlay = Image.new("RGB", (W, H), (12, 13, 16))
+    bg = Image.blend(bg, overlay, 0.74)
 
     # Background gradient
     grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(H):
-        alpha = int(70 * (y / H))
+        alpha = int(75 * (y / H))
         gd.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
 
@@ -529,10 +542,11 @@ def _render_ship_card(
     cd.rounded_rectangle(
         [pad_x, pad_y, W - pad_x, H - pad_y],
         radius=28,
-        fill=(255, 255, 255, 10),
-        outline=(255, 255, 255, 35),
+        fill=(18, 19, 24, 180),
+        outline=(210, 215, 230, 45),
         width=1,
     )
+    cd.line([(pad_x + 25, pad_y + 1), (W - pad_x - 25, pad_y + 1)], fill=(255, 255, 255, 65), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 

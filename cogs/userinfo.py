@@ -59,26 +59,31 @@ def _render_user_card(
     W, H = 900, 1100
     if avatar_bytes:
         try:
-            base = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
+            src = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
+            thumb = src.resize((180, 220), Image.Resampling.BILINEAR)
+            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
+            bg = blurred.resize((W, H), Image.Resampling.BICUBIC)
         except Exception:
-            base = Image.new("RGB", (W, H), (30, 30, 40))
+            bg = Image.new("RGB", (W, H), (14, 15, 18))
     else:
-        base = Image.new("RGB", (W, H), (30, 30, 40))
-    bg = base.resize((W, H), Image.Resampling.LANCZOS)
-    bg = bg.filter(ImageFilter.GaussianBlur(45))
-    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
+        bg = Image.new("RGB", (W, H), (14, 15, 18))
+
+    overlay = Image.new("RGB", (W, H), (12, 13, 16))
+    bg = Image.blend(bg, overlay, 0.72)
 
     grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(H):
-        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(80 * (y / H))))
+        alpha = int(75 * (y / H))
+        gd.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
-    pad = 50
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, fill=(255, 255, 255, 14))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, outline=(255, 255, 255, 45), width=1)
+    pad = 45
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(18, 19, 24, 180))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(210, 215, 230, 45), width=1)
+    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 70), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
@@ -87,25 +92,26 @@ def _render_user_card(
     if avatar_bytes:
         try:
             av = _circle(avatar_bytes, av_size)
-            bg.paste(av, (90, 80), av)
+            bg.paste(av, (85, 75), av)
+            draw.ellipse([85, 75, 85 + av_size, 75 + av_size], outline=(255, 255, 255, 50), width=1)
         except Exception:
             pass
 
-    x0 = 90 + av_size + 40
-    f["title"].draw(draw, (x0, 100), user.display_name, fill=(255, 255, 255, 255))
+    x0 = 85 + av_size + 40
+    f["title"].draw(draw, (x0, 95), user.display_name, fill=(255, 255, 255, 255))
     status, sc = _STATUS.get(getattr(member, "status", None), _STATUS[discord.Status.offline])
     if member:
-        draw.ellipse([x0, 168, x0 + 16, 184], fill=sc)
-        f["sub"].draw(draw, (x0 + 28, 160), status, fill=(255, 255, 255, 170))
-    f["sub"].draw(draw, (x0, 210), f"@{user.name} · {user.id}", fill=(255, 255, 255, 170))
+        draw.ellipse([x0, 163, x0 + 16, 179], fill=sc)
+        f["sub"].draw(draw, (x0 + 28, 155), status, fill=(200, 205, 215, 200))
+    f["sub"].draw(draw, (x0, 205), f"@{user.name} · {user.id}", fill=(160, 165, 175, 180))
 
-    draw.line([(90, 290), (W - 90, 290)], fill=(255, 255, 255, 60), width=1)
+    draw.line([(85, 285), (W - 85, 285)], fill=(255, 255, 255, 35), width=1)
 
     def _row(y, label, value):
-        f["label"].draw(draw, (90, y), label, fill=(255, 255, 255, 120))
-        f["value"].draw(draw, (320, y), value, fill=(255, 255, 255, 235))
+        f["label"].draw(draw, (85, y), label, fill=(160, 165, 175, 180))
+        f["value"].draw(draw, (315, y), value, fill=(240, 244, 252, 235))
 
-    y = 330
+    y = 325
     _row(y, "account created", user.created_at.strftime("%b %d, %Y"))
     y += 55
     _row(y, "joined", member.joined_at.strftime("%b %d, %Y") if member and member.joined_at else "-")
@@ -122,11 +128,11 @@ def _render_user_card(
         act_name = getattr(member.activity, "name", "") or getattr(member.activity, "state", "") or ""
         if act_name:
             y += 60
-            f["sub"].draw(draw, (90, y), f"playing: {act_name[:60]}", fill=(255, 255, 255, 170))
+            f["sub"].draw(draw, (85, y), f"playing: {act_name[:60]}", fill=(180, 185, 195, 200))
 
-    footer_y = H - 120
-    draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
-    f["sub"].draw(draw, (90, footer_y + 25), user.name, fill=(255, 255, 255, 160))
+    footer_y = H - 115
+    draw.line([(85, footer_y), (W - 85, footer_y)], fill=(255, 255, 255, 35), width=1)
+    f["sub"].draw(draw, (85, footer_y + 25), user.name, fill=(160, 165, 175, 180))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)

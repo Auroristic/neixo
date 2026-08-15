@@ -84,38 +84,43 @@ def _render_quote_card(
     # Background generation
     if avatar_bytes:
         try:
-            base = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
-            bg = base.resize((W, H), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(50))
-            bg = Image.blend(bg, Image.new("RGB", (W, H), (14, 16, 22)), 0.82)
+            src = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
+            thumb = src.resize((180, max(1, int(180 * H / W))), Image.Resampling.BILINEAR)
+            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
+            bg = blurred.resize((W, H), Image.Resampling.BICUBIC)
         except Exception:
-            bg = Image.new("RGB", (W, H), (16, 18, 24))
+            bg = Image.new("RGB", (W, H), (14, 15, 18))
     else:
-        bg = Image.new("RGB", (W, H), (16, 18, 24))
+        bg = Image.new("RGB", (W, H), (14, 15, 18))
+
+    overlay = Image.new("RGB", (W, H), (12, 13, 16))
+    bg = Image.blend(bg, overlay, 0.74)
 
     # Dark gradient overlay
     grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(H):
-        alpha = int(90 * (y / H))
+        alpha = int(75 * (y / H))
         gd.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
 
     # Glass container card
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
-    pad_x, pad_y = 40, 35
+    pad_x, pad_y = 35, 30
     cd.rounded_rectangle(
         [pad_x, pad_y, W - pad_x, H - pad_y],
-        radius=30,
-        fill=(255, 255, 255, 12),
-        outline=(255, 255, 255, 35),
+        radius=28,
+        fill=(18, 19, 24, 180),
+        outline=(210, 215, 230, 45),
         width=1,
     )
+    cd.line([(pad_x + 25, pad_y + 1), (W - pad_x - 25, pad_y + 1)], fill=(255, 255, 255, 65), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
     # Giant watermark quote mark
-    f_watermark.draw(draw, (pad_x + 35, pad_y + 15), "\u201c", fill=(255, 255, 255, 25))
+    f_watermark.draw(draw, (pad_x + 30, pad_y + 10), "\u201c", fill=(255, 255, 255, 20))
 
     # Avatar on the left
     av_size = 140

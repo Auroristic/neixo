@@ -297,6 +297,33 @@ async def _fetch_emoji_bytes(url: str, session: aiohttp.ClientSession) -> bytes 
     except Exception:
         return None
 
+def _make_glass_backdrop(source_bytes: bytes | None, width: int, height: int, dark_tint: float = 0.72) -> Image.Image:
+    """Generate an ultra-fast, smooth frosted glass backdrop from an avatar or banner."""
+    if source_bytes:
+        try:
+            src = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+            thumb_w = 180
+            thumb_h = max(1, int(180 * height / width))
+            thumb = src.resize((thumb_w, thumb_h), Image.Resampling.BILINEAR)
+            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
+            bg = blurred.resize((width, height), Image.Resampling.BICUBIC)
+        except Exception:
+            bg = Image.new("RGB", (width, height), (14, 15, 18))
+    else:
+        bg = Image.new("RGB", (width, height), (14, 15, 18))
+
+    overlay = Image.new("RGB", (width, height), (12, 13, 16))
+    bg = Image.blend(bg, overlay, dark_tint)
+
+    grad = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    for y in range(height):
+        alpha = int(75 * (y / height))
+        gd.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
+    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    return bg
+
+
 # ── Server info card renderer ───────────────────────────────────────
 def _render_server_card(
     icon_bytes: bytes | None,
@@ -313,28 +340,14 @@ def _render_server_card(
     top_vc_val: str,
 ) -> io.BytesIO:
     W, H = 1000, 450
-
-    if banner_bytes:
-        base = Image.open(io.BytesIO(banner_bytes)).convert("RGB")
-    elif icon_bytes:
-        base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
-    else:
-        base = Image.new("RGB", (W, H), (20, 20, 25))
-    bg = base.resize((W, H), Image.Resampling.LANCZOS)
-    bg = bg.filter(ImageFilter.GaussianBlur(35))
-    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.65)
-
-    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(grad)
-    for y in range(H):
-        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(70 * (y / H))))
-    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    bg = _make_glass_backdrop(banner_bytes or icon_bytes, W, H, dark_tint=0.68)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
     pad = 30
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=30, fill=(255, 255, 255, 12))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=30, outline=(255, 255, 255, 35), width=1)
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, fill=(18, 19, 24, 175))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, outline=(210, 215, 230, 45), width=1)
+    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 65), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
@@ -356,42 +369,40 @@ def _render_server_card(
             ImageDraw.Draw(m).rounded_rectangle((0, 0, icon_size, icon_size), radius=22, fill=255)
             icon_img.putalpha(m)
             bg.paste(icon_img, (55, 50), icon_img)
+            draw.rounded_rectangle((55, 50, 55 + icon_size, 50 + icon_size), radius=22, outline=(255, 255, 255, 50), width=1)
         except Exception:
             pass
 
     # Server name
     name_y = 50 + icon_size + 20
-    title_font.draw(draw, (55, name_y), guild_name, fill=(255, 255, 255, 250))
+    title_font.draw(draw, (55, name_y), guild_name, fill=(255, 255, 255, 255))
 
     # Member / bot counts
     info_y = name_y + 50
-    stat_font.draw(draw, (55, info_y), f"Members: {member_count:,}", fill=(255, 255, 255, 190))
-    stat_font.draw(draw, (55, info_y + 32), f"Bots: {bot_count:,}", fill=(255, 255, 255, 170))
-    stat_font.draw(draw, (55, info_y + 64), f"Boost Level: {boost_level}", fill=(255, 255, 255, 150))
-    small_font.draw(draw, (55, info_y + 96), f"Created: {created_str}", fill=(255, 255, 255, 130))
+    stat_font.draw(draw, (55, info_y), f"Members: {member_count:,}", fill=(225, 230, 240, 210))
+    stat_font.draw(draw, (55, info_y + 32), f"Bots: {bot_count:,}", fill=(200, 205, 215, 180))
+    stat_font.draw(draw, (55, info_y + 64), f"Boost Level: {boost_level}", fill=(180, 185, 195, 160))
+    small_font.draw(draw, (55, info_y + 96), f"Created: {created_str}", fill=(150, 155, 165, 140))
 
     # Separator line
     sep_x = 340
-    draw.line([(sep_x, 60), (sep_x, H - 50)], fill=(255, 255, 255, 40), width=1)
+    draw.line([(sep_x, 60), (sep_x, H - 50)], fill=(255, 255, 255, 30), width=1)
 
     # ── Right: top stats ──
     stat_x = 380
     stat_y = 70
 
-    header_font.draw(draw, (stat_x, stat_y), "Top Stats", fill=(255, 255, 255, 230))
-    draw.line([(stat_x, stat_y + 40), (W - 50, stat_y + 40)], fill=(255, 255, 255, 35), width=1)
+    header_font.draw(draw, (stat_x, stat_y), "Top Stats", fill=(255, 255, 255, 245))
+    draw.line([(stat_x, stat_y + 40), (W - 50, stat_y + 40)], fill=(255, 255, 255, 30), width=1)
 
     rows_y = stat_y + 65
     row_h = 70
     labels = ["Most Used Emoji", "Top Reactor", "Top Chatter", "Top VC User"]
 
-    # Draw label rows
     for i in range(4):
         y = rows_y + i * row_h
-        label_font.draw(draw, (stat_x, y), labels[i], fill=(255, 255, 255, 150))
+        label_font.draw(draw, (stat_x, y), labels[i], fill=(160, 165, 175, 180))
 
-    # Draw value rows
-    # Row 0: emoji image + count text
     val_y0 = rows_y + 24
     if emoji_img_bytes and emoji_count_text:
         ew, eh = 28, 28
@@ -400,14 +411,13 @@ def _render_server_card(
             bg.paste(ei, (stat_x, val_y0), ei)
         except Exception:
             pass
-        value_font.draw(draw, (stat_x + ew + 6, val_y0), emoji_count_text, fill=(255, 255, 255, 230))
+        value_font.draw(draw, (stat_x + ew + 6, val_y0), emoji_count_text, fill=(245, 248, 255, 240))
     else:
-        value_font.draw(draw, (stat_x, val_y0), "No data yet", fill=(255, 255, 255, 230))
+        value_font.draw(draw, (stat_x, val_y0), "No data yet", fill=(245, 248, 255, 240))
 
-    # Rows 1-3: plain text
     for i, val in enumerate([top_reactor_val, top_chatter_val, top_vc_val], start=1):
         y = rows_y + 24 + i * row_h
-        value_font.draw(draw, (stat_x, y), val, fill=(255, 255, 255, 230))
+        value_font.draw(draw, (stat_x, y), val, fill=(245, 248, 255, 240))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
@@ -417,7 +427,7 @@ def _render_server_card(
 
 # ── Leaderboard card renderer ───────────────────────────────────────
 def _render_lb_card(
-    icon_bytes: bytes | None,
+    user_avatar_bytes: bytes | None,
     title: str,
     subtitle: str,
     rows: list[tuple[int, str, int | str]],
@@ -435,32 +445,18 @@ def _render_lb_card(
         H = 320 + n * 60 + 180
         H = max(H, 700)
 
-    if icon_bytes:
-        try:
-            base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
-        except Exception:
-            base = Image.new("RGB", (W, H), (30, 30, 40))
-    else:
-        base = Image.new("RGB", (W, H), (30, 30, 40))
-    bg = base.resize((W, H), Image.Resampling.LANCZOS)
-    bg = bg.filter(ImageFilter.GaussianBlur(45))
-    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
-
-    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(grad)
-    for y in range(H):
-        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(80 * (y / H))))
-    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    bg = _make_glass_backdrop(user_avatar_bytes, W, H, dark_tint=0.74)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
-    pad = 50
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, fill=(255, 255, 255, 14))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, outline=(255, 255, 255, 45), width=1)
+    pad = 45
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(18, 19, 24, 180))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(210, 215, 230, 45), width=1)
+    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 70), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
-    title_font    = _load_font(44, bold=True)
+    title_font    = _load_font(42, bold=True)
     subtitle_font = _load_font(24, bold=False)
     rank_font     = _load_font(30, bold=True)
     name_font     = _load_font(30, bold=False)
@@ -468,35 +464,36 @@ def _render_lb_card(
     footer_font   = _load_font(20, bold=False)
     footer_bold   = _load_font(20, bold=True)
 
-    title_font.draw(draw, (90, 80), title, fill=(255, 255, 255, 255))
-    subtitle_font.draw(draw, (90, 140), subtitle, fill=(255, 255, 255, 170))
-    draw.line([(90, 200), (W - 90, 200)], fill=(255, 255, 255, 60), width=1)
+    title_font.draw(draw, (85, 75), title, fill=(255, 255, 255, 255))
+    subtitle_font.draw(draw, (85, 135), subtitle, fill=(180, 185, 195, 200))
+    draw.line([(85, 195), (W - 85, 195)], fill=(255, 255, 255, 35), width=1)
 
-    start_y = 230
+    start_y = 225
     row_h   = 60
-    rank_x  = 90
-    name_x  = 170
-    count_x = W - 90
+    rank_x  = 85
+    name_x  = 165
+    count_x = W - 85
 
+    # Platinum / Silver / Monochromatic highlights
     tints = {
-        1: (255, 215, 64, 255),
-        2: (200, 200, 210, 255),
-        3: (205, 127, 50, 255),
+        1: (255, 255, 255, 255),
+        2: (200, 205, 215, 255),
+        3: (165, 170, 180, 255),
     }
 
     for i, (rank, name, count) in enumerate(rows[:MAX_ROWS]):
         y = start_y + i * row_h
         rank_str = f"{rank}."
-        rank_color = tints.get(rank, (255, 255, 255, 235))
+        rank_color = tints.get(rank, (135, 140, 150, 230))
         rank_font.draw(draw, (rank_x, y), rank_str, fill=rank_color)
 
-        max_w = (count_x - 90) - name_x
+        max_w = (count_x - 85) - name_x
         name_disp = name
         if name_font.getlength(name_disp) > max_w:
             while name_disp and name_font.getlength(name_disp + "\u2026") > max_w:
                 name_disp = name_disp[:-1]
             name_disp = (name_disp + "\u2026") if name_disp else "\u2026"
-        name_font.draw(draw, (name_x, y), name_disp, fill=(255, 255, 255, 220))
+        name_font.draw(draw, (name_x, y), name_disp, fill=(235, 240, 248, 230))
 
         if isinstance(count, str):
             count_str = count
@@ -505,23 +502,24 @@ def _render_lb_card(
         cw = count_font.getlength(count_str)
         count_font.draw(draw, (count_x - cw, y), count_str, fill=rank_color)
 
-    footer_y = H - 130
-    draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
+    footer_y = H - 125
+    draw.line([(85, footer_y), (W - 85, footer_y)], fill=(255, 255, 255, 35), width=1)
 
     av_size = 40
-    av_x, av_y = 90, footer_y + 22
+    av_x, av_y = 85, footer_y + 20
     if bot_avatar_bytes:
         try:
             av = _circle_avatar(bot_avatar_bytes, av_size)
             bg.paste(av, (av_x, av_y), av)
+            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 45), width=1)
         except Exception:
             pass
     text_x = av_x + av_size + 14
-    footer_bold.draw(draw, (text_x, av_y - 2), bot_name, fill=(255, 255, 255, 230))
-    footer_font.draw(draw, (text_x, av_y + 22), user_rank_text, fill=(255, 255, 255, 160))
+    footer_bold.draw(draw, (text_x, av_y - 2), bot_name, fill=(245, 248, 255, 240))
+    footer_font.draw(draw, (text_x, av_y + 22), user_rank_text, fill=(160, 165, 175, 180))
 
     pw = footer_font.getlength(page_str)
-    footer_font.draw(draw, (W - 90 - pw, av_y + 8), page_str, fill=(255, 255, 255, 160))
+    footer_font.draw(draw, (W - 85 - pw, av_y + 8), page_str, fill=(160, 165, 175, 180))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
@@ -542,23 +540,21 @@ class LBPageView(discord.ui.View):
         self.per_page = per_page
         self.page = 0
         self.total = max(1, (len(rows) - 1) // per_page + 1)
-        self.icon_bytes: bytes | None = None
+        self.user_avatar_bytes: bytes | None = None
         self.bot_avatar_bytes: bytes | None = None
         self.message: discord.Message | None = None
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # only the command author may page through this leaderboard
         return interaction.user.id == self.ctx.author.id
 
     async def fetch_assets(self):
-        guild_icon_url = self.ctx.guild.icon.url if self.ctx.guild and self.ctx.guild.icon else self.bot.user.display_avatar.url
         async with aiohttp.ClientSession() as s:
             tasks = [
-                self._fetch(s, guild_icon_url),
                 self._fetch(s, self.ctx.author.display_avatar.url),
+                self._fetch(s, self.bot.user.display_avatar.url),
             ]
             results = await asyncio.gather(*tasks)
-            self.icon_bytes = results[0]
+            self.user_avatar_bytes = results[0]
             self.bot_avatar_bytes = results[1]
 
     async def _fetch(self, session: aiohttp.ClientSession, url: str) -> bytes | None:
@@ -597,7 +593,7 @@ class LBPageView(discord.ui.View):
         page_str = f"page {self.page + 1}/{self.total}  \u00b7  {len(self.rows)} ranked"
         buf = await asyncio.to_thread(
             _render_lb_card,
-            self.icon_bytes,
+            self.user_avatar_bytes,
             self.title,
             self.subtitle,
             named,

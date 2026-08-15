@@ -142,8 +142,8 @@ def _circle_avatar(img_bytes: bytes, size: int) -> Image.Image:
     return out
 
 
-def _render_leaderboard_card(
-    icon_bytes: bytes | None,
+def _render_reactor_top(
+    user_avatar_bytes: bytes | None,
     title: str,
     subtitle: str,
     rows: list[tuple[int, str, int | str]],
@@ -153,46 +153,27 @@ def _render_leaderboard_card(
     user_rank_text: str,
     title_emoji_bytes: bytes | None = None,
 ) -> io.BytesIO:
-    """CPU-intensive image render — call via asyncio.to_thread.
-    Tall card with blurred guild-icon background, glass overlay, and a
-    bot-avatar + user-rank footer."""
+    """CPU-intensive image render — call via asyncio.to_thread."""
     W = 900
     MAX_ROWS = 10
     H = 1100
     if rows:
         n = min(len(rows), MAX_ROWS)
-        H = 320 + n * 60 + 180  # title block + rows + footer
+        H = 320 + n * 60 + 180
         H = max(H, 700)
 
-    # ── Background: blurred guild icon (or fallback gradient) ──
-    if icon_bytes:
-        try:
-            base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
-        except Exception:
-            base = Image.new("RGB", (W, H), (30, 30, 40))
-    else:
-        base = Image.new("RGB", (W, H), (30, 30, 40))
-    bg = base.resize((W, H), Image.Resampling.LANCZOS)
-    bg = bg.filter(ImageFilter.GaussianBlur(45))
-    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
+    bg = _make_glass_backdrop(user_avatar_bytes, W, H, dark_tint=0.74)
 
-    # gradient overlay top→bottom
-    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(grad)
-    for y in range(H):
-        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(80 * (y / H))))
-    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
-
-    # ── Glass card overlay ──
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
-    pad = 50
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, fill=(255, 255, 255, 14))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, outline=(255, 255, 255, 45), width=1)
+    pad = 45
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(18, 19, 24, 180))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(210, 215, 230, 45), width=1)
+    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 70), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
-    title_font    = _load_font(44, bold=True)
+    title_font    = _load_font(42, bold=True)
     subtitle_font = _load_font(24, bold=False)
     rank_font     = _load_font(30, bold=True)
     name_font     = _load_font(30, bold=False)
@@ -200,9 +181,8 @@ def _render_leaderboard_card(
     footer_font   = _load_font(20, bold=False)
     footer_bold   = _load_font(20, bold=True)
 
-    # ── Title block (with optional emoji image inline) ──
-    title_x = 90
-    title_y = 80
+    title_x = 85
+    title_y = 75
     if title_emoji_bytes:
         try:
             ei = Image.open(io.BytesIO(title_emoji_bytes)).convert("RGBA").resize((52, 52), Image.Resampling.LANCZOS)
@@ -211,36 +191,35 @@ def _render_leaderboard_card(
         except Exception:
             pass
     title_font.draw(draw, (title_x, title_y), title, fill=(255, 255, 255, 255))
-    subtitle_font.draw(draw, (90, title_y + 60), subtitle, fill=(255, 255, 255, 170))
+    subtitle_font.draw(draw, (85, title_y + 60), subtitle, fill=(180, 185, 195, 200))
 
-    draw.line([(90, 200), (W - 90, 200)], fill=(255, 255, 255, 60), width=1)
+    draw.line([(85, 195), (W - 85, 195)], fill=(255, 255, 255, 35), width=1)
 
-    # ── Rows ──
-    start_y = 230
+    start_y = 225
     row_h   = 60
-    rank_x  = 90
-    name_x  = 170
-    count_x = W - 90
+    rank_x  = 85
+    name_x  = 165
+    count_x = W - 85
 
     tints = {
-        1: (255, 215, 64,  255),
-        2: (200, 200, 210, 255),
-        3: (205, 127, 50,  255),
+        1: (255, 255, 255, 255),
+        2: (200, 205, 215, 255),
+        3: (165, 170, 180, 255),
     }
 
     for i, (rank, name, count) in enumerate(rows[:MAX_ROWS]):
         y = start_y + i * row_h
         rank_str = f"{rank}."
-        rank_color = tints.get(rank, (255, 255, 255, 235))
+        rank_color = tints.get(rank, (135, 140, 150, 230))
         rank_font.draw(draw, (rank_x, y), rank_str, fill=rank_color)
 
-        max_w = (count_x - 90) - name_x
+        max_w = (count_x - 85) - name_x
         name_disp = name
         if name_font.getlength(name_disp) > max_w:
             while name_disp and name_font.getlength(name_disp + "…") > max_w:
                 name_disp = name_disp[:-1]
             name_disp = (name_disp + "…") if name_disp else "…"
-        name_font.draw(draw, (name_x, y), name_disp, fill=(255, 255, 255, 220))
+        name_font.draw(draw, (name_x, y), name_disp, fill=(235, 240, 248, 230))
 
         if isinstance(count, str):
             count_str = count
@@ -249,27 +228,24 @@ def _render_leaderboard_card(
         cw = count_font.getlength(count_str)
         count_font.draw(draw, (count_x - cw, y), count_str, fill=rank_color)
 
-    # ── Footer area ──
-    footer_y = H - 130
-    draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
+    footer_y = H - 125
+    draw.line([(85, footer_y), (W - 85, footer_y)], fill=(255, 255, 255, 35), width=1)
 
-    # bot avatar circle on the left
     av_size = 40
-    av_x, av_y = 90, footer_y + 22
+    av_x, av_y = 85, footer_y + 20
     if bot_avatar_bytes:
         try:
             av = _circle_avatar(bot_avatar_bytes, av_size)
             bg.paste(av, (av_x, av_y), av)
+            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 45), width=1)
         except Exception:
             pass
-    # bot name + user rank
     text_x = av_x + av_size + 14
-    footer_bold.draw(draw, (text_x, av_y - 2), bot_name, fill=(255, 255, 255, 230))
-    footer_font.draw(draw, (text_x, av_y + 22), user_rank_text, fill=(255, 255, 255, 160))
+    footer_bold.draw(draw, (text_x, av_y - 2), bot_name, fill=(245, 248, 255, 240))
+    footer_font.draw(draw, (text_x, av_y + 22), user_rank_text, fill=(160, 165, 175, 180))
 
-    # page info on the right
     pw = footer_font.getlength(page_str)
-    footer_font.draw(draw, (W - 90 - pw, av_y + 8), page_str, fill=(255, 255, 255, 160))
+    footer_font.draw(draw, (W - 85 - pw, av_y + 8), page_str, fill=(160, 165, 175, 180))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
@@ -278,7 +254,7 @@ def _render_leaderboard_card(
 
 
 class RCImageView(discord.ui.View):
-    """Paginated leaderboard rendered as an image (music-card aesthetic)."""
+    """Paginated leaderboard rendered as an image with silver glassmorphic styling."""
 
     def __init__(self, bot, ctx, rows, title, subtitle, accent, per_page=10,
                  emoji_str: str | None = None):
@@ -293,26 +269,24 @@ class RCImageView(discord.ui.View):
         self.emoji_str = emoji_str
         self.page = 0
         self.total = max(1, (len(rows) - 1) // per_page + 1)
-        self.icon_bytes: bytes | None = None
+        self.user_avatar_bytes: bytes | None = None
         self.bot_avatar_bytes: bytes | None = None
         self.title_emoji_bytes: bytes | None = None
         self.message: discord.Message | None = None
 
     async def fetch_assets(self):
-        """Fetch the bot avatar (used as the blurred background), the
-        command user's avatar (footer circle), and optional title emoji."""
         async with aiohttp.ClientSession() as s:
-            bot_av_task    = _fetch_image_bytes(self.bot.user.display_avatar.url, s)
             user_av_task   = _fetch_image_bytes(self.ctx.author.display_avatar.url, s)
+            bot_av_task    = _fetch_image_bytes(self.bot.user.display_avatar.url, s)
             emoji_url      = _emoji_to_url(self.emoji_str) if self.emoji_str else None
             emoji_task     = _fetch_image_bytes(emoji_url, s) if emoji_url else None
 
             results = await asyncio.gather(
-                bot_av_task, user_av_task,
+                user_av_task, bot_av_task,
                 emoji_task if emoji_task else asyncio.sleep(0, result=None),
             )
-            self.icon_bytes        = results[0]   # bot avatar → blurred bg
-            self.bot_avatar_bytes  = results[1]   # user avatar → footer circle
+            self.user_avatar_bytes = results[0]
+            self.bot_avatar_bytes  = results[1]
             self.title_emoji_bytes = results[2]
 
     def _resolve_name(self, user_id: int) -> str:

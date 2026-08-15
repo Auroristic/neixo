@@ -37,28 +37,40 @@ def _render_milestone_card(
     W, H = 900, 500
     if icon_bytes:
         try:
-            base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
+            src = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
+            thumb = src.resize((180, 100), Image.Resampling.BILINEAR)
+            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
+            bg = blurred.resize((W, H), Image.Resampling.BICUBIC)
         except Exception:
-            base = Image.new("RGB", (W, H), (30, 30, 40))
+            bg = Image.new("RGB", (W, H), (14, 15, 18))
     else:
-        base = Image.new("RGB", (W, H), (30, 30, 40))
-    bg = base.resize((W, H), Image.Resampling.LANCZOS)
-    bg = bg.filter(ImageFilter.GaussianBlur(45))
-    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
+        bg = Image.new("RGB", (W, H), (14, 15, 18))
+
+    overlay = Image.new("RGB", (W, H), (12, 13, 16))
+    bg = Image.blend(bg, overlay, 0.72)
 
     grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(H):
-        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(70 * (y / H))))
+        alpha = int(75 * (y / H))
+        gd.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+
+    card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(card)
+    pad = 35
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, fill=(18, 19, 24, 180))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, outline=(210, 215, 230, 45), width=1)
+    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 65), width=1)
+    bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
     title_font = _load_font(64, bold=True)
     sub_font = _load_font(26, bold=False)
 
-    title_font.draw(draw, (W // 2, 170), f"{count:,}", fill=(255, 255, 255, 255), anchor="mm")
-    sub_font.draw(draw, (W // 2, 250), "members!", fill=(255, 255, 255, 200), anchor="mm")
-    sub_font.draw(draw, (W // 2, 320), guild_name[:45], fill=(255, 255, 255, 140), anchor="mm")
+    title_font.draw(draw, (W // 2, 165), f"{count:,}", fill=(255, 255, 255, 255), anchor="mm")
+    sub_font.draw(draw, (W // 2, 245), "members!", fill=(225, 230, 240, 220), anchor="mm")
+    sub_font.draw(draw, (W // 2, 315), guild_name[:45], fill=(160, 165, 175, 180), anchor="mm")
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)

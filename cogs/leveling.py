@@ -176,6 +176,83 @@ class Leveling(commands.Cog):
             embed.set_thumbnail(url=message.author.display_avatar.url)
             await message.channel.send(embed=embed, delete_after=5)
 
+def _render_rank_card(
+    avatar_bytes: bytes | None,
+    username: str,
+    level: int,
+    current_xp: int,
+    next_xp: int,
+    progress: float,
+    messages: int,
+    rank_pos: int | None,
+    guild_name: str,
+) -> io.BytesIO:
+    import io
+    from PIL import Image, ImageDraw
+    from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
+
+    W, H = 900, 320
+    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.74)
+
+    card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(card)
+    pad = 25
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=26, fill=(18, 19, 24, 185))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=26, outline=(210, 215, 230, 45), width=1)
+    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 65), width=1)
+    bg = Image.alpha_composite(bg, card)
+    draw = ImageDraw.Draw(bg)
+
+    av_size = 130
+    av_x = 55
+    av_y = (H - av_size) // 2
+    if avatar_bytes:
+        try:
+            av = _circle_avatar(avatar_bytes, av_size)
+            bg.paste(av, (av_x, av_y), av)
+            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 50), width=1)
+        except Exception:
+            pass
+
+    content_x = av_x + av_size + 35
+    title_font = _load_font(34, bold=True)
+    sub_font = _load_font(20, bold=False)
+    bold_font = _load_font(22, bold=True)
+    small_font = _load_font(18, bold=False)
+
+    title_font.draw(draw, (content_x, 50), username, fill=(255, 255, 255, 255))
+    sub_font.draw(draw, (content_x, 92), f"level {level} · {messages:,} messages", fill=(180, 185, 195, 200))
+
+    if rank_pos:
+        rank_badge = f"#{rank_pos}"
+        bw = bold_font.getlength(rank_badge)
+        draw.rounded_rectangle([W - 60 - bw - 20, 50, W - 60, 85], radius=10, fill=(255, 255, 255, 20), outline=(255, 255, 255, 40), width=1)
+        bold_font.draw(draw, (W - 60 - bw - 10, 55), rank_badge, fill=(245, 248, 255, 240))
+
+    bar_x = content_x
+    bar_y = 145
+    bar_w = W - 60 - bar_x
+    bar_h = 22
+    draw.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=11, fill=(255, 255, 255, 18), outline=(255, 255, 255, 30), width=1)
+
+    fill_w = max(0, min(bar_w, int(bar_w * (progress / 100.0))))
+    if fill_w > 0:
+        fill_img = Image.new("RGBA", (fill_w, bar_h), (0, 0, 0, 0))
+        fd = ImageDraw.Draw(fill_img)
+        fd.rounded_rectangle([0, 0, fill_w, bar_h], radius=11, fill=(225, 230, 245, 215))
+        bg.paste(fill_img, (bar_x, bar_y), fill_img)
+
+    xp_text = f"{current_xp:,} / {next_xp:,} XP ({progress:.1f}%)"
+    small_font.draw(draw, (bar_x, bar_y + bar_h + 12), xp_text, fill=(180, 185, 195, 200))
+    gname = guild_name[:25]
+    small_font.draw(draw, (W - 60 - small_font.getlength(gname), bar_y + bar_h + 12), gname, fill=(140, 145, 155, 160))
+
+    buf = io.BytesIO()
+    bg.convert("RGB").save(buf, format="PNG", quality=92)
+    buf.seek(0)
+    return buf
+
+
     @commands.command(aliases=["lvl"])
     @help_meta(
         section="Leveling",
@@ -193,48 +270,42 @@ class Leveling(commands.Cog):
         data = get_user_xp(member.id, ctx.guild.id)
 
         if not data:
-            embed = discord.Embed(
-                title=f"{member.display_name}'s Rank",
-                description="No XP data yet. Start chatting to earn XP!",
-                color=discord.Color(get_embed_color(ctx.guild.id))
-            )
-            await ctx.send(embed=embed)
-            return
+            return await ctx.send(f"-# {member.display_name} has no xp data yet.")
 
         # Calculate progress to next level
         current_level = data["level"]
         current_xp = data["xp"]
         xp_for_current = current_level ** 2 * 100
         xp_for_next = (current_level + 1) ** 2 * 100
-        progress = ((current_xp - xp_for_current) / (xp_for_next - xp_for_current)) * 100
+        denom = max(1, xp_for_next - xp_for_current)
+        progress = max(0.0, min(100.0, ((current_xp - xp_for_current) / denom) * 100))
 
-        embed = discord.Embed(
-            title=f"{member.display_name}'s Rank",
-            color=discord.Color(get_embed_color(ctx.guild.id))
-        )
-        embed.set_thumbnail(url=member.display_avatar.url)
-        embed.add_field(name="Level", value=f"**{current_level}**", inline=True)
-        embed.add_field(name="XP", value=f"**{current_xp:,}**", inline=True)
-        embed.add_field(name="Messages", value=f"**{data['messages']:,}**", inline=True)
-
-        # Progress bar
-        bar_length = 10
-        filled = int(bar_length * progress / 100)
-        bar = "█" * filled + "░" * (bar_length - filled)
-        embed.add_field(
-            name=f"Progress to Level {current_level + 1}",
-            value=f"{bar} {progress:.1f}%",
-            inline=False
-        )
-
-        # Get rank position
         leaderboard = get_leaderboard(ctx.guild.id, limit=100)
         rank_pos = next((i + 1 for i, entry in enumerate(leaderboard) if entry["user_id"] == str(member.id)), None)
-        if rank_pos:
-            suffix = "th" if 11 <= rank_pos <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(rank_pos % 10, "th")
-            embed.set_footer(text=f"#{rank_pos}{suffix} on the leaderboard")
 
-        await ctx.send(embed=embed)
+        try:
+            import aiohttp
+            avatar_bytes = None
+            async with aiohttp.ClientSession() as s:
+                async with s.get(member.display_avatar.url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                    if r.status == 200:
+                        avatar_bytes = await r.read()
+            buf = await asyncio.to_thread(
+                _render_rank_card,
+                avatar_bytes,
+                member.display_name,
+                current_level,
+                current_xp,
+                xp_for_next,
+                progress,
+                data.get("messages", 0),
+                rank_pos,
+                ctx.guild.name if ctx.guild else "",
+            )
+            await ctx.send(file=discord.File(fp=buf, filename="rank.png"))
+        except Exception as e:
+            logger.warning("rank card render failed: %s", e)
+            await ctx.send(f"-# **{member.display_name}** · level {current_level} · {current_xp:,} xp · {data.get('messages', 0):,} msgs")
 
     @commands.command(name="levelleaderboard", aliases=["llb", "xpleaderboard"])
     @help_meta(

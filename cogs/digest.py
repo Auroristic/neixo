@@ -80,63 +80,93 @@ def _render_digest_card(
     sec3_h = (45 + (len(bumper_top) * 40) + 24) if bumper_top else 0
     footer_h = 90
 
+def _make_glass_backdrop(source_bytes: bytes | None, width: int, height: int, dark_tint: float = 0.72) -> Image.Image:
+    """Generate an ultra-fast, smooth frosted glass backdrop from an avatar or banner."""
+    if source_bytes:
+        try:
+            src = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+            thumb_w = 180
+            thumb_h = max(1, int(180 * height / width))
+            thumb = src.resize((thumb_w, thumb_h), Image.Resampling.BILINEAR)
+            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
+            bg = blurred.resize((width, height), Image.Resampling.BICUBIC)
+        except Exception:
+            bg = Image.new("RGB", (width, height), (14, 15, 18))
+    else:
+        bg = Image.new("RGB", (width, height), (14, 15, 18))
+
+    overlay = Image.new("RGB", (width, height), (12, 13, 16))
+    bg = Image.blend(bg, overlay, dark_tint)
+
+    grad = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    for y in range(height):
+        alpha = int(75 * (y / height))
+        gd.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
+    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    return bg
+
+
+def _render_digest_card(
+    icon_bytes: bytes | None,
+    guild_name: str,
+    week_label: str,
+    msg_total: int,
+    vc_str: str,
+    bumps_total: int,
+    member_growth: int,
+    chatters: list[tuple[int, str, int]],
+    vc_top: list[tuple[int, str, int]],
+    bumper_top: list[tuple[int, str, int]],
+) -> io.BytesIO:
+    base_header_h = 280
+    sec1_h = (45 + (len(chatters) * 40) + 24) if chatters else 0
+    sec2_h = (45 + (len(vc_top) * 40) + 24) if vc_top else 0
+    sec3_h = (45 + (len(bumper_top) * 40) + 24) if bumper_top else 0
+    footer_h = 90
+
     W = 900
     H = max(1100, base_header_h + sec1_h + sec2_h + sec3_h + footer_h)
 
-    if icon_bytes:
-        try:
-            base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
-        except Exception:
-            base = Image.new("RGB", (W, H), (30, 30, 40))
-    else:
-        base = Image.new("RGB", (W, H), (30, 30, 40))
-    bg = base.resize((W, H), Image.Resampling.LANCZOS)
-    bg = bg.filter(ImageFilter.GaussianBlur(45))
-    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
-
-    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(grad)
-    for y_pos in range(H):
-        gd.line([(0, y_pos), (W, y_pos)], fill=(0, 0, 0, int(80 * (y_pos / H))))
-    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    bg = _make_glass_backdrop(icon_bytes, W, H, dark_tint=0.72)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
-    pad = 50
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, fill=(255, 255, 255, 14))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, outline=(255, 255, 255, 45), width=1)
+    pad = 45
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(18, 19, 24, 180))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(210, 215, 230, 45), width=1)
+    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 70), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
-    title_font.draw(draw, (90, 70), "weekly digest", fill=(255, 255, 255, 255))
-    sub_font.draw(draw, (90, 130), f"{guild_name} · {week_label}", fill=(255, 255, 255, 170))
-    draw.line([(90, 185), (W - 90, 185)], fill=(255, 255, 255, 60), width=1)
+    title_font.draw(draw, (85, 70), "weekly digest", fill=(255, 255, 255, 255))
+    sub_font.draw(draw, (85, 130), f"{guild_name} · {week_label}", fill=(180, 185, 195, 200))
+    draw.line([(85, 185), (W - 85, 185)], fill=(255, 255, 255, 35), width=1)
 
     y = 220
-    label_font.draw(draw, (90, y), f"{msg_total:,} messages", fill=(255, 255, 255, 235))
+    label_font.draw(draw, (85, y), f"{msg_total:,} messages", fill=(245, 248, 255, 240))
     cw = label_font.getlength(f"+{member_growth:,} members")
-    label_font.draw(draw, (W - 90 - cw, y), f"+{member_growth:,} members", fill=(255, 255, 255, 235))
+    label_font.draw(draw, (W - 85 - cw, y), f"+{member_growth:,} members", fill=(245, 248, 255, 240))
     y += 40
-    label_font.draw(draw, (90, y), f"{vc_str} in voice", fill=(255, 255, 255, 235))
+    label_font.draw(draw, (85, y), f"{vc_str} in voice", fill=(245, 248, 255, 240))
     cw = label_font.getlength(f"{bumps_total} bumps")
-    label_font.draw(draw, (W - 90 - cw, y), f"{bumps_total} bumps", fill=(255, 255, 255, 235))
+    label_font.draw(draw, (W - 85 - cw, y), f"{bumps_total} bumps", fill=(245, 248, 255, 240))
     y += 70
 
     def _section(label, rows, unit):
         nonlocal y
         if not rows:
             return
-        label_font.draw(draw, (90, y), label, fill=(255, 255, 255, 120))
+        label_font.draw(draw, (85, y), label, fill=(160, 165, 175, 180))
         y += 45
         for rank, name, val in rows:
-            row_font.draw(draw, (90, y), f"{rank}.", fill=(255, 255, 255, 100))
+            row_font.draw(draw, (85, y), f"{rank}.", fill=(135, 140, 150, 230))
             v = f"{val:,}{unit}"
             vw = row_font.getlength(v)
-            # Truncate username so it never overlaps the value
-            max_name_w = W - 90 - vw - 160
+            max_name_w = W - 85 - vw - 160
             clean_name = _truncate_text(row_font, str(name or "Unknown"), max_name_w)
-            row_font.draw(draw, (140, y), clean_name, fill=(255, 255, 255, 230))
-            row_font.draw(draw, (W - 90 - vw, y), v, fill=(255, 255, 255, 200))
+            row_font.draw(draw, (135, y), clean_name, fill=(235, 240, 248, 230))
+            row_font.draw(draw, (W - 85 - vw, y), v, fill=(200, 205, 215, 220))
             y += 40
         y += 24
 
@@ -145,8 +175,8 @@ def _render_digest_card(
     _section("top bumpers", bumper_top, " bumps")
 
     footer_y = y + 10
-    draw.line([(90, footer_y), (W - 90, footer_y)], fill=(255, 255, 255, 50), width=1)
-    small_font.draw(draw, (90, footer_y + 25), "xo", fill=(255, 255, 255, 140))
+    draw.line([(85, footer_y), (W - 85, footer_y)], fill=(255, 255, 255, 35), width=1)
+    small_font.draw(draw, (85, footer_y + 25), "xo", fill=(160, 165, 175, 180))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
