@@ -984,10 +984,20 @@ class AICog(commands.Cog, name="AI"):
             else:
                 fail_msg = f"{fail_emoji} *{random.choice(TEXT_FAIL)}*"  # noqa: S311
 
-            await status_msg.edit(content=fail_msg)
-            await asyncio.sleep(0.5)
+            try:
+                await status_msg.edit(content=fail_msg)
+            except Exception:
+                pass
+            await asyncio.sleep(0.8)
 
-            response = await self._fallback_complete(messages_payload, tools=tools, max_tokens=max_tokens)
+            # Keep cycling status messages dynamically during fallback
+            fallback_cycle = asyncio.create_task(
+                self._cycle_status(status_msg, STATUS_EMOJIS, has_images=has_images, has_video=has_video)
+            )
+            try:
+                response = await self._fallback_complete(messages_payload, tools=tools, max_tokens=max_tokens)
+            finally:
+                fallback_cycle.cancel()
 
             return response, status_msg, True
 
