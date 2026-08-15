@@ -131,15 +131,37 @@ async def _fetch_image_bytes(url: str, session: aiohttp.ClientSession | None = N
             await session.close()
     return None
 
+def _make_glass_backdrop(
+    source_bytes: bytes | None,
+    width: int,
+    height: int,
+    dark_tint: float = 0.32,
+    blur_radius: int = 28,
+) -> Image.Image:
+    """Generate an authentic Black & White frosted glass backdrop."""
+    from PIL import ImageOps, ImageEnhance
+    if source_bytes:
+        try:
+            src = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+            src_bw = ImageOps.grayscale(src).convert("RGB")
+            src_bw = ImageEnhance.Contrast(src_bw).enhance(1.2)
+            bg = src_bw.resize((width, height), Image.Resampling.LANCZOS)
+            bg = bg.filter(ImageFilter.GaussianBlur(blur_radius))
+        except Exception:
+            bg = Image.new("RGB", (width, height), (16, 17, 20))
+    else:
+        bg = Image.new("RGB", (width, height), (16, 17, 20))
 
-def _circle_avatar(img_bytes: bytes, size: int) -> Image.Image:
-    """Crop image to a circle of given size."""
-    im = Image.open(io.BytesIO(img_bytes)).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
-    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    out.paste(im, (0, 0), mask)
-    return out
+    overlay = Image.new("RGB", (width, height), (10, 11, 14))
+    bg = Image.blend(bg, overlay, dark_tint)
+
+    grad = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    for y in range(height):
+        alpha = int(45 * (y / height))
+        gd.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
+    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    return bg
 
 
 def _render_reactor_top(
@@ -148,8 +170,8 @@ def _render_reactor_top(
     subtitle: str,
     rows: list[tuple[int, str, int | str]],
     page_str: str,
-    bot_avatar_bytes: bytes | None,
-    bot_name: str,
+    caller_avatar_bytes: bytes | None,
+    caller_name: str,
     user_rank_text: str,
     title_emoji_bytes: bytes | None = None,
 ) -> io.BytesIO:
@@ -162,14 +184,14 @@ def _render_reactor_top(
         H = 320 + n * 60 + 180
         H = max(H, 700)
 
-    bg = _make_glass_backdrop(user_avatar_bytes, W, H, dark_tint=0.74)
+    bg = _make_glass_backdrop(user_avatar_bytes, W, H, dark_tint=0.32, blur_radius=28)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
     pad = 45
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(18, 19, 24, 180))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(210, 215, 230, 45), width=1)
-    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 70), width=1)
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(0, 0, 0, 95))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(255, 255, 255, 55), width=1)
+    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 95), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
@@ -233,15 +255,15 @@ def _render_reactor_top(
 
     av_size = 40
     av_x, av_y = 85, footer_y + 20
-    if bot_avatar_bytes:
+    if caller_avatar_bytes:
         try:
-            av = _circle_avatar(bot_avatar_bytes, av_size)
+            av = _circle_avatar(caller_avatar_bytes, av_size)
             bg.paste(av, (av_x, av_y), av)
-            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 45), width=1)
+            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 55), width=1)
         except Exception:
             pass
     text_x = av_x + av_size + 14
-    footer_bold.draw(draw, (text_x, av_y - 2), bot_name, fill=(245, 248, 255, 240))
+    footer_bold.draw(draw, (text_x, av_y - 2), caller_name, fill=(245, 248, 255, 240))
     footer_font.draw(draw, (text_x, av_y + 22), user_rank_text, fill=(160, 165, 175, 180))
 
     pw = footer_font.getlength(page_str)
@@ -251,6 +273,16 @@ def _render_reactor_top(
     bg.convert("RGB").save(buf, format="PNG", quality=92)
     buf.seek(0)
     return buf
+
+
+def _circle_avatar(img_bytes: bytes, size: int) -> Image.Image:
+    """Crop image to a circle of given size."""
+    im = Image.open(io.BytesIO(img_bytes)).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(im, (0, 0), mask)
+    return out
 
 
 class RCImageView(discord.ui.View):
@@ -270,24 +302,21 @@ class RCImageView(discord.ui.View):
         self.page = 0
         self.total = max(1, (len(rows) - 1) // per_page + 1)
         self.user_avatar_bytes: bytes | None = None
-        self.bot_avatar_bytes: bytes | None = None
         self.title_emoji_bytes: bytes | None = None
         self.message: discord.Message | None = None
 
     async def fetch_assets(self):
         async with aiohttp.ClientSession() as s:
             user_av_task   = _fetch_image_bytes(self.ctx.author.display_avatar.url, s)
-            bot_av_task    = _fetch_image_bytes(self.bot.user.display_avatar.url, s)
             emoji_url      = _emoji_to_url(self.emoji_str) if self.emoji_str else None
             emoji_task     = _fetch_image_bytes(emoji_url, s) if emoji_url else None
 
             results = await asyncio.gather(
-                user_av_task, bot_av_task,
+                user_av_task,
                 emoji_task if emoji_task else asyncio.sleep(0, result=None),
             )
             self.user_avatar_bytes = results[0]
-            self.bot_avatar_bytes  = results[1]
-            self.title_emoji_bytes = results[2]
+            self.title_emoji_bytes = results[1]
 
     def _resolve_name(self, user_id: int) -> str:
         if self.ctx.guild:
@@ -313,15 +342,15 @@ class RCImageView(discord.ui.View):
                  for rank, (uid, count) in enumerate(chunk, start=start + 1)]
         page_str = f"page {self.page + 1}/{self.total}  ·  {len(self.rows)} ranked"
         buf = await asyncio.to_thread(
-            _render_leaderboard_card,
-            self.icon_bytes,
+            _render_reactor_top,
+            self.user_avatar_bytes,
             self.title,
             self.subtitle,
             named,
             page_str,
-            self.bot_avatar_bytes,            # really the *user* avatar now
-            self.ctx.author.display_name,      # footer top line
-            self._user_rank_text(),            # footer bottom line
+            self.user_avatar_bytes,
+            self.ctx.author.display_name,
+            self._user_rank_text(),
             self.title_emoji_bytes,
         )
         return discord.File(fp=buf, filename="leaderboard.png")

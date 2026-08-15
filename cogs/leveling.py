@@ -194,14 +194,14 @@ def _render_rank_card(
     from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 
     W, H = 900, 320
-    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.74)
+    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.32, blur_radius=28)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
     pad = 25
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=26, fill=(18, 19, 24, 185))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=26, outline=(210, 215, 230, 45), width=1)
-    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 65), width=1)
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=26, fill=(0, 0, 0, 95))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=26, outline=(255, 255, 255, 55), width=1)
+    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 95), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 

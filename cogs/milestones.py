@@ -31,37 +31,18 @@ def _render_milestone_card(
     guild_name: str,
     count: int,
 ) -> io.BytesIO:
-    from PIL import Image, ImageDraw, ImageFilter
-    from cogs.serverstats import _load_font
+    from PIL import Image, ImageDraw
+    from cogs.serverstats import _load_font, _make_glass_backdrop
 
     W, H = 900, 500
-    if icon_bytes:
-        try:
-            src = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
-            thumb = src.resize((180, 100), Image.Resampling.BILINEAR)
-            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
-            bg = blurred.resize((W, H), Image.Resampling.BICUBIC)
-        except Exception:
-            bg = Image.new("RGB", (W, H), (14, 15, 18))
-    else:
-        bg = Image.new("RGB", (W, H), (14, 15, 18))
-
-    overlay = Image.new("RGB", (W, H), (12, 13, 16))
-    bg = Image.blend(bg, overlay, 0.72)
-
-    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(grad)
-    for y in range(H):
-        alpha = int(75 * (y / H))
-        gd.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
-    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    bg = _make_glass_backdrop(icon_bytes, W, H, dark_tint=0.32, blur_radius=28)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
     pad = 35
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, fill=(18, 19, 24, 180))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, outline=(210, 215, 230, 45), width=1)
-    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 65), width=1)
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, fill=(0, 0, 0, 95))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, outline=(255, 255, 255, 55), width=1)
+    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 95), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 

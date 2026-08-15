@@ -98,6 +98,11 @@ class TestNewFeatures(unittest.TestCase):
         ship_buf = _render_ship_card(raw_bytes, raw_bytes, "User1", "User2", 88, "perfect match")
         self.assertTrue(ship_buf.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
 
+        # 10. Reactions leaderboard card
+        from cogs.reactions import _render_reactor_top
+        rc_buf = _render_reactor_top(raw_bytes, "Top Reactors", "server reaction leaderboard", [(1, "User1", 50)], "page 1/1", raw_bytes, "User1", "#1 · 50 reactions")
+        self.assertTrue(rc_buf.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
+
 
 if __name__ == "__main__":
     unittest.main()

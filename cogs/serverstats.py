@@ -297,28 +297,36 @@ async def _fetch_emoji_bytes(url: str, session: aiohttp.ClientSession) -> bytes 
     except Exception:
         return None
 
-def _make_glass_backdrop(source_bytes: bytes | None, width: int, height: int, dark_tint: float = 0.72) -> Image.Image:
-    """Generate an ultra-fast, smooth frosted glass backdrop from an avatar or banner."""
+def _make_glass_backdrop(
+    source_bytes: bytes | None,
+    width: int,
+    height: int,
+    dark_tint: float = 0.32,
+    blur_radius: int = 28,
+) -> Image.Image:
+    """Generate an authentic Black & White frosted glass backdrop."""
+    from PIL import ImageOps, ImageEnhance
     if source_bytes:
         try:
             src = Image.open(io.BytesIO(source_bytes)).convert("RGB")
-            thumb_w = 180
-            thumb_h = max(1, int(180 * height / width))
-            thumb = src.resize((thumb_w, thumb_h), Image.Resampling.BILINEAR)
-            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
-            bg = blurred.resize((width, height), Image.Resampling.BICUBIC)
+            # Always convert to Black & White (grayscale)
+            src_bw = ImageOps.grayscale(src).convert("RGB")
+            src_bw = ImageEnhance.Contrast(src_bw).enhance(1.2)
+            bg = src_bw.resize((width, height), Image.Resampling.LANCZOS)
+            bg = bg.filter(ImageFilter.GaussianBlur(blur_radius))
         except Exception:
-            bg = Image.new("RGB", (width, height), (14, 15, 18))
+            bg = Image.new("RGB", (width, height), (16, 17, 20))
     else:
-        bg = Image.new("RGB", (width, height), (14, 15, 18))
+        bg = Image.new("RGB", (width, height), (16, 17, 20))
 
-    overlay = Image.new("RGB", (width, height), (12, 13, 16))
+    # Controlled dark overlay so the B&W art remains clearly visible
+    overlay = Image.new("RGB", (width, height), (10, 11, 14))
     bg = Image.blend(bg, overlay, dark_tint)
 
     grad = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(height):
-        alpha = int(75 * (y / height))
+        alpha = int(45 * (y / height))
         gd.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
     return bg
@@ -340,14 +348,15 @@ def _render_server_card(
     top_vc_val: str,
 ) -> io.BytesIO:
     W, H = 1000, 450
-    bg = _make_glass_backdrop(banner_bytes or icon_bytes, W, H, dark_tint=0.68)
+    bg = _make_glass_backdrop(banner_bytes or icon_bytes, W, H, dark_tint=0.30, blur_radius=25)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
     pad = 30
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, fill=(18, 19, 24, 175))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, outline=(210, 215, 230, 45), width=1)
-    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 65), width=1)
+    # Translucent glass fill
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, fill=(0, 0, 0, 95))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, outline=(255, 255, 255, 55), width=1)
+    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 95), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
@@ -432,8 +441,8 @@ def _render_lb_card(
     subtitle: str,
     rows: list[tuple[int, str, int | str]],
     page_str: str,
-    bot_avatar_bytes: bytes | None,
-    bot_name: str,
+    caller_avatar_bytes: bytes | None,
+    caller_name: str,
     user_rank_text: str,
     unit: str = "",
 ) -> io.BytesIO:
@@ -445,14 +454,16 @@ def _render_lb_card(
         H = 320 + n * 60 + 180
         H = max(H, 700)
 
-    bg = _make_glass_backdrop(user_avatar_bytes, W, H, dark_tint=0.74)
+    # Clean Black & White backdrop clearly visible through glass
+    bg = _make_glass_backdrop(user_avatar_bytes, W, H, dark_tint=0.32, blur_radius=28)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
     pad = 45
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(18, 19, 24, 180))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(210, 215, 230, 45), width=1)
-    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 70), width=1)
+    # Translucent glass fill so background shows through
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(0, 0, 0, 95))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(255, 255, 255, 55), width=1)
+    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 95), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
@@ -474,7 +485,6 @@ def _render_lb_card(
     name_x  = 165
     count_x = W - 85
 
-    # Platinum / Silver / Monochromatic highlights
     tints = {
         1: (255, 255, 255, 255),
         2: (200, 205, 215, 255),
@@ -507,15 +517,15 @@ def _render_lb_card(
 
     av_size = 40
     av_x, av_y = 85, footer_y + 20
-    if bot_avatar_bytes:
+    if caller_avatar_bytes:
         try:
-            av = _circle_avatar(bot_avatar_bytes, av_size)
+            av = _circle_avatar(caller_avatar_bytes, av_size)
             bg.paste(av, (av_x, av_y), av)
-            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 45), width=1)
+            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 55), width=1)
         except Exception:
             pass
     text_x = av_x + av_size + 14
-    footer_bold.draw(draw, (text_x, av_y - 2), bot_name, fill=(245, 248, 255, 240))
+    footer_bold.draw(draw, (text_x, av_y - 2), caller_name, fill=(245, 248, 255, 240))
     footer_font.draw(draw, (text_x, av_y + 22), user_rank_text, fill=(160, 165, 175, 180))
 
     pw = footer_font.getlength(page_str)
@@ -541,7 +551,6 @@ class LBPageView(discord.ui.View):
         self.page = 0
         self.total = max(1, (len(rows) - 1) // per_page + 1)
         self.user_avatar_bytes: bytes | None = None
-        self.bot_avatar_bytes: bytes | None = None
         self.message: discord.Message | None = None
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -549,13 +558,7 @@ class LBPageView(discord.ui.View):
 
     async def fetch_assets(self):
         async with aiohttp.ClientSession() as s:
-            tasks = [
-                self._fetch(s, self.ctx.author.display_avatar.url),
-                self._fetch(s, self.bot.user.display_avatar.url),
-            ]
-            results = await asyncio.gather(*tasks)
-            self.user_avatar_bytes = results[0]
-            self.bot_avatar_bytes = results[1]
+            self.user_avatar_bytes = await self._fetch(s, self.ctx.author.display_avatar.url)
 
     async def _fetch(self, session: aiohttp.ClientSession, url: str) -> bytes | None:
         try:
@@ -598,7 +601,7 @@ class LBPageView(discord.ui.View):
             self.subtitle,
             named,
             page_str,
-            self.bot_avatar_bytes,
+            self.user_avatar_bytes,
             self.ctx.author.display_name,
             self._user_rank_text(),
             self.unit,

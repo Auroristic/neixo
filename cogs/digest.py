@@ -54,28 +54,34 @@ def _truncate_text(font, text: str, max_width: int) -> str:
     return (text[:1] if text else "") + ell
 
 
-def _make_glass_backdrop(source_bytes: bytes | None, width: int, height: int, dark_tint: float = 0.72) -> Image.Image:
-    """Generate an ultra-fast, smooth frosted glass backdrop from an avatar or banner."""
+def _make_glass_backdrop(
+    source_bytes: bytes | None,
+    width: int,
+    height: int,
+    dark_tint: float = 0.32,
+    blur_radius: int = 28,
+) -> Image.Image:
+    """Generate an authentic Black & White frosted glass backdrop."""
+    from PIL import ImageOps, ImageEnhance
     if source_bytes:
         try:
             src = Image.open(io.BytesIO(source_bytes)).convert("RGB")
-            thumb_w = 180
-            thumb_h = max(1, int(180 * height / width))
-            thumb = src.resize((thumb_w, thumb_h), Image.Resampling.BILINEAR)
-            blurred = thumb.filter(ImageFilter.GaussianBlur(10))
-            bg = blurred.resize((width, height), Image.Resampling.BICUBIC)
+            src_bw = ImageOps.grayscale(src).convert("RGB")
+            src_bw = ImageEnhance.Contrast(src_bw).enhance(1.2)
+            bg = src_bw.resize((width, height), Image.Resampling.LANCZOS)
+            bg = bg.filter(ImageFilter.GaussianBlur(blur_radius))
         except Exception:
-            bg = Image.new("RGB", (width, height), (14, 15, 18))
+            bg = Image.new("RGB", (width, height), (16, 17, 20))
     else:
-        bg = Image.new("RGB", (width, height), (14, 15, 18))
+        bg = Image.new("RGB", (width, height), (16, 17, 20))
 
-    overlay = Image.new("RGB", (width, height), (12, 13, 16))
+    overlay = Image.new("RGB", (width, height), (10, 11, 14))
     bg = Image.blend(bg, overlay, dark_tint)
 
     grad = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(height):
-        alpha = int(75 * (y / height))
+        alpha = int(45 * (y / height))
         gd.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
     return bg
@@ -102,14 +108,14 @@ def _render_digest_card(
     W = 900
     H = max(1100, base_header_h + sec1_h + sec2_h + sec3_h + footer_h)
 
-    bg = _make_glass_backdrop(icon_bytes, W, H, dark_tint=0.72)
+    bg = _make_glass_backdrop(icon_bytes, W, H, dark_tint=0.32, blur_radius=28)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
     pad = 45
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(18, 19, 24, 180))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(210, 215, 230, 45), width=1)
-    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 70), width=1)
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(0, 0, 0, 95))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(255, 255, 255, 55), width=1)
+    cd.line([(pad + 30, pad + 1), (W - pad - 30, pad + 1)], fill=(255, 255, 255, 95), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
