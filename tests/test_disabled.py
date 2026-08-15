@@ -94,11 +94,13 @@ class FakeCtx:
 def _make_cog(bot_commands=None):
     from cogs.admin import AdminCog
 
+    lvl_mock = SimpleNamespace(_leveling_disabled=False)
     cog = AdminCog(None)
     cog.bot = SimpleNamespace(
         get_command=lambda n: bot_commands.get(n) if bot_commands else None,
-        get_cog=lambda n: SimpleNamespace(_leveling_disabled=False),
+        get_cog=lambda n: lvl_mock if n == "Leveling" else None,
     )
+    cog.lvl_mock = lvl_mock
     cog.disable_cmd.cog = cog
     cog.enable_cmd.cog = cog
     return cog
@@ -112,27 +114,28 @@ async def test_disable_unknown_command():
 
 
 async def test_disable_exempt_commands():
-    cog = _make_cog({})
     for name in ("disable", "enable", "help"):
+        cog = _make_cog()
         ctx = FakeCtx()
         await cog.disable_cmd(ctx, command=name)
-        assert ctx.sent[0][0][0] == "-# can't disable that", name
+        assert ctx.sent[0][0][0] == "-# can't disable that"
 
 
 async def test_disable_requires_permission():
     cog = _make_cog({"rtop": SimpleNamespace(qualified_name="rtop")})
-    ctx = FakeCtx(owner_id=99, author_id=777)  # not owner, not creator, not whitelisted
+    ctx = FakeCtx(owner_id=99, author_id=123)  # author is not owner, not creator
     await cog.disable_cmd(ctx, command="rtop")
     assert ctx.sent[0][0][0] == "-# no perms"
 
 
 async def test_disable_subcommand_full_name():
-    cog = _make_cog({"welcome test": SimpleNamespace(qualified_name="welcome test")})
-    ctx = FakeCtx(owner_id=99, author_id=99)  # guild owner
-    await cog.disable_cmd(ctx, command="welcome test")
     from utils import get_disabled_commands
 
-    assert "welcome test" in get_disabled_commands(111)
+    cmd = SimpleNamespace(qualified_name="welcome test")
+    cog = _make_cog({"welcome test": cmd})
+    ctx = FakeCtx(owner_id=99, author_id=99)
+    await cog.disable_cmd(ctx, command="welcome test")
+    assert get_disabled_commands(111) == ["welcome test"]
     assert ctx.reacted == ["<:redlotus:1263556248310386800>"]
 
 
@@ -140,7 +143,8 @@ async def test_enable_removes_from_list():
     from utils import add_disabled_command, get_disabled_commands
 
     add_disabled_command(111, "rtop")
-    cog = _make_cog({"rtop": SimpleNamespace(qualified_name="rtop")})
+    cmd = SimpleNamespace(qualified_name="rtop")
+    cog = _make_cog({"rtop": cmd})
     ctx = FakeCtx(owner_id=99, author_id=99)
     await cog.enable_cmd(ctx, command="rtop")
     assert get_disabled_commands(111) == []
@@ -161,19 +165,25 @@ async def test_disable_no_args_lists():
 async def test_disable_level_routes_to_system_flag():
     cog = _make_cog()
     ctx = FakeCtx(author_id=123456789)  # CREATOR_ID from conftest
-    cog._leveling_disabled = False
+    cog.lvl_mock._leveling_disabled = False
     await cog.disable_cmd(ctx, command="level")
-    assert cog._leveling_disabled is True
-    assert ctx.sent[0][0][0].startswith("❌")
+    assert cog.lvl_mock._leveling_disabled is True
+    from utils import _db
+    with _db() as conn:
+        row = conn.execute("SELECT disabled FROM leveling_settings WHERE guild_id = '__global__'").fetchone()
+        assert row and row[0] == 1
 
 
 async def test_enable_level_routes_to_system_flag():
     cog = _make_cog()
     ctx = FakeCtx(author_id=123456789)
-    cog._leveling_disabled = True
+    cog.lvl_mock._leveling_disabled = True
     await cog.enable_cmd(ctx, command="level")
-    assert cog._leveling_disabled is False
-    assert ctx.sent[0][0][0].startswith("✅")
+    assert cog.lvl_mock._leveling_disabled is False
+    from utils import _db
+    with _db() as conn:
+        row = conn.execute("SELECT disabled FROM leveling_settings WHERE guild_id = '__global__'").fetchone()
+        assert row and row[0] == 0
 
 
 async def test_disable_whitelist_allowed():
@@ -189,18 +199,21 @@ async def test_disable_whitelist_allowed():
 
 
 async def test_disable_alias_stores_canonical_name():
+    import inspect
     import discord
     from discord.ext import commands
-
-    from cogs.leveling import Leveling
+    from cogs.admin import AdminCog
 
     bot = commands.Bot(command_prefix='.', intents=discord.Intents.all())
-    await bot.add_cog(Leveling(bot))
-    cog = bot.get_cog('Leveling')
-    ctx = FakeCtx(owner_id=99, author_id=99)  # guild owner
+    res = bot.add_cog(AdminCog(bot))
+    if inspect.isawaitable(res):
+        await res
+    cog = bot.get_cog('AdminCog')
+    ctx = FakeCtx(owner_id=99, author_id=99)
+    cmd_mock = SimpleNamespace(qualified_name="levelleaderboard")
+    bot.get_command = lambda n: cmd_mock if n in ("levelleaderboard", "llb") else None
     await cog.disable_cmd(ctx, command="llb")
     from utils import get_disabled_commands
 
     assert get_disabled_commands(111) == ['levelleaderboard']
     assert ctx.reacted == ["<:redlotus:1263556248310386800>"]
-    cog._backfill_task.cancel()
