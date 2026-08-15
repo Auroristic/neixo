@@ -56,7 +56,7 @@ class TestNewFeatures(unittest.TestCase):
         from cogs.serverstats import _make_glass_backdrop, _render_server_card, _render_lb_card
         from cogs.leveling import _render_rank_card
         from cogs.digest import _render_digest_card
-        from cogs.quote import _render_card as _render_quote_card
+        from cogs.quote import _render_quote_card
         from cogs.welcome import _render_welcome_card
         from cogs.milestones import _render_milestone_card
         from cogs.fun import _render_ship_card
@@ -82,7 +82,8 @@ class TestNewFeatures(unittest.TestCase):
         self.assertTrue(dig_buf.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
 
         # 6. Quote card
-        quote_buf = _render_quote_card(raw_bytes, "Test quote content", "Author", "Today")
+        from cogs.quote import _render_quote_card
+        quote_buf = _render_quote_card(raw_bytes, "Author", "author_user", "Test quote content", "Server", "Today")
         self.assertTrue(quote_buf.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
 
         # 7. Welcome card

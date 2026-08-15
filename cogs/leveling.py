@@ -1,5 +1,7 @@
 import asyncio
+import io
 import logging
+from PIL import Image, ImageDraw, ImageFilter
 
 import discord
 from discord.ext import commands

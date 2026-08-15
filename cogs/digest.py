@@ -6,12 +6,14 @@ import asyncio
 import io
 import logging
 from datetime import datetime, timedelta, timezone
+from PIL import Image, ImageDraw, ImageFilter
 
 import aiohttp
 import discord
 from discord.ext import commands
 
 from utils import DATA_DIR, help_meta, is_owner_or_creator, load_json, save_json
+from cogs.serverstats import _load_font
 
 log = logging.getLogger(__name__)
 
@@ -51,34 +53,6 @@ def _truncate_text(font, text: str, max_width: int) -> str:
             return sub + ell
     return (text[:1] if text else "") + ell
 
-
-def _render_digest_card(
-    icon_bytes: bytes | None,
-    guild_name: str,
-    week_label: str,
-    msg_total: int,
-    vc_str: str,
-    bumps_total: int,
-    member_growth: int,
-    chatters: list[tuple[int, str, int]],
-    vc_top: list[tuple[int, str, int]],
-    bumper_top: list[tuple[int, str, int]],
-) -> io.BytesIO:
-    from PIL import Image, ImageDraw, ImageFilter
-    from cogs.serverstats import _load_font
-
-    title_font = _load_font(42, bold=True)
-    sub_font = _load_font(22, bold=False)
-    label_font = _load_font(24, bold=True)
-    row_font = _load_font(22, bold=False)
-    small_font = _load_font(18, bold=False)
-
-    # Dynamic height calculation to prevent any overflow or overlap
-    base_header_h = 320
-    sec1_h = (45 + (len(chatters) * 40) + 24) if chatters else 0
-    sec2_h = (45 + (len(vc_top) * 40) + 24) if vc_top else 0
-    sec3_h = (45 + (len(bumper_top) * 40) + 24) if bumper_top else 0
-    footer_h = 90
 
 def _make_glass_backdrop(source_bytes: bytes | None, width: int, height: int, dark_tint: float = 0.72) -> Image.Image:
     """Generate an ultra-fast, smooth frosted glass backdrop from an avatar or banner."""
