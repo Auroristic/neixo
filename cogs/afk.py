@@ -48,9 +48,17 @@ def _ago(iso: str) -> str:
 class AFK(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # guild_id -> {user_id -> {"reason": str, "since": str}}
+        self._afk: dict[str, dict] = {}
+
+    async def cog_load(self):
+        self._afk = _load_afk() or {}
+
+    def _save(self):
+        _save_afk(self._afk)
 
     def _afk_of(self, guild_id: int, user_id: int) -> dict | None:
-        return _load_afk().get(str(guild_id), {}).get(str(user_id))
+        return self._afk.get(str(guild_id), {}).get(str(user_id))
 
     @commands.command(name="afk")
     @help_meta(
@@ -72,14 +80,13 @@ class AFK(commands.Cog):
     async def afk(self, ctx: commands.Context, *, reason: str = None):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")
-        state = _load_afk()
         gid = str(ctx.guild.id)
-        state.setdefault(gid, {})
-        state[gid][str(ctx.author.id)] = {
+        self._afk.setdefault(gid, {})
+        self._afk[gid][str(ctx.author.id)] = {
             "reason": (reason.strip()[:200] if reason else ""),
             "since": datetime.now(timezone.utc).isoformat(),
         }
-        _save_afk(state)
+        self._save()
         embed = discord.Embed(
             description=(
                 f"you're afk now {ctx.author.mention}"
@@ -104,9 +111,8 @@ class AFK(commands.Cog):
         # returning: any non-command message clears the afk status
         entry = self._afk_of(message.guild.id, message.author.id)
         if entry:
-            state = _load_afk()
-            state.get(str(message.guild.id), {}).pop(str(message.author.id), None)
-            _save_afk(state)
+            self._afk.get(str(message.guild.id), {}).pop(str(message.author.id), None)
+            self._save()
             embed = discord.Embed(
                 description=(
                     f"welcome back {message.author.mention} — was "
@@ -122,8 +128,7 @@ class AFK(commands.Cog):
             return
 
         # someone mentioned an afk member
-        state = _load_afk()
-        guild_afk = state.get(str(message.guild.id), {})
+        guild_afk = self._afk.get(str(message.guild.id), {})
         if not guild_afk:
             return
         afk_mentioned = [
@@ -149,11 +154,10 @@ class AFK(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
-        state = _load_afk()
-        guild_afk = state.get(str(member.guild.id))
+        guild_afk = self._afk.get(str(member.guild.id))
         if guild_afk and str(member.id) in guild_afk:
             guild_afk.pop(str(member.id), None)
-            _save_afk(state)
+            self._save()
 
 
 async def setup(bot: commands.Bot):

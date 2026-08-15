@@ -525,6 +525,20 @@ async def list_cogs(ctx):
     await ctx.send("-# loaded cogs:\n" + "\n".join(f"-# • `{e}`" for e in loaded))
 
 
+@bot.command(name="syncslash")
+@_is_creator()
+async def sync_slash_cmd(ctx, guild_id: int = None):
+    """Sync application slash commands globally or to a specific guild for instant testing."""
+    if guild_id:
+        guild = discord.Object(id=guild_id)
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        await ctx.send(f"-# synced {len(synced)} slash commands to guild `{guild_id}`")
+    else:
+        synced = await bot.tree.sync()
+        await ctx.send(f"-# synced {len(synced)} slash commands globally")
+
+
 # ── Slash Commands ──────────────────────────────────────────────
 
 @bot.tree.command(name="confess", description="Submit an anonymous confession")
@@ -539,6 +553,78 @@ async def ping_slash(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
     embed = discord.Embed(description=f"{latency}ms", color=0xFF0000)
     await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="avatar", description="View full resolution avatar")
+@app_commands.describe(user="User to view avatar for (defaults to you)")
+async def avatar_slash(interaction: discord.Interaction, user: discord.User = None):
+    target = user or interaction.user
+    from cogs.userinfo import AvatarView
+    member = interaction.guild.get_member(target.id) if interaction.guild else None
+    view = AvatarView(interaction.user.id, member or target, interaction.guild_id or 0)
+    embed = view.build_embed()
+    await interaction.response.send_message(embed=embed, view=view if len(view.children) > 0 else None)
+
+
+@bot.tree.command(name="banner", description="View user profile banner")
+@app_commands.describe(user="User to view banner for (defaults to you)")
+async def banner_slash(interaction: discord.Interaction, user: discord.User = None):
+    target = user or interaction.user
+    try:
+        full_user = await bot.fetch_user(target.id)
+    except Exception:
+        full_user = target
+
+    from utils import get_embed_color
+    color = get_embed_color(interaction.guild_id or 0)
+
+    if full_user.banner:
+        banner_url = full_user.banner.url
+        png_url = full_user.banner.replace(format="png", size=4096).url
+        webp_url = full_user.banner.replace(format="webp", size=4096).url
+        links = f"[png]({png_url}) · [webp]({webp_url})"
+        if full_user.banner.is_animated():
+            gif_url = full_user.banner.replace(format="gif", size=4096).url
+            links += f" · [gif]({gif_url})"
+
+        embed = discord.Embed(
+            description=f"-# {full_user.name}'s banner · {links}",
+            color=color,
+        )
+        embed.set_image(url=banner_url)
+        await interaction.response.send_message(embed=embed)
+    elif getattr(full_user, "accent_color", None):
+        hex_c = f"#{full_user.accent_color.value:06x}"
+        embed = discord.Embed(
+            description=f"-# {full_user.name} has no banner (accent: `{hex_c}`)",
+            color=full_user.accent_color.value,
+        )
+        await interaction.response.send_message(embed=embed)
+    else:
+        await interaction.response.send_message(f"-# {full_user.name} has no banner", ephemeral=True)
+
+
+@bot.tree.command(name="serverinfo", description="View server stats and info card")
+async def serverinfo_slash(interaction: discord.Interaction):
+    if not interaction.guild:
+        return await interaction.response.send_message("-# this command only works in servers", ephemeral=True)
+    await interaction.response.defer()
+    cog = bot.get_cog("ServerStats")
+    if cog and hasattr(cog, "serverinfo"):
+        temp = await interaction.channel.send(".serverinfo")
+        try:
+            temp.author = interaction.user
+            ctx = await bot.get_context(temp)
+            await bot.invoke(ctx)
+        finally:
+            try:
+                await temp.delete()
+            except Exception:
+                pass
+            await interaction.followup.send("-# done", ephemeral=True)
+    else:
+        await interaction.followup.send("-# serverstats not loaded", ephemeral=True)
+
 
 
 @bot.tree.command(name="echo", description="Send a message as the bot")

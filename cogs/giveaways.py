@@ -94,7 +94,7 @@ class Giveaways(commands.Cog):
             entry_reaction = next((r for r in message.reactions if str(r.emoji) == ENTRY_EMOJI), None)
             reactors = []
             if entry_reaction:
-                reactors = [u async for u in entry_reaction.users() if not u.bot]
+                reactors = [u async for u in entry_reaction.users(limit=None) if not u.bot]
         except discord.HTTPException:
             reactors = []
         if reactors:
@@ -132,6 +132,9 @@ class Giveaways(commands.Cog):
     async def giveaway(self, ctx: commands.Context, duration: str = None, *, prize: str = None):
         if ctx.guild is None:
             return await ctx.send("-# this command only works in servers.")
+        perms = getattr(ctx.author, "guild_permissions", None)
+        if not (perms and (perms.administrator or perms.manage_guild)) and not is_owner_or_creator(ctx):
+            return await ctx.send("-# no perms")
         if not duration or not prize:
             return await ctx.send("-# usage: `.giveaway <duration> <prize>` — e.g. `.giveaway 1h nitro`")
         secs = _parse_duration(duration)
@@ -209,6 +212,63 @@ class Giveaways(commands.Cog):
         except discord.HTTPException:
             pass
         await ctx.send("-# giveaway cancelled")
+
+    @commands.command(name="reroll")
+    @help_meta(
+        usage="`.reroll [message_id]`",
+        desc="Picks a new winner for an ended giveaway in the current channel.",
+        section="Utility",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".reroll", ".reroll 123456789012345678"],
+        params=[
+            {"name": "message_id", "type": "int", "required": False, "desc": "Message ID of the ended giveaway. Defaults to latest in channel."},
+        ],
+        note="Requires Administrator or Manage Server permission.",
+    )
+    async def reroll(self, ctx: commands.Context, message_id: int = None):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        perms = getattr(ctx.author, "guild_permissions", None)
+        if not (perms and (perms.administrator or perms.manage_guild)) and not is_owner_or_creator(ctx):
+            return await ctx.send("-# no perms")
+
+        state = _load_giveaways()
+        gs = state.get(str(ctx.guild.id), {})
+
+        if message_id:
+            g = gs.get(str(message_id))
+            mid = message_id
+            if not g:
+                return await ctx.send("-# giveaway not found")
+        else:
+            ended_in_ch = [
+                (int(m), g) for m, g in gs.items()
+                if g.get("ended") and str(g.get("channel_id")) == str(ctx.channel.id)
+            ]
+            if not ended_in_ch:
+                return await ctx.send("-# no ended giveaways in this channel")
+            mid, g = max(ended_in_ch, key=lambda x: x[1].get("end_iso", ""))
+
+        channel = ctx.guild.get_channel(int(g["channel_id"]))
+        if channel is None:
+            return await ctx.send("-# giveaway channel not found")
+
+        try:
+            message = await channel.fetch_message(mid)
+        except discord.HTTPException:
+            return await ctx.send("-# could not fetch giveaway message")
+
+        entry_reaction = next((r for r in message.reactions if str(r.emoji) == ENTRY_EMOJI), None)
+        reactors = []
+        if entry_reaction:
+            reactors = [u async for u in entry_reaction.users(limit=None) if not u.bot]
+
+        if not reactors:
+            return await ctx.send(f"-# no eligible entries for **{g.get('prize', 'giveaway')}**")
+
+        winner = random.choice(reactors)
+        await channel.send(f"🎉 new winner: {winner.mention} won **{g.get('prize', 'giveaway')}**! (giveaway by <@{g.get('host_id')}>)")
 
 
 def _parse_duration(s: str) -> int | None:

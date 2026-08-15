@@ -91,6 +91,13 @@ class AutoResponse(commands.Cog):
         self.bot = bot
         # (guild_id, trigger) -> last reply timestamp
         self._cooldowns: dict[tuple[int, str], float] = {}
+        # trigger -> compiled regex pattern
+        self._patterns: dict[str, re.Pattern] = {}
+
+    def _get_pattern(self, trigger: str) -> re.Pattern:
+        if trigger not in self._patterns:
+            self._patterns[trigger] = re.compile(rf"\b{re.escape(trigger)}\b", re.IGNORECASE)
+        return self._patterns[trigger]
 
     async def _admin(self, ctx) -> bool:
         if ctx.guild is None:
@@ -148,7 +155,9 @@ class AutoResponse(commands.Cog):
             return await ctx.send("-# max 15 triggers per server")
         state.setdefault(gid, {})[trigger] = response
         _save_auto(state)
-        await ctx.message.add_reaction("✓")
+        # compile and cache trigger pattern
+        self._get_pattern(trigger)
+        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @auto.command(name="remove")
     @help_meta(
@@ -170,7 +179,7 @@ class AutoResponse(commands.Cog):
         gid = str(ctx.guild.id)
         if state.get(gid, {}).pop(trigger.strip().lower(), None):
             _save_auto(state)
-            await ctx.message.add_reaction("✓")
+            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
         else:
             await ctx.send(f"-# no trigger named `{trigger.strip().lower()}`")
 
@@ -216,7 +225,7 @@ class AutoResponse(commands.Cog):
         gid = str(ctx.guild.id)
         if state.pop(gid, None):
             _save_auto(state)
-        await ctx.message.add_reaction("✓")
+        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -232,10 +241,10 @@ class AutoResponse(commands.Cog):
         triggers = state.get(str(message.guild.id), {})
         if not triggers:
             return
-        low = content.lower()
         now = time.time()
         for trigger, raw_response in triggers.items():
-            if trigger not in low:
+            pat = self._get_pattern(trigger)
+            if not pat.search(content):
                 continue
             key = (message.guild.id, trigger)
             if now - self._cooldowns.get(key, 0.0) < _COOLDOWN_SECONDS:

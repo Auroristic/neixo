@@ -1172,20 +1172,21 @@ class ServerStatsCog(commands.Cog):
         await ctx.send(f"\u2b50 Starboard threshold set to {threshold}")
 
     # ── Commands ───────────────────────────────────────────────────────────
-    @commands.command(name="seoulities")
+    @commands.command(name="serverinfo", aliases=["server", "si", "guildinfo", "seoulities"])
     @commands.cooldown(1, 15, commands.BucketType.channel)
     @help_meta(
-        usage="`.seoulities`",
+        usage="`.serverinfo`",
         desc="Shows a server info card with member stats, top emoji, top reactor, top chatter, and top VC user.",
         section="Server Stats",
-        examples=[".seoulities"],
+        perm_tier="public",
+        examples=[".serverinfo", ".si", ".server"],
         params=[],
         note="Cooldown: 15s per channel. Generates an info card image.",
     )
-    async def seoulities(self, ctx: commands.Context):
+    async def serverinfo(self, ctx: commands.Context):
         guild = ctx.guild
         if not guild:
-            return await ctx.send("This command only works in a server.")
+            return await ctx.send("-# this command only works in a server.")
 
         async with ctx.typing():
             icon_b = None
@@ -1241,8 +1242,76 @@ class ServerStatsCog(commands.Cog):
                 top_chatter_val,
                 top_vc_val,
             )
-        file = discord.File(fp=buf, filename="seoulities.png")
+        file = discord.File(fp=buf, filename=f"serverinfo_{guild.id}.png")
         await ctx.send(file=file)
+
+    @commands.command(name="servericon", aliases=["sicon", "guildicon", "serveravatar"])
+    @commands.cooldown(2, 5, commands.BucketType.user)
+    @help_meta(
+        usage="`.servericon`",
+        desc="Shows the server's icon in full resolution with download links.",
+        section="Server Stats",
+        perm_tier="public",
+        examples=[".servericon", ".sicon"],
+        params=[],
+        note="Supports animated GIFs, PNG, and WebP formats.",
+    )
+    async def servericon(self, ctx: commands.Context):
+        guild = ctx.guild
+        if not guild:
+            return await ctx.send("-# this command only works in servers.")
+        if not guild.icon:
+            return await ctx.send("-# this server has no icon.")
+
+        icon_url = guild.icon.url
+        png_url = guild.icon.replace(format="png", size=4096).url
+        webp_url = guild.icon.replace(format="webp", size=4096).url
+        links = f"[png]({png_url}) · [webp]({webp_url})"
+        if guild.icon.is_animated():
+            gif_url = guild.icon.replace(format="gif", size=4096).url
+            links += f" · [gif]({gif_url})"
+
+        from utils import get_embed_color
+        embed = discord.Embed(
+            description=f"-# {guild.name}'s icon · {links}",
+            color=get_embed_color(guild.id),
+        )
+        embed.set_image(url=icon_url)
+        await ctx.send(embed=embed)
+
+    @commands.command(name="serverbanner", aliases=["sbanner", "guildbanner"])
+    @commands.cooldown(2, 5, commands.BucketType.user)
+    @help_meta(
+        usage="`.serverbanner`",
+        desc="Shows the server's banner in full resolution with download links.",
+        section="Server Stats",
+        perm_tier="public",
+        examples=[".serverbanner", ".sbanner"],
+        params=[],
+        note="Supports animated GIFs, PNG, and WebP formats.",
+    )
+    async def serverbanner(self, ctx: commands.Context):
+        guild = ctx.guild
+        if not guild:
+            return await ctx.send("-# this command only works in servers.")
+        if not guild.banner:
+            return await ctx.send("-# this server has no banner.")
+
+        banner_url = guild.banner.url
+        png_url = guild.banner.replace(format="png", size=4096).url
+        webp_url = guild.banner.replace(format="webp", size=4096).url
+        links = f"[png]({png_url}) · [webp]({webp_url})"
+        if guild.banner.is_animated():
+            gif_url = guild.banner.replace(format="gif", size=4096).url
+            links += f" · [gif]({gif_url})"
+
+        from utils import get_embed_color
+        embed = discord.Embed(
+            description=f"-# {guild.name}'s banner · {links}",
+            color=get_embed_color(guild.id),
+        )
+        embed.set_image(url=banner_url)
+        await ctx.send(embed=embed)
 
     @commands.group(name="leaderboard", aliases=["lb"])
     @commands.cooldown(1, 10, commands.BucketType.channel)
