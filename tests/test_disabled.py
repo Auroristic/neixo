@@ -208,7 +208,7 @@ async def test_disable_alias_stores_canonical_name():
     res = bot.add_cog(AdminCog(bot))
     if inspect.isawaitable(res):
         await res
-    cog = bot.get_cog('AdminCog')
+    cog = bot.get_cog('Admin')
     ctx = FakeCtx(owner_id=99, author_id=99)
     cmd_mock = SimpleNamespace(qualified_name="levelleaderboard")
     bot.get_command = lambda n: cmd_mock if n in ("levelleaderboard", "llb") else None
