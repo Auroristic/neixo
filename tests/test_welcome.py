@@ -7,10 +7,13 @@ from discord.ext import commands
 
 @pytest.mark.asyncio
 async def test_welcome_test_registered_with_cooldown():
+    import inspect
     import cogs.welcome
 
     bot = commands.Bot(command_prefix='.', intents=discord.Intents.all())
-    await bot.add_cog(cogs.welcome.Welcome(bot))
+    res = bot.add_cog(cogs.welcome.Welcome(bot))
+    if inspect.isawaitable(res):
+        await res
     cmd = bot.get_command('welcome test')
     assert cmd is not None
     # the @commands.cooldown decorator on the plain function becomes
@@ -20,11 +23,14 @@ async def test_welcome_test_registered_with_cooldown():
 
 @pytest.mark.asyncio
 async def test_welcome_test_help_meta_present():
+    import inspect
     import cogs.welcome
     from utils import get_help_meta
 
     bot = commands.Bot(command_prefix='.', intents=discord.Intents.all())
-    await bot.add_cog(cogs.welcome.Welcome(bot))
+    res = bot.add_cog(cogs.welcome.Welcome(bot))
+    if inspect.isawaitable(res):
+        await res
     meta = get_help_meta(bot.get_command('welcome test'))
     assert meta['section'] in ('General', 'Server Management')
     assert '.welcome test' in meta['usage']

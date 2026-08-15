@@ -55,8 +55,11 @@ def test_digest_now_registered():
     import cogs.digest
 
     async def _main():
+        import inspect
         bot = commands.Bot(command_prefix='.', intents=discord.Intents.all())
-        await bot.add_cog(cogs.digest.Digest(bot))
+        res = bot.add_cog(cogs.digest.Digest(bot))
+        if inspect.isawaitable(res):
+            await res
         assert bot.get_command('digest now') is not None
         bot.get_cog('Digest').task.cancel()
 

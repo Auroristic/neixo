@@ -92,13 +92,13 @@ class FakeCtx:
 
 
 def _make_cog(bot_commands=None):
-    from cogs.leveling import Leveling
+    from cogs.admin import AdminCog
 
-    cog = Leveling(None)
-    cog.bot = SimpleNamespace(get_command=lambda n: bot_commands.get(n) if bot_commands else None)
-    # Cog.__new__ binds per-instance Command copies (discord.py 2.7) that are
-    # not attached to a cog; bind them as add_cog would, so
-    # cog.disable_cmd(ctx, ...) invokes the callback with the cog instance.
+    cog = AdminCog(None)
+    cog.bot = SimpleNamespace(
+        get_command=lambda n: bot_commands.get(n) if bot_commands else None,
+        get_cog=lambda n: SimpleNamespace(_leveling_disabled=False),
+    )
     cog.disable_cmd.cog = cog
     cog.enable_cmd.cog = cog
     return cog
