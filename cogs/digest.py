@@ -113,6 +113,12 @@ def _render_digest_card(
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
+    title_font = _load_font(42, bold=True)
+    sub_font = _load_font(22, bold=False)
+    label_font = _load_font(24, bold=True)
+    row_font = _load_font(22, bold=False)
+    small_font = _load_font(18, bold=False)
+
     title_font.draw(draw, (85, 70), "weekly digest", fill=(255, 255, 255, 255))
     sub_font.draw(draw, (85, 130), f"{guild_name} · {week_label}", fill=(180, 185, 195, 200))
     draw.line([(85, 185), (W - 85, 185)], fill=(255, 255, 255, 35), width=1)
