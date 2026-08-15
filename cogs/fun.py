@@ -507,6 +507,7 @@ def _render_ship_card(
     percentage: int,
     comment: str,
 ) -> io.BytesIO:
+    from PIL import Image, ImageDraw
     from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 
     W, H = 840, 360
