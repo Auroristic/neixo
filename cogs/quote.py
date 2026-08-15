@@ -61,7 +61,7 @@ def _render_quote_card(
     curr = []
     for w in words:
         test = " ".join(curr + [w])
-        if f_quote.measure(test) <= max_text_width:
+        if f_quote.getlength(test) <= max_text_width:
             curr.append(w)
         else:
             if curr:

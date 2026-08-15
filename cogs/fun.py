@@ -576,16 +576,16 @@ def _render_ship_card(
             pass
 
     # Names under avatars
-    w1 = f_name.measure(name1[:15])
-    f_name.draw(draw, (av1_x + (av_size - w1) // 2, av1_y + av_size + 15), name1[:15], fill=(255, 255, 255, 220))
+    w1 = f_name.getlength(name1[:15])
+    f_name.draw(draw, (av1_x + (av_size - w1) // 2, av1_y + av_size + 15), name1[:15], fill=(240, 245, 255, 230))
 
-    w2 = f_name.measure(name2[:15])
-    f_name.draw(draw, (av2_x + (av_size - w2) // 2, av2_y + av_size + 15), name2[:15], fill=(255, 255, 255, 220))
+    w2 = f_name.getlength(name2[:15])
+    f_name.draw(draw, (av2_x + (av_size - w2) // 2, av2_y + av_size + 15), name2[:15], fill=(240, 245, 255, 230))
 
     # Center percentage
     pct_text = f"{percentage}%"
-    pct_w = f_title.measure(pct_text)
-    f_title.draw(draw, ((W - pct_w) // 2, pad_y + 55), pct_text, fill=(255, 120, 160, 255))
+    pct_w = f_title.getlength(pct_text)
+    f_title.draw(draw, ((W - pct_w) // 2, pad_y + 55), pct_text, fill=(255, 255, 255, 255))
 
     # Progress Bar in Center Bottom
     bar_w, bar_h = 320, 14
@@ -594,11 +594,11 @@ def _render_ship_card(
     draw.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=7, fill=(255, 255, 255, 25))
     fill_w = int(bar_w * (percentage / 100))
     if fill_w > 0:
-        draw.rounded_rectangle([bar_x, bar_y, bar_x + fill_w, bar_y + bar_h], radius=7, fill=(255, 105, 155, 230))
+        draw.rounded_rectangle([bar_x, bar_y, bar_x + fill_w, bar_y + bar_h], radius=7, fill=(225, 230, 245, 220))
 
     # Comment text at bottom
-    com_w = f_sub.measure(comment)
-    f_sub.draw(draw, ((W - com_w) // 2, H - pad_y - 45), comment, fill=(255, 255, 255, 160))
+    com_w = f_sub.getlength(comment)
+    f_sub.draw(draw, ((W - com_w) // 2, H - pad_y - 45), comment, fill=(180, 185, 195, 200))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=95)
