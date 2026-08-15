@@ -97,15 +97,15 @@ def _render_user_card(
         role_lines = ["none"]
 
     # Calculate dynamic height
-    header_h = 240
-    membership_rows = 6 * 40 + 20
-    stats_rows = 4 * 40 + 20
-    roles_h = max(40, len(role_lines) * 32 + 10)
-    act_h = 44 if activity_str else 0
-    footer_h = 85
+    header_h = 245
+    membership_rows = 6 * 40 + 28
+    stats_rows = 4 * 40 + 28
+    roles_h = len(role_lines) * 34
+    act_h = 46 if activity_str else 0
+    footer_spacing = 18 + 22 + 65
 
-    H = header_h + membership_rows + stats_rows + roles_h + act_h + footer_h
-    H = max(740, H)
+    H = header_h + membership_rows + stats_rows + roles_h + act_h + footer_spacing
+    H = max(750, H)
 
     bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.28, blur_radius=14)
 
@@ -137,14 +137,14 @@ def _render_user_card(
     f["sub"].draw(draw, (x0 + 22, 110), status, fill=(200, 205, 215, 200))
     f["sub"].draw(draw, (x0, 144), f"@{user.name} · {user.id}", fill=(160, 165, 175, 180))
 
-    # Badges pill tags
+    # Badges dark pill tags with silver outline for high contrast
     if badges:
         bx = x0
         by = 176
         for b in badges[:4]:
-            bw = f["badge"].getlength(b) + 16
-            draw.rounded_rectangle([bx, by, bx + bw, by + 24], radius=6, fill=(255, 255, 255, 25), outline=(255, 255, 255, 50), width=1)
-            f["badge"].draw(draw, (bx + 8, by + 4), b, fill=(235, 240, 250, 240))
+            bw = f["badge"].getlength(b) + 18
+            draw.rounded_rectangle([bx, by, bx + bw, by + 25], radius=6, fill=(0, 0, 0, 130), outline=(255, 255, 255, 65), width=1)
+            f["badge"].draw(draw, (bx + 9, by + 4), b, fill=(240, 245, 255, 240))
             bx += bw + 8
 
     cur_y = 225
@@ -190,20 +190,22 @@ def _render_user_card(
     f["label"].draw(draw, (75, cur_y), f"roles ({len(roles_list)})", fill=(160, 165, 175, 180))
     for r_line in role_lines:
         f["value"].draw(draw, (250, cur_y), r_line, fill=(235, 240, 248, 230))
-        cur_y += 32
+        cur_y += 34
 
     if activity_str:
         cur_y += 8
         f["label"].draw(draw, (75, cur_y), "activity", fill=(160, 165, 175, 180))
         f["value"].draw(draw, (250, cur_y), activity_str, fill=(200, 205, 220, 220))
-        cur_y += 36
+        cur_y += 38
 
-    footer_y = H - 85
-    draw.line([(75, footer_y), (W - 75, footer_y)], fill=(255, 255, 255, 35), width=1)
-    f["sub"].draw(draw, (75, footer_y + 22), f"// {server_name}", fill=(160, 165, 175, 180))
+    cur_y += 20
+    footer_divider_y = cur_y
+    draw.line([(75, footer_divider_y), (W - 75, footer_divider_y)], fill=(255, 255, 255, 35), width=1)
+    footer_text_y = footer_divider_y + 22
+    f["sub"].draw(draw, (75, footer_text_y), f"// {server_name}", fill=(160, 165, 175, 180))
     acc_str = f"account: {user.name}"
     aw = f["sub"].getlength(acc_str)
-    f["sub"].draw(draw, (W - 75 - aw, footer_y + 22), acc_str, fill=(160, 165, 175, 180))
+    f["sub"].draw(draw, (W - 75 - aw, footer_text_y), acc_str, fill=(160, 165, 175, 180))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
