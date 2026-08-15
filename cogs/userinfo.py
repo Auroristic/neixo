@@ -37,7 +37,7 @@ def _load_fonts():
         "label": _load_font(20, bold=True),
         "value": _load_font(20, bold=False),
         "small": _load_font(18, bold=False),
-        "badge": _load_font(16, bold=True),
+        "badge": _load_font(15, bold=True),
     }
 
 
@@ -57,8 +57,7 @@ def _render_user_card(
     nick: str | None,
     top_role_name: str,
     top_role_color: str,
-    role_count: int,
-    roles_preview: str,
+    roles_list: list[str],
     boost_str: str,
     msg_count: int,
     vc_str: str,
@@ -72,23 +71,56 @@ def _render_user_card(
     from PIL import Image, ImageDraw
     from cogs.serverstats import _make_glass_backdrop
 
-    W, H = 900, 1150
+    W = 900
+    f = _load_fonts()
+
+    # Calculate roles wrapping
+    roles_text = " · ".join(roles_list) if roles_list else "none"
+    max_val_w = W - 75 - 250 - 30
+    words = roles_text.split(" ")
+    role_lines = []
+    curr = []
+    for w in words:
+        test = " ".join(curr + [w])
+        if f["value"].getlength(test) <= max_val_w:
+            curr.append(w)
+        else:
+            if curr:
+                role_lines.append(" ".join(curr))
+                curr = [w]
+            else:
+                role_lines.append(w)
+                curr = []
+    if curr:
+        role_lines.append(" ".join(curr))
+    if not role_lines:
+        role_lines = ["none"]
+
+    # Calculate dynamic height
+    header_h = 240
+    membership_rows = 6 * 40 + 20
+    stats_rows = 4 * 40 + 20
+    roles_h = max(40, len(role_lines) * 32 + 10)
+    act_h = 44 if activity_str else 0
+    footer_h = 85
+
+    H = header_h + membership_rows + stats_rows + roles_h + act_h + footer_h
+    H = max(740, H)
+
     bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.28, blur_radius=14)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
-    pad = 40
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, fill=(0, 0, 0, 95))
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=32, outline=(255, 255, 255, 55), width=1)
+    pad = 35
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, fill=(0, 0, 0, 95))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=28, outline=(255, 255, 255, 55), width=1)
     cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 95), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
-    f = _load_fonts()
-
     # ── Header ──
-    av_size = 145
-    av_x, av_y = 80, 68
+    av_size = 135
+    av_x, av_y = 75, 65
     if avatar_bytes:
         try:
             av = _circle(avatar_bytes, av_size)
@@ -97,102 +129,81 @@ def _render_user_card(
         except Exception:
             pass
 
-    x0 = av_x + av_size + 30
-    f["title"].draw(draw, (x0, 72), user.display_name, fill=(255, 255, 255, 255))
+    x0 = av_x + av_size + 28
+    f["title"].draw(draw, (x0, 68), user.display_name, fill=(255, 255, 255, 255))
 
     status, sc = _STATUS.get(getattr(member, "status", None), _STATUS[discord.Status.offline])
-    draw.ellipse([x0, 122, x0 + 14, 136], fill=sc)
-    f["sub"].draw(draw, (x0 + 24, 117), status, fill=(200, 205, 215, 200))
-    f["sub"].draw(draw, (x0, 152), f"@{user.name} · {user.id}", fill=(160, 165, 175, 180))
+    draw.ellipse([x0, 115, x0 + 13, 128], fill=sc)
+    f["sub"].draw(draw, (x0 + 22, 110), status, fill=(200, 205, 215, 200))
+    f["sub"].draw(draw, (x0, 144), f"@{user.name} · {user.id}", fill=(160, 165, 175, 180))
 
     # Badges pill tags
     if badges:
         bx = x0
-        by = 188
+        by = 176
         for b in badges[:4]:
             bw = f["badge"].getlength(b) + 16
-            draw.rounded_rectangle([bx, by, bx + bw, by + 24], radius=6, fill=(255, 255, 255, 20), outline=(255, 255, 255, 40), width=1)
-            f["badge"].draw(draw, (bx + 8, by + 4), b, fill=(235, 240, 250, 230))
+            draw.rounded_rectangle([bx, by, bx + bw, by + 24], radius=6, fill=(255, 255, 255, 25), outline=(255, 255, 255, 50), width=1)
+            f["badge"].draw(draw, (bx + 8, by + 4), b, fill=(235, 240, 250, 240))
             bx += bw + 8
 
-    div1_y = 238
-    draw.line([(80, div1_y), (W - 80, div1_y)], fill=(255, 255, 255, 35), width=1)
+    cur_y = 225
+    draw.line([(75, cur_y), (W - 75, cur_y)], fill=(255, 255, 255, 35), width=1)
+    cur_y += 20
 
-    # ── Section 1: Membership & Dates ──
-    def _field(col_x, val_x, max_w, y, label, val):
-        f["label"].draw(draw, (col_x, y), label, fill=(160, 165, 175, 180))
+    def _draw_field(label: str, val: str):
+        nonlocal cur_y
+        f["label"].draw(draw, (75, cur_y), label, fill=(160, 165, 175, 180))
         val_disp = val
-        if f["value"].getlength(val_disp) > max_w:
-            while val_disp and f["value"].getlength(val_disp + "…") > max_w:
+        if f["value"].getlength(val_disp) > max_val_w:
+            while val_disp and f["value"].getlength(val_disp + "…") > max_val_w:
                 val_disp = val_disp[:-1]
             val_disp = (val_disp + "…") if val_disp else "…"
-        f["value"].draw(draw, (val_x, y), val_disp, fill=(240, 244, 252, 235))
+        f["value"].draw(draw, (250, cur_y), val_disp, fill=(240, 244, 252, 235))
+        cur_y += 40
 
-    # 2-column layout
-    c1_lbl = 80
-    c1_val = 265
-    c1_max = 185
+    # ── Section 1: Membership & Dates ──
+    _draw_field("created", created_str)
+    _draw_field("joined", joined_str)
+    _draw_field("member #", f"#{member_number:,} of {total_members:,}" if member_number and total_members else "-")
+    _draw_field("nickname", nick or "-")
+    _draw_field("highest role", top_role_name)
+    _draw_field("boosting", boost_str)
 
-    c2_lbl = 490
-    c2_val = 665
-    c2_max = 160
+    cur_y += 8
+    draw.line([(75, cur_y), (W - 75, cur_y)], fill=(255, 255, 255, 35), width=1)
+    cur_y += 20
 
-    y_s1 = 265
-    row_gap = 50
-
-    _field(c1_lbl, c1_val, c1_max, y_s1, "created", created_str)
-    _field(c2_lbl, c2_val, c2_max, y_s1, "joined", joined_str)
-
-    _field(c1_lbl, c1_val, c1_max, y_s1 + row_gap, "member #", f"#{member_number:,} of {total_members:,}" if member_number and total_members else "-")
-    _field(c2_lbl, c2_val, c2_max, y_s1 + row_gap, "nickname", nick or "-")
-
-    _field(c1_lbl, c1_val, c1_max, y_s1 + row_gap * 2, "highest role", f"{top_role_name}")
-    _field(c2_lbl, c2_val, c2_max, y_s1 + row_gap * 2, "boosting", boost_str)
-
-    div2_y = y_s1 + row_gap * 3 + 20
-    draw.line([(80, div2_y), (W - 80, div2_y)], fill=(255, 255, 255, 35), width=1)
-
-    # ── Section 2: Activity & Engagement ──
-    y_s2 = div2_y + 25
-    _field(c1_lbl, c1_val, c1_max, y_s2, "messages", f"{msg_count:,} msgs" if msg_count else "0 msgs")
-    vc_display = f"🔊 #{current_vc}" if current_vc else (vc_str if vc_str != "0m" else "0m")
-    _field(c2_lbl, c2_val, c2_max, y_s2, "voice time", vc_display)
-
+    # ── Section 2: Stats & Engagement ──
+    _draw_field("messages", f"{msg_count:,} msgs" if msg_count else "0 msgs")
+    vc_display = f"🔊 #{current_vc} ({vc_str})" if current_vc else (f"{vc_str} in voice" if vc_str != "0m" else "0m")
+    _draw_field("voice time", vc_display)
     perms_str = ", ".join(key_perms) if key_perms else "Regular Member"
-    _field(c1_lbl, c1_val, c1_max, y_s2 + row_gap, "permissions", perms_str)
-    _field(c2_lbl, c2_val, c2_max, y_s2 + row_gap, "warnings", f"{warn_count} warning{'s' if warn_count != 1 else ''}")
+    _draw_field("permissions", perms_str)
+    _draw_field("warnings", f"{warn_count} warning{'s' if warn_count != 1 else ''}")
 
-    div3_y = y_s2 + row_gap * 2 + 20
-    draw.line([(80, div3_y), (W - 80, div3_y)], fill=(255, 255, 255, 35), width=1)
+    cur_y += 8
+    draw.line([(75, cur_y), (W - 75, cur_y)], fill=(255, 255, 255, 35), width=1)
+    cur_y += 20
 
-    # ── Section 3: Roles & Custom Status ──
-    y_s3 = div3_y + 25
-    f["label"].draw(draw, (80, y_s3), f"roles ({role_count})", fill=(160, 165, 175, 180))
-    roles_disp = roles_preview if roles_preview else "none"
-    max_rw = W - 80 - 265
-    if f["value"].getlength(roles_disp) > max_rw:
-        while roles_disp and f["value"].getlength(roles_disp + "…") > max_rw:
-            roles_disp = roles_disp[:-1]
-        roles_disp = (roles_disp + "…") if roles_disp else "…"
-    f["value"].draw(draw, (265, y_s3), roles_disp, fill=(235, 240, 248, 230))
+    # ── Section 3: Roles & Current Activity ──
+    f["label"].draw(draw, (75, cur_y), f"roles ({len(roles_list)})", fill=(160, 165, 175, 180))
+    for r_line in role_lines:
+        f["value"].draw(draw, (250, cur_y), r_line, fill=(235, 240, 248, 230))
+        cur_y += 32
 
     if activity_str:
-        y_s3 += 48
-        f["label"].draw(draw, (80, y_s3), "activity", fill=(160, 165, 175, 180))
-        act_disp = activity_str
-        if f["value"].getlength(act_disp) > max_rw:
-            while act_disp and f["value"].getlength(act_disp + "…") > max_rw:
-                act_disp = act_disp[:-1]
-            act_disp = (act_disp + "…") if act_disp else "…"
-        f["value"].draw(draw, (265, y_s3), act_disp, fill=(200, 205, 220, 220))
+        cur_y += 8
+        f["label"].draw(draw, (75, cur_y), "activity", fill=(160, 165, 175, 180))
+        f["value"].draw(draw, (250, cur_y), activity_str, fill=(200, 205, 220, 220))
+        cur_y += 36
 
-    # ── Footer ──
-    footer_y = H - 100
-    draw.line([(80, footer_y), (W - 80, footer_y)], fill=(255, 255, 255, 35), width=1)
-    f["sub"].draw(draw, (80, footer_y + 22), f"// {server_name}", fill=(160, 165, 175, 180))
-    id_str = f"account: {user.name}"
-    id_w = f["sub"].getlength(id_str)
-    f["sub"].draw(draw, (W - 80 - id_w, footer_y + 22), id_str, fill=(160, 165, 175, 180))
+    footer_y = H - 85
+    draw.line([(75, footer_y), (W - 75, footer_y)], fill=(255, 255, 255, 35), width=1)
+    f["sub"].draw(draw, (75, footer_y + 22), f"// {server_name}", fill=(160, 165, 175, 180))
+    acc_str = f"account: {user.name}"
+    aw = f["sub"].getlength(acc_str)
+    f["sub"].draw(draw, (W - 75 - aw, footer_y + 22), acc_str, fill=(160, 165, 175, 180))
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG", quality=92)
@@ -261,21 +272,17 @@ class UserInfo(commands.Cog):
         nick = member.nick if member else None
         top_role_name = "none"
         top_role_color = "#FFFFFF"
-        role_count = 0
-        roles_preview = ""
+        roles_list = []
         boost_str = "no"
 
         if member:
             roles = [r for r in member.roles if r != member.guild.default_role]
-            role_count = len(roles)
             if roles:
                 roles_sorted = sorted(roles, key=lambda r: r.position, reverse=True)
                 top_role = roles_sorted[0]
                 top_role_name = top_role.name
                 top_role_color = f"#{top_role.color.value:06x}" if top_role.color.value else "#FFFFFF"
-                roles_preview = ", ".join(r.name for r in roles_sorted[:6])
-                if len(roles_sorted) > 6:
-                    roles_preview += f", +{len(roles_sorted) - 6} more"
+                roles_list = [r.name for r in roles_sorted]
             if member.premium_since:
                 boost_str = f"Active ({member.premium_since.strftime('%b %d, %Y')})"
             try:
@@ -392,8 +399,7 @@ class UserInfo(commands.Cog):
             nick,
             top_role_name,
             top_role_color,
-            role_count,
-            roles_preview,
+            roles_list,
             boost_str,
             msg_count,
             vc_str,
