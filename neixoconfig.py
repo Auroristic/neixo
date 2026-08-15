@@ -1,4 +1,7 @@
-import tomllib
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 
 try:
     with open("neixoset.toml", "rb") as f:
