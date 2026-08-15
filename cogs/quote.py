@@ -83,7 +83,7 @@ def _render_quote_card(
 
     # Background generation
     from cogs.serverstats import _make_glass_backdrop
-    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.32, blur_radius=28)
+    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.28, blur_radius=14)
 
     # Glass container card
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))

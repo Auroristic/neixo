@@ -194,7 +194,7 @@ def _render_rank_card(
     from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 
     W, H = 900, 320
-    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.32, blur_radius=28)
+    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.28, blur_radius=14)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)

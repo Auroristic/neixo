@@ -103,6 +103,38 @@ class TestNewFeatures(unittest.TestCase):
         rc_buf = _render_reactor_top(raw_bytes, "Top Reactors", "server reaction leaderboard", [(1, "User1", 50)], "page 1/1", raw_bytes, "User1", "#1 · 50 reactions")
         self.assertTrue(rc_buf.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
 
+        # 11. User info card
+        from unittest.mock import MagicMock
+        from cogs.userinfo import _render_user_card
+        mock_user = MagicMock()
+        mock_user.name = "testuser"
+        mock_user.display_name = "Test User"
+        mock_user.id = 1234567890
+        ui_buf = _render_user_card(
+            avatar_bytes=raw_bytes,
+            member=None,
+            user=mock_user,
+            member_number=10,
+            total_members=150,
+            created_str="Jan 1, 2024 (1y ago)",
+            joined_str="Feb 1, 2024 (11 mos ago)",
+            nick="Tester",
+            top_role_name="Admin",
+            top_role_color="#FFFFFF",
+            role_count=5,
+            roles_preview="Admin, Member",
+            boost_str="Active (Feb 1, 2024)",
+            msg_count=520,
+            vc_str="12h 30m",
+            current_vc=None,
+            key_perms=["Administrator"],
+            badges=["Active Developer"],
+            activity_str="Custom Status",
+            warn_count=0,
+            server_name="Test Server",
+        )
+        self.assertTrue(ui_buf.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
+
 
 if __name__ == "__main__":
     unittest.main()

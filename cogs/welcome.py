@@ -35,7 +35,7 @@ def _render_welcome_card(
 
     W, H = 900, 500
     source_bytes = banner_bytes or avatar_bytes
-    bg = _make_glass_backdrop(source_bytes, W, H, dark_tint=0.32, blur_radius=28)
+    bg = _make_glass_backdrop(source_bytes, W, H, dark_tint=0.28, blur_radius=14)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
