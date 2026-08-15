@@ -87,7 +87,7 @@ class TestNewFeatures(unittest.TestCase):
         self.assertTrue(quote_buf.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
 
         # 7. Welcome card
-        welc_buf = _render_welcome_card(raw_bytes, raw_bytes, "NewMember", 151, "Test Server")
+        welc_buf = _render_welcome_card(raw_bytes, raw_bytes, "Test Server", "NewMember", 151)
         self.assertTrue(welc_buf.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
 
         # 8. Milestone card

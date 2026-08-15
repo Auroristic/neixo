@@ -80,7 +80,8 @@ def _render_welcome_card(
             pass
 
     title_font.draw(draw, (W // 2, 235), "welcome", fill=(255, 255, 255, 255), anchor="mm")
-    name = member_name if len(member_name) <= 40 else member_name[:39] + "\u2026"
+    raw_name = str(member_name or "")
+    name = raw_name if len(raw_name) <= 40 else raw_name[:39] + "\u2026"
     sub_font.draw(draw, (W // 2, 290), name, fill=(225, 230, 240, 220), anchor="mm")
     sub_font.draw(
         draw,
