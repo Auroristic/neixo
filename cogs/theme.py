@@ -56,6 +56,7 @@ from cogs.theme_helpers import (
     _ok_embed,
     _resolve_icon_bytes,
     _resolve_role_slot,
+    _safe_react,
 )
 from cogs.theme_views import ConfirmView, PreviewView, RolePickerView, RoleSlotModal
 from neixoconfig import Neixocolor
@@ -413,7 +414,7 @@ class ThemeCog(commands.Cog, name="Theme"):
                 break
 
         tm.save_role_map(gid, role_map)
-        await ctx.message.add_reaction("✓")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"setup complete — `{mapped}` slot(s) mapped. use `.theme setrole <slot> @Role` to adjust anytime."))
 
     @theme.command(name="setrole", aliases=["map", "bind", "m"])
@@ -447,7 +448,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             resolved_slot, _, _ = _resolve_role_slot(ctx.guild, role_map, slot)
             target_slot = resolved_slot or slot
             tm.add_role_slot(gid, target_slot, role.id)
-            await ctx.message.add_reaction("✓")
+            await _safe_react(ctx)
             return await ctx.send(embed=_ok_embed(f"**{target_slot}** → {role.mention}"))
 
         if not role_map:
@@ -471,7 +472,7 @@ class ThemeCog(commands.Cog, name="Theme"):
                         content=f"-# ✅ **{_slot}** → {r.mention if r else role_id}",
                         view=None,
                     )
-                    await ctx.message.add_reaction("✓")
+                    await _safe_react(ctx)
                 else:
                     await interaction.response.edit_message(content=f"-# ⏭ kept **{_slot}** unchanged", view=None)
                 event.set()
@@ -524,7 +525,7 @@ class ThemeCog(commands.Cog, name="Theme"):
                 await ctx.send(f"-# timed out on **{s}**, stopping.")
                 break
 
-        await ctx.message.add_reaction("✓")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"done — `{updated}` slot(s) updated"))
 
     @theme.group(name="roles", aliases=["slots", "list", "ls", "l"], invoke_without_command=True)
@@ -663,7 +664,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             gtheme = tm.get_guild_theme(ctx.guild.id) or tm.build_empty_theme()
             gtheme.setdefault("roles", {}).setdefault(slot, {})["name"] = new_name
             tm.save_guild_theme(ctx.guild.id, gtheme)
-            await ctx.message.add_reaction("✓")
+            await _safe_react(ctx)
             return await ctx.send(embed=_ok_embed(f"**{slot}** renamed: `{old}` → `{new_name}`"))
 
         # interactive wizard: one slot at a time, skip/rename/done
@@ -760,7 +761,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         tm.save_guild_theme(ctx.guild.id, gtheme)
 
         if renamed:
-            await ctx.message.add_reaction("✓")
+            await _safe_react(ctx)
             await ctx.send(embed=_ok_embed(f"renamed {len(renamed)} role(s):\n" + "\n".join(f"-# {r}" for r in renamed)))
         else:
             await ctx.send(embed=_err_embed("no roles renamed."))
@@ -840,7 +841,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         gtheme.setdefault("roles", {}).setdefault(slot, {})["icon"] = icon_store
         tm.save_guild_theme(ctx.guild.id, gtheme)
 
-        await ctx.message.add_reaction("✓")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"icon set for **{slot}** ({role.mention})"))
 
     @theme_role.command(name="revert", aliases=["reset", "rev"])
@@ -881,7 +882,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         try:
             await self._rate_limit_for_guild(ctx.guild)
             await role.edit(name=saved["name"], reason="NeixO theme: resetrole")
-            await ctx.message.add_reaction("✓")
+            await _safe_react(ctx)
             await ctx.send(embed=_ok_embed(f"**{slot}** reverted to `{saved['name']}`"))
         except discord.HTTPException as exc:
             return await ctx.send(embed=_err_embed(f"failed to revert role: {exc}"))
@@ -1063,7 +1064,7 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         tm.save_guild_theme(ctx.guild.id, gtheme)
         tm.save_prefix_history(ctx.guild.id, {"op": "prefix_add", "channels": history_snap})
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — prefix `{emoji}` applied to {done} channels across {len(categories)} categor(ies)")
         await self._report_failures(ctx, failures, "prefix add failures")
 
@@ -1155,7 +1156,7 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         tm.save_guild_theme(ctx.guild.id, gtheme)
         tm.save_prefix_history(ctx.guild.id, {"op": "prefix_remove", "channels": history_snap})
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — prefixes removed from {done} channels")
         await self._report_failures(ctx, failures, "prefix remove failures")
 
@@ -1240,7 +1241,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         bar = "█" * 10
         action_str = "prefixes removed from" if removing else f"prefix `{emoji}` applied to"
         result = f"-# `{bar}` done — {action_str} {done} channels"
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=result)
         await self._report_failures(ctx, failures, "prefix server failures")
 
@@ -1337,7 +1338,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         self._last_scan[ctx.guild.id] = new_scan
         tm.save_last_scan(ctx.guild.id, new_scan)
 
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — replaced `{old_prefix}` → `{new_prefix}` on {len(changes)} channels")
         await self._report_failures(ctx, failures, "prefix replace failures")
 
@@ -1411,7 +1412,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         tm.save_guild_theme(ctx.guild.id, gtheme)
 
         tm.clear_prefix_history(ctx.guild.id)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — {op} undone across {done} channels")
         await self._report_failures(ctx, failures, "prefix undo failures")
 
@@ -1513,7 +1514,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             await self._rate_limit_for_channel(ch)
 
         tm.save_prefix_history(ctx.guild.id, {"op": f"channel_strip:{text}", "channels": history_snap})
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — stripped `{text}` from {len(changes)} channels")
         await self._report_failures(ctx, failures, "channel strip failures")
 
@@ -1665,7 +1666,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             "scope": "all" if use_all else [str(cat.id) for cat in scope_cats],
         }
         tm.save_guild_theme(ctx.guild.id, gtheme)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — `{font_key}` font applied to {done} channels")
         await self._report_failures(ctx, failures, "font set failures")
 
@@ -1744,7 +1745,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         gtheme = tm.get_guild_theme(ctx.guild.id) or {}
         gtheme.pop("channel_style", None)
         tm.save_guild_theme(ctx.guild.id, gtheme)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — font stripped from {done} channels")
         await self._report_failures(ctx, failures, "font reset failures")
 
@@ -1823,7 +1824,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             "guild": guild_media,
         }
         tm.save_preset(name, preset)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"preset **{name}** saved"))
 
     @theme.command(name="apply")
@@ -2017,7 +2018,7 @@ class ThemeCog(commands.Cog, name="Theme"):
                 await self._rate_limit_for_channel(ch)
 
         tm.save_guild_theme(ctx.guild.id, preset)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — preset **{name}** applied — {done} changes made")
         await self._report_failures(ctx, failures, f"preset apply failures: {name}")
 
@@ -2059,7 +2060,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         ok = tm.delete_preset(name)
         if not ok:
             return await ctx.send(f"-# preset `{name}` not found")
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"preset **{name}** deleted"))
 
     @theme.command(name="seticon")
@@ -2092,7 +2093,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             tm.save_guild_theme(ctx.guild.id, gtheme)
         except Exception:
             pass
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed("server icon updated"))
 
     @theme.command(name="setbanner")
@@ -2125,7 +2126,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             tm.save_guild_theme(ctx.guild.id, gtheme)
         except Exception:
             pass
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed("server banner updated"))
 
     # ══════════════════════════════════════════════════════════
@@ -2230,7 +2231,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             tm.clear_undo_stack(gid)
             tm.clear_guild_theme(gid)
 
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — reset complete — {done} items reverted")
         await self._report_failures(ctx, failures, "reset failures")
 
@@ -2430,7 +2431,7 @@ class ThemeCog(commands.Cog, name="Theme"):
                 created += 1
 
         tm.save_prefix_groups(ctx.guild.id, existing_groups)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(
             f"setup complete — `{created}` group(s) created. use `.theme group list` to see them."
         ))
@@ -2492,7 +2493,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             return await ctx.send(f"-# group `{name}` already exists — use `.theme group set {name} <prefix>` to change its prefix")
         groups[name] = {"prefix": prefix, "categories": []}
         tm.save_prefix_groups(ctx.guild.id, groups)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"group **{name}** created with prefix `{prefix}` — use `.theme group add {name} #cat` to add categories"))
 
     @theme_group.command(name="delete")
@@ -2527,7 +2528,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             return await confirm_msg.edit(embed=_err_embed("cancelled."), view=None)
         del groups[name]
         tm.save_prefix_groups(ctx.guild.id, groups)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await confirm_msg.edit(embed=_ok_embed(f"group **{name}** deleted."), view=None)
 
     @theme_group.command(name="set")
@@ -2569,7 +2570,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             # just update the stored prefix, no channels to rename
             groups[name]["prefix"] = new_prefix
             tm.save_prefix_groups(ctx.guild.id, groups)
-            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+            await _safe_react(ctx)
             return await ctx.send(embed=_ok_embed(f"group **{name}** prefix updated to `{new_prefix}` (no channels to rename)"))
 
         changes = []
@@ -2620,7 +2621,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         tm.save_prefix_groups(ctx.guild.id, groups)
         tm.save_prefix_history(ctx.guild.id, {"op": f"group_set:{name}:{old_prefix}→{new_prefix}", "channels": history_snap})
 
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await prog.edit(content=f"-# `{'█' * 10}` done — group **{name}** prefix updated, {len(changes)} channels renamed")
         await self._report_failures(ctx, failures, "group set failures")
 
@@ -2710,7 +2711,7 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         groups[name]["categories"].append(cat_id_str)
         tm.save_prefix_groups(ctx.guild.id, groups)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"**{cat.name}** added to group **{name}** — use `.theme group remove {name} #cat` to undo"))
 
     @theme_group.command(name="remove")
@@ -2755,7 +2756,7 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         groups[name]["categories"].remove(cat_id_str)
         tm.save_prefix_groups(ctx.guild.id, groups)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"**{cat.name}** removed from group **{name}** — channel names unchanged — use `.theme prefix undo` if you want to strip the prefix too"))
 
     @theme_group.command(name="apply")
@@ -2806,7 +2807,7 @@ class ThemeCog(commands.Cog, name="Theme"):
             return await ctx.send(embed=_err_embed(f"failed to rename: {exc}"))
 
         tm.save_prefix_history(ctx.guild.id, {"op": f"group_apply:{name}", "channels": history_snap})
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await _safe_react(ctx)
         await ctx.send(embed=_ok_embed(f"**{old_name}** renamed to **{new_name}**"))
 
     # ── Auto-apply on channel create ──────────────────────────

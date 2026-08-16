@@ -134,9 +134,18 @@ def _is_theme_admin():
     async def predicate(ctx: commands.Context) -> bool:
         if is_owner_or_creator(ctx):
             return True
-        await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
+        await _safe_react(ctx, "<:redlotus:1263556248310386800>")
         return False
     return commands.check(predicate)
+
+async def _safe_react(msg_or_ctx, emoji: str = "<:pinklotus:1263556545686405170>"):
+    """Safely adds a reaction without ever throwing an unhandled HTTPException."""
+    try:
+        msg = msg_or_ctx.message if hasattr(msg_or_ctx, "message") else msg_or_ctx
+        if msg:
+            await msg.add_reaction(emoji)
+    except Exception:
+        pass
 
 # ── Embed helpers ────────────────────────────────────────────────
 
