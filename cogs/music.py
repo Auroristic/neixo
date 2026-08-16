@@ -1312,7 +1312,7 @@ class Music(commands.Cog):
             return await ctx.send(embed=_err_embed("gimme something to play. `.playbc <query>`", ctx))
         await self._play_bandcamp_core(ctx, query)
 
-    @commands.command(aliases=["ytm", "playytm"])
+    @commands.command(aliases=["ytm"])
     @help_meta(
         usage="`.playytm <query>`",
         desc="Plays official studio-quality music tracks from YouTube Music.",
