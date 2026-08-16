@@ -16,6 +16,16 @@ def test_youtube_clients_failed_error_is_retryable():
     assert _is_retryable_playback_error(error)
 
 
+def test_dict_exception_with_video_player_config_is_retryable():
+    from cogs.music import _is_retryable_playback_error
+
+    err_dict = {
+        "message": "(yts.version: 1.18.2) All clients failed to load the item.\nClient [WEB_EMBEDDED_PLAYER] failed: Video player configuration error",
+        "severity": "COMMON",
+    }
+    assert _is_retryable_playback_error(err_dict)
+
+
 def test_unrelated_playback_error_is_not_retryable():
     from cogs.music import _is_retryable_playback_error
 

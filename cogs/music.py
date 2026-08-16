@@ -66,11 +66,14 @@ PLAYBACK_RETRY_LIMIT = 2
 PLAYBACK_RETRY_BASE_DELAY = 1.5
 _RETRYABLE_PLAYBACK_ERROR_MARKERS = (
     "allclientsfailedexception",
+    "all clients failed",
     "read timed out",
     "sign in to confirm",
     "not a bot",
     "requires login",
     "video requires login",
+    "video player configuration error",
+    "configuration error",
 )
 
 
