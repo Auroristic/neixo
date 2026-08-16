@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 COG_META = {
     "category": "music",
     "commands": ["playlist"],
-    "owner": True,
+    "owner": False,
 }
 
 

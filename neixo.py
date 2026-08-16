@@ -668,32 +668,131 @@ async def _music_err(interaction: discord.Interaction, msg: str):
 @bot.tree.command(name="play", description="Play a song or playlist from YouTube, Spotify, or SoundCloud")
 @app_commands.describe(query="Song name, artist, or URL")
 async def play_slash(interaction: discord.Interaction, query: str):
-    await _music_err(interaction, "music is discontinued, sorry.")
+    cog = bot.get_cog("Music")
+    if not cog:
+        return await _music_err(interaction, "music cog not loaded.")
+    if not interaction.guild:
+        return await _music_err(interaction, "this command only works in a server.")
+    user_vc = interaction.user.voice.channel if interaction.user.voice else None
+    if not user_vc:
+        return await _music_err(interaction, "join a voice channel first.")
+    bot_vc = interaction.guild.voice_client
+    if bot_vc and bot_vc.channel != user_vc:
+        return await _music_err(interaction, f"you need to be in {bot_vc.channel.mention} to use this.")
+    await interaction.response.defer()
+    temp = await interaction.channel.send(f".play {query.replace(chr(10), ' ')}")
+    try:
+        ctx = await bot.get_context(temp)
+        ctx.author = interaction.user
+        await bot.invoke(ctx)
+    finally:
+        try:
+            await temp.delete()
+        except discord.HTTPException:
+            pass
 
 
 @bot.tree.command(name="skip", description="Skip the current track")
 async def skip_slash(interaction: discord.Interaction):
-    await _music_err(interaction, "music is discontinued, sorry.")
+    cog = bot.get_cog("Music")
+    if not cog:
+        return await _music_err(interaction, "music cog not loaded.")
+    if not interaction.guild:
+        return await _music_err(interaction, "this command only works in a server.")
+    player = interaction.guild.voice_client
+    if not player or not player.playing:
+        return await _music_err(interaction, "nothing is playing rn.")
+    user_vc = interaction.user.voice.channel if interaction.user.voice else None
+    if not user_vc or player.channel != user_vc:
+        return await _music_err(interaction, f"you need to be in {player.channel.mention} to use this.")
+    await interaction.response.defer()
+    await player.skip(force=True)
+    await interaction.followup.send(embed=discord.Embed(description="-# skipped.", color=0x121516))
 
 
 @bot.tree.command(name="pause", description="Pause playback")
 async def pause_slash(interaction: discord.Interaction):
-    await _music_err(interaction, "music is discontinued, sorry.")
+    cog = bot.get_cog("Music")
+    if not cog:
+        return await _music_err(interaction, "music cog not loaded.")
+    if not interaction.guild:
+        return await _music_err(interaction, "this command only works in a server.")
+    player = interaction.guild.voice_client
+    if not player or not player.playing:
+        return await _music_err(interaction, "nothing is playing rn.")
+    user_vc = interaction.user.voice.channel if interaction.user.voice else None
+    if not user_vc or player.channel != user_vc:
+        return await _music_err(interaction, f"you need to be in {player.channel.mention} to use this.")
+    await player.pause(True)
+    await interaction.response.send_message(embed=discord.Embed(description="-# paused.", color=0x121516))
+    await cog._update_vc_status(player.channel.id, "paused | Neixo")
 
 
 @bot.tree.command(name="resume", description="Resume paused playback")
 async def resume_slash(interaction: discord.Interaction):
-    await _music_err(interaction, "music is discontinued, sorry.")
+    cog = bot.get_cog("Music")
+    if not cog:
+        return await _music_err(interaction, "music cog not loaded.")
+    if not interaction.guild:
+        return await _music_err(interaction, "this command only works in a server.")
+    player = interaction.guild.voice_client
+    if not player:
+        return await _music_err(interaction, "not connected to voice.")
+    if not player.paused:
+        return await _music_err(interaction, "not paused.")
+    user_vc = interaction.user.voice.channel if interaction.user.voice else None
+    if not user_vc or player.channel != user_vc:
+        return await _music_err(interaction, f"you need to be in {player.channel.mention} to use this.")
+    await player.pause(False)
+    await interaction.response.send_message(embed=discord.Embed(description="-# resumed.", color=0x121516))
+    if player.current:
+        await cog._update_vc_status(player.channel.id, f"{player.current.title} | Neixo")
 
 
 @bot.tree.command(name="queue", description="Show the music queue")
 async def queue_slash(interaction: discord.Interaction):
-    await _music_err(interaction, "music is discontinued, sorry.")
+    cog = bot.get_cog("Music")
+    if not cog:
+        return await _music_err(interaction, "music cog not loaded.")
+    if not interaction.guild:
+        return await _music_err(interaction, "this command only works in a server.")
+    player = interaction.guild.voice_client
+    if not player:
+        return await _music_err(interaction, "not connected to voice.")
+    await interaction.response.defer()
+    temp = await interaction.channel.send(".queue")
+    try:
+        ctx = await bot.get_context(temp)
+        ctx.author = interaction.user
+        await bot.invoke(ctx)
+    finally:
+        try:
+            await temp.delete()
+        except discord.HTTPException:
+            pass
 
 
 @bot.tree.command(name="nowplaying", description="Show the currently playing track")
 async def nowplaying_slash(interaction: discord.Interaction):
-    await _music_err(interaction, "music is discontinued, sorry.")
+    cog = bot.get_cog("Music")
+    if not cog:
+        return await _music_err(interaction, "music cog not loaded.")
+    if not interaction.guild:
+        return await _music_err(interaction, "this command only works in a server.")
+    player = interaction.guild.voice_client
+    if not player or not player.playing:
+        return await _music_err(interaction, "nothing is playing rn.")
+    await interaction.response.defer()
+    temp = await interaction.channel.send(".nowplaying")
+    try:
+        ctx = await bot.get_context(temp)
+        ctx.author = interaction.user
+        await bot.invoke(ctx)
+    finally:
+        try:
+            await temp.delete()
+        except discord.HTTPException:
+            pass
 
 
 @bot.tree.command(name="help", description="Browse all commands or get help with a specific one")

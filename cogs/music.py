@@ -49,16 +49,13 @@ from neixoconfig import Neixocolor, Neixoemojis
 from utils import help_meta, is_owner_or_creator
 
 # ── cogs/music.py ───────────────────────────────────────────────
-# Music is DISCONTINUED for everyone except the bot owner/creator and
-# the server owner (for testing). The code is kept — it's valuable.
-# Flip MUSIC_LOCKED to False to reopen for everyone.
-MUSIC_LOCKED = True
+MUSIC_LOCKED = False
 
 COG_META = {
     "category": "music",
     "label": "Music",
     "desc": "Music playback, queue controls, and audio filters.",
-    "owner": True,
+    "owner": False,
 }
 
 
@@ -545,6 +542,9 @@ class Music(commands.Cog):
         return []
 
     async def _search_with_fallback(self, query: str):
+        results = await self._yt_search_with_retry(query, source="ytmsearch")
+        if results:
+            return results
         results = await self._yt_search_with_retry(query + " audio", source="ytsearch")
         if results:
             return results
@@ -775,12 +775,14 @@ class Music(commands.Cog):
 
             async def _resolve_one(name: str):
                 async with sem:
-                    results = await self._yt_search_with_retry(name + " audio", source="ytsearch")
+                    results = await self._yt_search_with_retry(name, source="ytmsearch")
+                    if not results:
+                        results = await self._yt_search_with_retry(name + " audio", source="ytsearch")
                     if not results:
                         results = await self._yt_search_with_retry(name, source="ytsearch")
                 if not results:
                     return None
-                # results is list[Playable] for ytsearch
+                # results is list[Playable] for ytmsearch/ytsearch
                 if isinstance(results, list) and len(results) > 1:
                     track = self._prefer_audio_track(results, name)
                 else:
@@ -840,7 +842,9 @@ class Music(commands.Cog):
             await self._queue_tracks(ctx, player, tracks, source_label="SoundCloud")
             return
 
-        tracks = await self._yt_search_with_retry(query + " audio", source="ytsearch")
+        tracks = await self._yt_search_with_retry(query, source="ytmsearch")
+        if not tracks:
+            tracks = await self._yt_search_with_retry(query + " audio", source="ytsearch")
         if not tracks:
             tracks = await self._yt_search_with_retry(query, source="ytsearch")
         if not tracks:
@@ -1307,6 +1311,32 @@ class Music(commands.Cog):
         if not query:
             return await ctx.send(embed=_err_embed("gimme something to play. `.playbc <query>`", ctx))
         await self._play_bandcamp_core(ctx, query)
+
+    @commands.command(aliases=["ytm", "playytm"])
+    @help_meta(
+        usage="`.playytm <query>`",
+        desc="Plays official studio-quality music tracks from YouTube Music.",
+        section="Playback",
+        examples=[".playytm starboy", ".ytm blinding lights"],
+        params=[
+            {"name": "query", "type": "str", "required": True, "desc": "Song name or artist on YouTube Music."},
+        ],
+        note="Join a voice channel first. Queries YouTube Music directly for high-bitrate studio audio.",
+    )
+    async def playytm(self, ctx: commands.Context, *, query: str = None) -> None:
+        if not query:
+            return await ctx.send(embed=_err_embed("gimme something to play. `.playytm <query>`", ctx))
+        if not await self._check_vc(ctx):
+            return
+        player = await self._connect_player(ctx)
+        if player is None:
+            return
+        tracks = await self._yt_search_with_retry(query, source="ytmsearch")
+        if not tracks:
+            return await ctx.send(embed=_err_embed(f"couldn't find anything on YouTube Music for `{query}`.", ctx))
+        if isinstance(tracks, list) and len(tracks) > 1:
+            tracks = [self._prefer_audio_track(tracks, query)]
+        await self._queue_tracks(ctx, player, tracks, source_label="YouTube Music")
 
     async def _handle_skip(self, ctx: commands.Context, *, vote_initiator: discord.Member = None) -> None:
         player: wavelink.Player = cast(wavelink.Player, ctx.voice_client)
