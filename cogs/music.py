@@ -550,19 +550,16 @@ class Music(commands.Cog):
             if results:
                 return results
 
-        # Prioritize SoundCloud for fast, high-quality, uninterrupted playback
-        results = await self._yt_search_with_retry(query, source="scsearch")
-        if results:
-            return results
-
-        # Fallback to YouTube Music / YouTube
         results = await self._yt_search_with_retry(query, source="ytmsearch")
         if results:
             return results
         results = await self._yt_search_with_retry(query + " audio", source="ytsearch")
         if results:
             return results
-        return await self._yt_search_with_retry(query, source="ytsearch")
+        results = await self._yt_search_with_retry(query, source="ytsearch")
+        if results:
+            return results
+        return await self._yt_search_with_retry(query, source="scsearch")
 
     _VIDEO_KEYWORDS_RE = re.compile(
         r"\b(official\s*(music\s*)?video|music\s*video|official\s*mv|"
