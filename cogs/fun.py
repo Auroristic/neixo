@@ -512,7 +512,7 @@ def _render_ship_card(
 
     W, H = 840, 360
     source_bytes = av1_bytes or av2_bytes
-    bg = _make_glass_backdrop(source_bytes, W, H, dark_tint=0.28, blur_radius=14)
+    bg = _make_glass_backdrop(source_bytes, W, H, dark_tint=0.55, blur_radius=20)
 
     # Glass container
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))

@@ -409,11 +409,15 @@ async def _gen_music_card(
         subtitle_font = _load_font(28)
         dur_font = _load_font(24)
 
+        from PIL import ImageOps, ImageEnhance
         art_orig = Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
-        bg = art_orig.resize((W, H), Image.Resampling.LANCZOS)
-        bg = bg.filter(ImageFilter.GaussianBlur(40))
-        bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
+        art_bw = ImageOps.grayscale(art_orig).convert("RGB")
+        art_bw = ImageEnhance.Brightness(art_bw).enhance(0.70)
+        art_bw = ImageEnhance.Contrast(art_bw).enhance(1.15)
+        bg = ImageOps.fit(art_bw, (W, H), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        bg = bg.filter(ImageFilter.GaussianBlur(35))
+        bg = Image.blend(bg, Image.new("RGB", (W, H), (5, 6, 8)), 0.60)
 
         grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         grad_draw = ImageDraw.Draw(grad)
@@ -433,8 +437,8 @@ async def _gen_music_card(
         card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         card_draw = ImageDraw.Draw(card)
         gl, gt, gr, gb = 40, 40, art_x - 30, H - 40
-        card_draw.rounded_rectangle([gl, gt, gr, gb], radius=35, fill=(255, 255, 255, 15))
-        card_draw.rounded_rectangle([gl, gt, gr, gb], radius=35, outline=(255, 255, 255, 40), width=1)
+        card_draw.rounded_rectangle([gl, gt, gr, gb], radius=35, fill=(0, 0, 0, 110))
+        card_draw.rounded_rectangle([gl, gt, gr, gb], radius=35, outline=(255, 255, 255, 45), width=1)
         bg = Image.alpha_composite(bg, card)
         draw = ImageDraw.Draw(bg)
 

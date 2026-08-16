@@ -135,30 +135,31 @@ def _make_glass_backdrop(
     source_bytes: bytes | None,
     width: int,
     height: int,
-    dark_tint: float = 0.28,
-    blur_radius: int = 14,
+    dark_tint: float = 0.55,
+    blur_radius: int = 20,
 ) -> Image.Image:
-    """Generate an authentic, recognizable Black & White frosted glass backdrop."""
+    """Generate an authentic, recognizable deep dark Black & White frosted glass backdrop."""
     from PIL import ImageOps, ImageEnhance
     if source_bytes:
         try:
             src = Image.open(io.BytesIO(source_bytes)).convert("RGB")
             src_bw = ImageOps.grayscale(src).convert("RGB")
-            src_bw = ImageEnhance.Contrast(src_bw).enhance(1.25)
+            src_bw = ImageEnhance.Brightness(src_bw).enhance(0.70)
+            src_bw = ImageEnhance.Contrast(src_bw).enhance(1.15)
             bg = ImageOps.fit(src_bw, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
             bg = bg.filter(ImageFilter.GaussianBlur(blur_radius))
         except Exception:
-            bg = Image.new("RGB", (width, height), (16, 17, 20))
+            bg = Image.new("RGB", (width, height), (8, 9, 12))
     else:
-        bg = Image.new("RGB", (width, height), (16, 17, 20))
+        bg = Image.new("RGB", (width, height), (8, 9, 12))
 
-    overlay = Image.new("RGB", (width, height), (10, 11, 14))
+    overlay = Image.new("RGB", (width, height), (5, 6, 8))
     bg = Image.blend(bg, overlay, dark_tint)
 
     grad = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(height):
-        alpha = int(40 * (y / height))
+        alpha = int(65 * (y / height))
         gd.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
     return bg
@@ -184,7 +185,7 @@ def _render_reactor_top(
         H = 320 + n * 60 + 180
         H = max(H, 700)
 
-    bg = _make_glass_backdrop(user_avatar_bytes, W, H, dark_tint=0.32, blur_radius=28)
+    bg = _make_glass_backdrop(user_avatar_bytes, W, H, dark_tint=0.55, blur_radius=28)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)

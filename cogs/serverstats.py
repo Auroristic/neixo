@@ -301,33 +301,34 @@ def _make_glass_backdrop(
     source_bytes: bytes | None,
     width: int,
     height: int,
-    dark_tint: float = 0.28,
-    blur_radius: int = 14,
+    dark_tint: float = 0.55,
+    blur_radius: int = 20,
 ) -> Image.Image:
-    """Generate an authentic, recognizable Black & White frosted glass backdrop."""
+    """Generate an authentic, recognizable deep dark Black & White frosted glass backdrop."""
     from PIL import ImageOps, ImageEnhance
     if source_bytes:
         try:
             src = Image.open(io.BytesIO(source_bytes)).convert("RGB")
             # Always convert to Black & White (grayscale)
             src_bw = ImageOps.grayscale(src).convert("RGB")
-            src_bw = ImageEnhance.Contrast(src_bw).enhance(1.25)
+            src_bw = ImageEnhance.Brightness(src_bw).enhance(0.70)
+            src_bw = ImageEnhance.Contrast(src_bw).enhance(1.15)
             # Cover fit without stretching or aspect distortion
             bg = ImageOps.fit(src_bw, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
             bg = bg.filter(ImageFilter.GaussianBlur(blur_radius))
         except Exception:
-            bg = Image.new("RGB", (width, height), (16, 17, 20))
+            bg = Image.new("RGB", (width, height), (8, 9, 12))
     else:
-        bg = Image.new("RGB", (width, height), (16, 17, 20))
+        bg = Image.new("RGB", (width, height), (8, 9, 12))
 
-    # Controlled dark overlay so the B&W art remains clearly visible
-    overlay = Image.new("RGB", (width, height), (10, 11, 14))
+    # Deep dark charcoal overlay
+    overlay = Image.new("RGB", (width, height), (5, 6, 8))
     bg = Image.blend(bg, overlay, dark_tint)
 
     grad = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(height):
-        alpha = int(40 * (y / height))
+        alpha = int(65 * (y / height))
         gd.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
     bg = Image.alpha_composite(bg.convert("RGBA"), grad)
     return bg
@@ -664,28 +665,14 @@ def _render_emoji_card(
         n = min(len(rows), MAX_ROWS)
         H = 320 + n * 70 + 180  # row_h = 70
         H = max(H, 700)
-    if icon_bytes:
-        try:
-            base = Image.open(io.BytesIO(icon_bytes)).convert("RGB")
-        except Exception:
-            base = Image.new("RGB", (W, H), (30, 30, 40))
-    else:
-        base = Image.new("RGB", (W, H), (30, 30, 40))
-    bg = base.resize((W, H), Image.Resampling.LANCZOS)
-    bg = bg.filter(ImageFilter.GaussianBlur(45))
-    bg = Image.blend(bg, Image.new("RGB", (W, H), (20, 20, 25)), 0.7)
-
-    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(grad)
-    for y in range(H):
-        gd.line([(0, y), (W, y)], fill=(0, 0, 0, int(80 * (y / H))))
-    bg = Image.alpha_composite(bg.convert("RGBA"), grad)
+    bg = _make_glass_backdrop(icon_bytes, W, H, dark_tint=0.58, blur_radius=30)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
     pad = 50
-    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, fill=(255, 255, 255, 14))
+    cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, fill=(0, 0, 0, 115))
     cd.rounded_rectangle([pad, pad, W - pad, H - pad], radius=35, outline=(255, 255, 255, 45), width=1)
+    cd.line([(pad + 25, pad + 1), (W - pad - 25, pad + 1)], fill=(255, 255, 255, 80), width=1)
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 

@@ -35,7 +35,7 @@ def _render_milestone_card(
     from cogs.serverstats import _load_font, _make_glass_backdrop
 
     W, H = 900, 500
-    bg = _make_glass_backdrop(icon_bytes, W, H, dark_tint=0.28, blur_radius=14)
+    bg = _make_glass_backdrop(icon_bytes, W, H, dark_tint=0.55, blur_radius=20)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)

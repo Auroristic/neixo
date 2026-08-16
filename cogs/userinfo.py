@@ -107,7 +107,7 @@ def _render_user_card(
     H = header_h + membership_rows + stats_rows + roles_h + act_h + footer_spacing
     H = max(750, H)
 
-    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.28, blur_radius=14)
+    bg = _make_glass_backdrop(avatar_bytes, W, H, dark_tint=0.55, blur_radius=20)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
