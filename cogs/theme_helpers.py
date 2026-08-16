@@ -59,6 +59,75 @@ async def _close_http_session():
         await _http_session.close()
         _http_session = None
 
+# ── Smart Slot Resolver ──────────────────────────────────────────
+
+def _resolve_role_slot(
+    guild: discord.Guild | None,
+    role_map: dict[str, int | str],
+    raw_args: str | None
+) -> tuple[str | None, discord.Role | None, str]:
+    """
+    Intelligently resolves slot from user input.
+    Supports:
+      1. 1-based numeric index: '1', '1 true dragon', '#1 true dragon'
+      2. Role mention or ID: '<@&12345> true dragon', '123456789'
+      3. Multi-word slot names: 'co owner true dragon', 'head of security Chief'
+      4. Case-insensitive & normalized names: 'owner', 'Owner', 'OWNER'
+    Returns:
+      (slot_name, role_object, remaining_arguments)
+    """
+    import re
+    if not raw_args or not role_map:
+        return None, None, ""
+
+    raw = raw_args.strip()
+    slots = list(role_map.keys())
+
+    # 1. 1-based index (e.g. "1", "1 true dragon", "#1 true dragon", "1. true dragon")
+    match_num = re.match(r"^#?(\d+)[.:\-]?\s*(.*)$", raw)
+    if match_num:
+        idx = int(match_num.group(1))
+        if 1 <= idx <= len(slots):
+            slot_name = slots[idx - 1]
+            rid = int(role_map[slot_name])
+            role = guild.get_role(rid) if guild else None
+            rest = match_num.group(2).strip()
+            return slot_name, role, rest
+
+    # 2. Role mention or ID (e.g. "<@&12345> true dragon")
+    match_mention = re.match(r"^<@&?(\d+)>\s*(.*)$", raw)
+    if match_mention:
+        rid = int(match_mention.group(1))
+        rest = match_mention.group(2).strip()
+        for s_name, s_rid in role_map.items():
+            if int(s_rid) == rid:
+                role = guild.get_role(rid) if guild else None
+                return s_name, role, rest
+
+    # 3. Multi-word and exact name matching (longest match first)
+    low_raw = raw.lower()
+    for s_name in sorted(slots, key=lambda s: len(s), reverse=True):
+        s_low = s_name.lower()
+        if low_raw == s_low:
+            role = guild.get_role(int(role_map[s_name])) if guild else None
+            return s_name, role, ""
+        elif low_raw.startswith(s_low + " ") or low_raw.startswith(s_low + ":") or low_raw.startswith(s_low + "-"):
+            role = guild.get_role(int(role_map[s_name])) if guild else None
+            rest = raw[len(s_name):].lstrip(" :-").strip()
+            return s_name, role, rest
+
+    # 4. Normalized matching (ignoring punctuation/spaces, e.g. "coowner" -> "co owner")
+    first_token = raw.split()[0] if raw.split() else ""
+    norm_first = re.sub(r"[^a-zA-Z0-9]", "", first_token).lower()
+    for s_name in slots:
+        norm_slot = re.sub(r"[^a-zA-Z0-9]", "", s_name).lower()
+        if norm_slot and norm_slot == norm_first:
+            role = guild.get_role(int(role_map[s_name])) if guild else None
+            rest = " ".join(raw.split()[1:]).strip()
+            return s_name, role, rest
+
+    return None, None, raw
+
 # ── Permission check ──────────────────────────────────────────────
 
 def _is_theme_admin():

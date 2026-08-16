@@ -152,7 +152,7 @@ class Translate(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="translate", aliases=["tr", "trans"])
+    @commands.command(name="translate", aliases=["trans", "tl"])
     @help_meta(
         usage="`.translate <language> <text>`  ·  reply to a message + `.translate [language]`",
         desc="Translates text (English to 36 languages). Replying to a message translates it.",

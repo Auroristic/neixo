@@ -55,6 +55,7 @@ from cogs.theme_helpers import (
     _is_theme_admin,
     _ok_embed,
     _resolve_icon_bytes,
+    _resolve_role_slot,
 )
 from cogs.theme_views import ConfirmView, PreviewView, RolePickerView, RoleSlotModal
 from neixoconfig import Neixocolor
@@ -412,28 +413,30 @@ class ThemeCog(commands.Cog, name="Theme"):
                 break
 
         tm.save_role_map(gid, role_map)
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await ctx.message.add_reaction("✓")
         await ctx.send(embed=_ok_embed(f"setup complete — `{mapped}` slot(s) mapped. use `.theme setrole <slot> @Role` to adjust anytime."))
 
-    @theme.command(name="setrole")
+    @theme.command(name="setrole", aliases=["map", "bind", "m"])
     @_is_theme_admin()
     @help_meta(
-        usage="`.theme setrole <slot> @Role`",
-        desc="Quickly remaps one slot to a different role without going through the full wizard.",
+        usage="`.theme setrole <slot|#index> [@role]`",
+        desc="Remaps a theme slot to a server role. Supports slot number or name.",
         section="Setup",
-        examples=[".theme setrole Owner @God Emperor", ".theme setrole Member @User"],
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[".theme setrole 1 @Owner", ".theme setrole owner @Owner", ".tmap 1 @Owner"],
         params=[
-            {"name": "slot", "type": "str", "required": True, "desc": "The slot name (e.g. Owner, Admin, Member)."},
-            {"name": "role", "type": "discord.Role", "required": True, "desc": "The discord role to map to this slot."},
+            {"name": "slot", "type": "str", "required": True, "desc": "Slot number (1, 2...) or slot name to map."},
+            {"name": "role", "type": "role", "required": False, "desc": "Discord role to map (omit for interactive picker)."},
         ],
-        note="Only maps the slot. Use `.theme role` to rename the role itself.",
+        note="Only maps the slot. Use `.theme role` or `.tr` to rename the role itself.",
     )
     async def theme_setrole(self, ctx: commands.Context, slot: str = None, role: discord.Role = None):
         """Remap a slot via dropdown, or pass slot + @Role directly.
 
         Fast paths:
-        - `.theme setrole <slot> @Role`  -> immediate update
-        - `.theme setrole <slot>`        -> show the picker for that single slot only
+        - `.theme setrole <slot|#index> @Role`  -> immediate update
+        - `.theme setrole <slot|#index>`        -> show the picker for that single slot only
         - no args -> interactive walk through all slots (legacy behavior)
         """
         gid = ctx.guild.id
@@ -441,21 +444,26 @@ class ThemeCog(commands.Cog, name="Theme"):
 
         # fast path: slot + role provided
         if slot and role:
-            tm.add_role_slot(gid, slot, role.id)
-            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
-            return await ctx.send(embed=_ok_embed(f"**{slot}** → {role.mention}"))
+            resolved_slot, _, _ = _resolve_role_slot(ctx.guild, role_map, slot)
+            target_slot = resolved_slot or slot
+            tm.add_role_slot(gid, target_slot, role.id)
+            await ctx.message.add_reaction("✓")
+            return await ctx.send(embed=_ok_embed(f"**{target_slot}** → {role.mention}"))
 
         if not role_map:
             return await ctx.send("-# no slots defined yet — run `.theme setup` first")
 
         # fast path: slot only -> show single dropdown for that slot
         if slot and not role:
-            if slot not in role_map:
-                return await ctx.send(f"-# slot `{slot}` not found — see `.theme roles`")
+            resolved_slot, _, _ = _resolve_role_slot(ctx.guild, role_map, slot)
+            if not resolved_slot:
+                valid_slots = ", ".join(f"`{i}. {s}`" for i, s in enumerate(role_map.keys(), start=1))
+                return await ctx.send(f"-# slot not found — see `.theme roles`\n-# valid slots: {valid_slots}")
 
+            target_slot = resolved_slot
             event = asyncio.Event()
 
-            async def _on_pick_single(interaction: discord.Interaction, _slot=slot, role_id=None):
+            async def _on_pick_single(interaction: discord.Interaction, _slot=target_slot, role_id=None):
                 if role_id:
                     tm.add_role_slot(gid, _slot, role_id)
                     r = ctx.guild.get_role(role_id)
@@ -463,17 +471,17 @@ class ThemeCog(commands.Cog, name="Theme"):
                         content=f"-# ✅ **{_slot}** → {r.mention if r else role_id}",
                         view=None,
                     )
-                    await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+                    await ctx.message.add_reaction("✓")
                 else:
                     await interaction.response.edit_message(content=f"-# ⏭ kept **{_slot}** unchanged", view=None)
                 event.set()
 
-            picker = RolePickerView(ctx.guild, slot, ctx.author.id, _on_pick_single)
-            await ctx.send(f"-# choose new role for slot **{slot}**", view=picker)
+            picker = RolePickerView(ctx.guild, target_slot, ctx.author.id, _on_pick_single)
+            await ctx.send(f"-# choose new role for slot **{target_slot}**", view=picker)
             try:
                 await asyncio.wait_for(event.wait(), timeout=60)
             except asyncio.TimeoutError:
-                return await ctx.send(f"-# timed out waiting for **{slot}**")
+                return await ctx.send(f"-# timed out waiting for **{target_slot}**")
             return
 
         # legacy interactive: walk through each slot one by one with a dropdown
@@ -516,16 +524,16 @@ class ThemeCog(commands.Cog, name="Theme"):
                 await ctx.send(f"-# timed out on **{s}**, stopping.")
                 break
 
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await ctx.message.add_reaction("✓")
         await ctx.send(embed=_ok_embed(f"done — `{updated}` slot(s) updated"))
 
-    @theme.group(name="roles", invoke_without_command=True)
+    @theme.group(name="roles", aliases=["slots", "list", "ls", "l"], invoke_without_command=True)
     @_is_theme_admin()
     @help_meta(
         usage="`.theme roles`",
-        desc="Lists all mapped role slots and their current Discord roles.",
+        desc="Lists all mapped role slots, their indices, and their current Discord roles.",
         section="Setup",
-        examples=[".theme roles"],
+        examples=[".theme roles", ".troles", ".theme slots"],
         params=[],
         note="Shows the current slot-to-role mappings.",
     )
@@ -540,14 +548,10 @@ class ThemeCog(commands.Cog, name="Theme"):
             role = ctx.guild.get_role(int(rid))
             warn = ""
             if role and bot_member and role >= bot_member.top_role:
-                warn = " ⚠️"
+                warn = " ⚠️ *(move bot above role)*"
             lines.append(f"`{i}.` **{slot}** → {role.mention if role else f'~~deleted ({rid})~~'}{warn}")
-        e = _embed(ctx, "role slots", "\n".join(lines))
-        if bot_member and any(
-            ctx.guild.get_role(int(rid)) and ctx.guild.get_role(int(rid)) >= bot_member.top_role
-            for rid in role_map.values()
-        ):
-            e.set_footer(text="⚠️ = bot can't edit this role — move me above it in server settings")
+        e = _embed(ctx, "✦ Server Role Slots", "\n".join(lines))
+        e.set_footer(text="Quick rename: .tr <slot|#> <name>  ·  Quick icon: .tri <slot|#> <icon>")
         await ctx.send(embed=e)
 
     @theme_roles.command(name="clear")
@@ -601,51 +605,65 @@ class ThemeCog(commands.Cog, name="Theme"):
     # ROLE EDITING
     # ══════════════════════════════════════════════════════════
 
-    @theme.group(name="role", invoke_without_command=True)
+    @theme.group(name="role", aliases=["rename", "r"], invoke_without_command=True)
     @_is_theme_admin()
     @help_meta(
-        usage="`.theme role <slot> <new name>`",
-        desc="Renames the Discord role mapped to a slot. E.g. `.theme role Owner God Emperor`",
+        usage="`.theme role <slot|#index> <new name>`",
+        desc="Renames the Discord role mapped to a slot. Supports slot index or name. E.g. `.theme role 1 True Dragon` or `.theme role Owner God Emperor`.",
         section="Roles",
-        examples=[".theme role Owner God Emperor", ".theme role Member Peasant"],
-        params=[
-            {"name": "slot", "type": "str", "required": True, "desc": "The slot whose role to rename."},
-            {"name": "new name", "type": "str", "required": True, "desc": "The new display name for the role."},
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[
+            ".theme role 1 True Dragon",
+            ".theme role owner God Emperor",
+            ".theme role co owner Vice King",
+            ".tr 1 True Dragon",
         ],
-        note="This actually changes the role name on Discord. Use `.theme role revert` to undo.",
+        params=[
+            {"name": "slot", "type": "str", "required": True, "desc": "The slot number (1, 2...) or slot name whose role to rename."},
+            {"name": "new_name", "type": "str", "required": True, "desc": "The new display name for the role."},
+        ],
+        note="This actually changes the role name on Discord. Use `.theme role revert` or `.trevert` to undo.",
     )
-    async def theme_role(self, ctx: commands.Context, slot: str = None, *, new_name: str = None):
-        """Walk through all slots with skip/rename/done buttons."""
+    async def theme_role(self, ctx: commands.Context, *, args: str = None):
+        """Walk through all slots with skip/rename/done buttons, or fast rename a specific slot."""
         role_map = tm.get_role_map(ctx.guild.id)
         if not role_map:
             return await ctx.send("-# no slots mapped yet — run `.theme setup` first")
 
         bot_member = ctx.guild.get_member(ctx.bot.user.id)
 
-        # fast path: .theme role <slot> <name>
-        if slot and new_name:
-            if slot not in role_map:
-                return await ctx.send(f"-# slot `{slot}` not found — see `.theme roles`")
-            role = ctx.guild.get_role(int(role_map[slot]))
+        # fast path if args provided (e.g. .theme role 1 True Dragon or .theme role co owner Vice King)
+        if args and args.strip():
+            slot, role, new_name = _resolve_role_slot(ctx.guild, role_map, args)
+            if not slot:
+                valid_slots = ", ".join(f"`{i}. {s}`" for i, s in enumerate(role_map.keys(), start=1))
+                return await ctx.send(f"-# slot not found — see `.theme roles`\n-# valid slots: {valid_slots}")
+
+            if not new_name:
+                return await ctx.send(f"-# usage: `.theme role {slot} <new name>`")
+
             if not role:
-                return await ctx.send(f"-# role for slot `{slot}` no longer exists")
+                return await ctx.send(f"-# role for slot `{slot}` no longer exists in server")
+
             if bot_member and role >= bot_member.top_role:
-                return await ctx.send(f"-# can't edit **{role.name}** — move me above it first.")
+                return await ctx.send(f"-# can't edit **{role.name}** — move my bot role above it first.")
+
             await self._ensure_snapshot(ctx.guild)
             old = role.name
             await self._rate_limit_for_guild(ctx.guild)
             try:
                 await role.edit(name=new_name, reason=f"NeixO theme: renamed by {ctx.author}")
             except discord.HTTPException as exc:
-                # collect failure and report later
                 failures: list = []
                 self._collect_failure(failures, "role", slot, new_name, exc)
                 await self._report_failures(ctx, failures, "role rename failures")
                 return await ctx.send(embed=_err_embed(f"failed to rename **{slot}**: {exc}"))
+
             gtheme = tm.get_guild_theme(ctx.guild.id) or tm.build_empty_theme()
             gtheme.setdefault("roles", {}).setdefault(slot, {})["name"] = new_name
             tm.save_guild_theme(ctx.guild.id, gtheme)
-            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+            await ctx.message.add_reaction("✓")
             return await ctx.send(embed=_ok_embed(f"**{slot}** renamed: `{old}` → `{new_name}`"))
 
         # interactive wizard: one slot at a time, skip/rename/done
@@ -668,11 +686,7 @@ class ThemeCog(commands.Cog, name="Theme"):
                 def __init__(self_v):
                     super().__init__(timeout=60)
 
-                async def interaction_check(self_v, interaction: discord.Interaction) -> bool:
-                    return interaction.user.id == ctx.author.id
-
                 async def on_timeout(self_v):
-                    self_v.stop()
                     action["type"] = "timeout"
                     event.set()
 
@@ -746,40 +760,47 @@ class ThemeCog(commands.Cog, name="Theme"):
         tm.save_guild_theme(ctx.guild.id, gtheme)
 
         if renamed:
-            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+            await ctx.message.add_reaction("✓")
             await ctx.send(embed=_ok_embed(f"renamed {len(renamed)} role(s):\n" + "\n".join(f"-# {r}" for r in renamed)))
         else:
             await ctx.send(embed=_err_embed("no roles renamed."))
 
         await self._report_failures(ctx, failures, "role rename failures")
 
-    @theme.command(name="roleicon")
+    @theme.command(name="roleicon", aliases=["icon", "i"])
     @_is_theme_admin()
     @help_meta(
-        usage="`.theme roleicon <slot> [emoji|url|attachment]`",
-        desc="Sets a role icon via emoji, URL, or image attachment. Requires boost level 2.",
+        usage="`.theme roleicon <slot|#index> [emoji|url|attachment]`",
+        desc="Sets a role icon via emoji, URL, or image attachment. Supports slot number or name. Requires boost level 2.",
         section="Roles",
-        examples=[".theme roleicon Owner 👑", ".theme roleicon Admin https://i.imgur.com/icon.png"],
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[
+            ".theme roleicon 1 👑",
+            ".theme roleicon Owner 👑",
+            ".theme icon 1 https://i.imgur.com/icon.png",
+            ".tri 1 👑",
+        ],
         params=[
-            {"name": "slot", "type": "str", "required": True, "desc": "The slot to set the icon for."},
+            {"name": "slot", "type": "str", "required": True, "desc": "Slot number (1, 2...) or slot name."},
             {"name": "source", "type": "str", "required": False, "desc": "Emoji, image URL, or attachment. Omit to clear."},
         ],
         note="Requires server boost level 2 for role icons.",
     )
-    async def theme_roleicon(self, ctx: commands.Context, slot: str = None, *, source: str = None):
-        """
-        Set a role icon. Attach an image, reply to one, pass a URL, or pass a unicode emoji.
-        Requires server boost level 2.
-        .theme roleicon Owner 👑
-        .theme roleicon Owner https://...
-        .theme roleicon Owner  (with attachment)
-        """
-        if not slot:
-            return await ctx.send("-# usage: `.theme roleicon <slot> [emoji|url|attachment]`")
+    async def theme_roleicon(self, ctx: commands.Context, *, args: str = None):
+        """Set a role icon: .theme roleicon 1 👑"""
+        if not args and not ctx.message.attachments and not ctx.message.reference:
+            return await ctx.send("-# usage: `.theme roleicon <slot|#index> [emoji|url|attachment]`")
+
         role_map = tm.get_role_map(ctx.guild.id)
-        if slot not in role_map:
-            return await ctx.send(f"-# slot `{slot}` not found — see `.theme roles`")
-        role = ctx.guild.get_role(int(role_map[slot]))
+        if not role_map:
+            return await ctx.send("-# no slots mapped yet — run `.theme setup`")
+
+        slot, role, source = _resolve_role_slot(ctx.guild, role_map, args or "")
+        if not slot:
+            valid_slots = ", ".join(f"`{i}. {s}`" for i, s in enumerate(role_map.keys(), start=1))
+            return await ctx.send(f"-# slot not found — see `.theme roles`\n-# valid slots: {valid_slots}")
+
         if not role:
             return await ctx.send(f"-# the role for slot `{slot}` no longer exists")
 
@@ -805,7 +826,6 @@ class ThemeCog(commands.Cog, name="Theme"):
             except discord.HTTPException as exc:
                 return await ctx.send(embed=_err_embed(f"failed to set role icon: {exc}"))
         elif source:
-            # treat as emoji string
             icon_emoji = source.strip()
             try:
                 await self._rate_limit_for_guild(ctx.guild)
@@ -820,31 +840,39 @@ class ThemeCog(commands.Cog, name="Theme"):
         gtheme.setdefault("roles", {}).setdefault(slot, {})["icon"] = icon_store
         tm.save_guild_theme(ctx.guild.id, gtheme)
 
-        await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        await ctx.message.add_reaction("✓")
+        await ctx.send(embed=_ok_embed(f"icon set for **{slot}** ({role.mention})"))
 
-    @theme_role.command(name="revert")
+    @theme_role.command(name="revert", aliases=["reset", "rev"])
     @_is_theme_admin()
     @help_meta(
-        usage="`.theme role revert <slot>`",
+        usage="`.theme role revert <slot|#index>`",
         desc="Reverts one role back to its name from before the last theme apply.",
         section="Roles",
-        examples=[".theme role revert Owner"],
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[".theme role revert 1", ".theme role revert Owner", ".trevert 1"],
         params=[
-            {"name": "slot", "type": "str", "required": True, "desc": "The slot to restore the previous name for."},
+            {"name": "slot", "type": "str", "required": True, "desc": "Slot number (1, 2...) or slot name to restore previous name for."},
         ],
         note="Only the most recent name change per role is stored.",
     )
-    async def role_revert(self, ctx: commands.Context, slot: str = None):
+    async def role_revert(self, ctx: commands.Context, *, slot_arg: str = None):
         """Revert one role slot to its snapshotted name."""
-        if not slot:
-            return await ctx.send("-# usage: `.theme role revert <slot>`")
+        if not slot_arg:
+            return await ctx.send("-# usage: `.theme role revert <slot|#index>`")
         snap = tm.get_snapshot(ctx.guild.id)
         if not snap:
             return await ctx.send("-# no snapshot found — nothing to revert to")
         role_map = tm.get_role_map(ctx.guild.id)
-        if slot not in role_map:
-            return await ctx.send(f"-# slot `{slot}` not found")
-        role = ctx.guild.get_role(int(role_map[slot]))
+        if not role_map:
+            return await ctx.send("-# no slots mapped yet — run `.theme setup`")
+
+        slot, role, _ = _resolve_role_slot(ctx.guild, role_map, slot_arg)
+        if not slot:
+            valid_slots = ", ".join(f"`{i}. {s}`" for i, s in enumerate(role_map.keys(), start=1))
+            return await ctx.send(f"-# slot not found — see `.theme roles`\n-# valid slots: {valid_slots}")
+
         if not role:
             return await ctx.send(f"-# the role for slot `{slot}` no longer exists")
         saved = snap.get("roles", {}).get(str(role.id))
@@ -853,7 +881,7 @@ class ThemeCog(commands.Cog, name="Theme"):
         try:
             await self._rate_limit_for_guild(ctx.guild)
             await role.edit(name=saved["name"], reason="NeixO theme: resetrole")
-            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+            await ctx.message.add_reaction("✓")
             await ctx.send(embed=_ok_embed(f"**{slot}** reverted to `{saved['name']}`"))
         except discord.HTTPException as exc:
             return await ctx.send(embed=_err_embed(f"failed to revert role: {exc}"))
@@ -862,21 +890,28 @@ class ThemeCog(commands.Cog, name="Theme"):
     # CHANNEL PREFIX
     # ══════════════════════════════════════════════════════════
 
-    @theme.group(name="prefix", invoke_without_command=True)
+    @theme.group(name="prefix", aliases=["p"], invoke_without_command=True)
     @_is_theme_admin()
     @help_meta(
-        usage="`.theme prefix`",
-        desc="Manages channel prefixes — run `.theme prefix scan` to get started.",
+        usage="`.theme prefix [add|scan|remove|list]`",
+        desc="Manages channel prefixes across categories.",
         section="Channels",
-        examples=[".theme prefix", ".theme prefix scan"],
+        perm_tier="admin",
+        discord_perms=["manage_channels"],
+        examples=[".theme prefix add ✦ #general", ".theme prefix scan all", ".tprefix ✦ #general"],
         params=[],
         note="Root command for all prefix subcommands: scan, add, remove, server, replace, undo, list.",
     )
-    async def theme_prefix(self, ctx: commands.Context):
-        await ctx.send(
-            "-# prefix subcommands: `scan`, `add`, `remove`, `list`\n"
-            "-# e.g. `.theme prefix add 🔥 #general-category`"
-        )
+    async def theme_prefix(self, ctx: commands.Context, *, args: str = None):
+        if not args:
+            return await ctx.send(
+                "-# prefix subcommands: `scan`, `add`, `remove`, `list`\n"
+                "-# e.g. `.theme prefix add ✦ #general` or `.tprefix ✦ #general`"
+            )
+        words = args.split(None, 1)
+        emoji = words[0] if words else None
+        cats = words[1] if len(words) > 1 else None
+        await self.prefix_add(ctx, emoji=emoji, categories=cats)
 
     @theme_prefix.command(name="scan")
     @_is_theme_admin()
@@ -1486,18 +1521,27 @@ class ThemeCog(commands.Cog, name="Theme"):
     # CHANNEL FONT
     # ══════════════════════════════════════════════════════════
 
-    @theme.group(name="font", invoke_without_command=True)
+    @theme.group(name="font", aliases=["f"], invoke_without_command=True)
     @_is_theme_admin()
     @help_meta(
-        usage="`.theme font`",
+        usage="`.theme font [font_name|list|set|reset]`",
         desc="Manages channel fonts — list, set, reset.",
         section="Channels",
-        examples=[".theme font", ".theme font list", ".theme font set cursive #general"],
+        perm_tier="admin",
+        discord_perms=["manage_channels"],
+        examples=[".theme font list", ".theme font bold all", ".tfont bold all"],
         params=[],
-        note="Root command for font subcommands: list, set, reset.",
+        note="Root command for unicode channel font transformations.",
     )
-    async def theme_font(self, ctx: commands.Context):
-        await ctx.send("-# font subcommands: `list`, `set`, `reset`")
+    async def theme_font(self, ctx: commands.Context, *, args: str = None):
+        if not args or args.strip().lower() == "list":
+            return await ctx.invoke(self.font_list)
+        words = args.split(None, 1)
+        font_key = words[0] if words else None
+        target = words[1] if len(words) > 1 else None
+        if font_key:
+            target_list = target.split() if target else []
+            await self.font_set(ctx, font_key, *target_list)
 
     @theme_font.command(name="list")
     @_is_theme_admin()
@@ -2896,6 +2940,207 @@ class ThemeCog(commands.Cog, name="Theme"):
         if not tm.get_factory_snapshot(guild.id):
             tm.save_factory_snapshot(guild.id, snap)
         log.info(f"snapshot pushed for guild {guild.id}: {len(roles_snap)} roles, {len(channels_snap)} channels")
+
+    # ══════════════════════════════════════════════════════════
+    # TOP-LEVEL FAST SHORTCUTS (.tr, .tri, .troles, .tmap, .tfont, .tprefix, etc.)
+    # ══════════════════════════════════════════════════════════
+
+    @commands.command(name="tr", aliases=["themerole"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.tr <slot|#index> <new name>`",
+        desc="Fast shortcut to rename a mapped server role. Supports slot number or name.",
+        section="Roles",
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[".tr 1 True Dragon", ".tr owner God Emperor", ".tr co owner Vice King"],
+        params=[
+            {"name": "slot", "type": "str", "required": True, "desc": "Slot number (1, 2...) or slot name."},
+            {"name": "new_name", "type": "str", "required": True, "desc": "The new display name for the role."},
+        ],
+    )
+    async def fast_tr(self, ctx: commands.Context, *, args: str = None):
+        """Fast role rename: .tr 1 True Dragon"""
+        await self.theme_role(ctx, args=args)
+
+    @commands.command(name="tri", aliases=["themeroleicon", "ticon"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.tri <slot|#index> [emoji|url|attachment]`",
+        desc="Fast shortcut to set a role icon for a slot. Supports slot number or name.",
+        section="Roles",
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[".tri 1 👑", ".tri owner https://i.imgur.com/icon.png"],
+        params=[
+            {"name": "slot", "type": "str", "required": True, "desc": "Slot number (1, 2...) or slot name."},
+            {"name": "source", "type": "str", "required": False, "desc": "Emoji, URL, or image attachment."},
+        ],
+    )
+    async def fast_tri(self, ctx: commands.Context, *, args: str = None):
+        """Fast role icon: .tri 1 👑"""
+        await self.theme_roleicon(ctx, args=args)
+
+    @commands.command(name="troles", aliases=["tslots", "trl", "themeroles"])
+    @help_meta(
+        usage="`.troles`",
+        desc="Fast shortcut to list all mapped role slots and their current Discord roles.",
+        section="Setup",
+        perm_tier="public",
+        examples=[".troles", ".tslots"],
+        params=[],
+    )
+    async def fast_troles(self, ctx: commands.Context):
+        """Fast list role slots: .troles"""
+        await self.theme_roles(ctx)
+
+    @commands.command(name="tmap", aliases=["tsetrole", "themesetrole"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.tmap <slot|#index> [@role]`",
+        desc="Fast shortcut to bind a Discord role to a theme slot.",
+        section="Setup",
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[".tmap 1 @Owner", ".tmap owner @Owner"],
+        params=[
+            {"name": "slot", "type": "str", "required": True, "desc": "Slot number or slot name to map."},
+            {"name": "role", "type": "role", "required": False, "desc": "The Discord role to map to this slot."},
+        ],
+    )
+    async def fast_tmap(self, ctx: commands.Context, slot: str = None, role: discord.Role = None):
+        """Fast map slot: .tmap 1 @role"""
+        await self.theme_setrole(ctx, slot=slot, role=role)
+
+    @commands.command(name="trevert", aliases=["themeresetrole", "tresetrole"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.trevert <slot|#index>`",
+        desc="Fast shortcut to revert a role name from the latest snapshot.",
+        section="Roles",
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[".trevert 1", ".trevert owner"],
+        params=[
+            {"name": "slot", "type": "str", "required": True, "desc": "Slot number or slot name to revert."},
+        ],
+    )
+    async def fast_trevert(self, ctx: commands.Context, *, slot_arg: str = None):
+        """Fast revert role: .trevert 1"""
+        await self.role_revert(ctx, slot_arg=slot_arg)
+
+    @commands.command(name="tfont", aliases=["themefont"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.tfont <font_name> [all|<#category>]`",
+        desc="Fast shortcut to apply a unicode font style to server channels.",
+        section="Fonts",
+        perm_tier="admin",
+        discord_perms=["manage_channels"],
+        examples=[".tfont bold all", ".tfont gothic #general", ".tfont list"],
+        params=[
+            {"name": "font", "type": "str", "required": True, "desc": "Font name (e.g. bold, italic, gothic, script)."},
+            {"name": "target", "type": "str", "required": False, "desc": "'all' or category/channel mention."},
+        ],
+    )
+    async def fast_tfont(self, ctx: commands.Context, *, args: str = None):
+        """Fast font command: .tfont bold all"""
+        await self.theme_font(ctx, args=args)
+
+    @commands.command(name="tfonts", aliases=["themefonts"])
+    @help_meta(
+        usage="`.tfonts`",
+        desc="Fast shortcut to view all available unicode fonts.",
+        section="Fonts",
+        perm_tier="public",
+        examples=[".tfonts"],
+        params=[],
+    )
+    async def fast_tfonts(self, ctx: commands.Context):
+        """Fast font list: .tfonts"""
+        await ctx.invoke(self.font_list)
+
+    @commands.command(name="tprefix", aliases=["themeprefix"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.tprefix <emoji|symbol> [<#category> ...]`",
+        desc="Fast shortcut to apply channel prefixes across categories.",
+        section="Prefixes",
+        perm_tier="admin",
+        discord_perms=["manage_channels"],
+        examples=[".tprefix ✦ #general", ".tprefix list"],
+        params=[
+            {"name": "emoji", "type": "str", "required": True, "desc": "Emoji or unicode symbol to prepend."},
+            {"name": "categories", "type": "str", "required": False, "desc": "Category mentions or 'all'."},
+        ],
+    )
+    async def fast_tprefix(self, ctx: commands.Context, *, args: str = None):
+        """Fast prefix command: .tprefix ✦ #general"""
+        await self.theme_prefix(ctx, args=args)
+
+    @commands.command(name="tapply", aliases=["themeapply"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.tapply <preset_name>`",
+        desc="Fast shortcut to apply a saved server theme preset.",
+        section="Presets",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".tapply dark_fantasy", ".tapply cyber_pink"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "The name of the saved preset to apply."},
+        ],
+    )
+    async def fast_tapply(self, ctx: commands.Context, *, name: str = None):
+        """Fast theme apply: .tapply <name>"""
+        await self.theme_apply(ctx, name=name)
+
+    @commands.command(name="tsave", aliases=["themesave"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.tsave <preset_name>`",
+        desc="Fast shortcut to save the current server theme as a preset.",
+        section="Presets",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".tsave my_theme"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "Name for the new preset."},
+        ],
+    )
+    async def fast_tsave(self, ctx: commands.Context, *, name: str = None):
+        """Fast theme save: .tsave <name>"""
+        await self.theme_save(ctx, name=name)
+
+    @commands.command(name="tsetup", aliases=["themesetup"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.tsetup`",
+        desc="Fast shortcut to run the interactive role slot mapping wizard.",
+        section="Setup",
+        perm_tier="admin",
+        discord_perms=["manage_roles"],
+        examples=[".tsetup"],
+        params=[],
+    )
+    async def fast_tsetup(self, ctx: commands.Context):
+        """Fast theme setup: .tsetup"""
+        await self.theme_setup(ctx)
+
+    @commands.command(name="treset", aliases=["themereset"])
+    @_is_theme_admin()
+    @help_meta(
+        usage="`.treset`",
+        desc="Fast shortcut to restore server roles and channels to snapshot.",
+        section="Presets",
+        perm_tier="admin",
+        discord_perms=["manage_guild"],
+        examples=[".treset"],
+        params=[],
+    )
+    async def fast_treset(self, ctx: commands.Context):
+        """Fast theme reset: .treset"""
+        await self.theme_reset(ctx)
 
 
 async def setup(bot: commands.Bot):
