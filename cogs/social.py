@@ -428,11 +428,12 @@ def _render_single_card(
 
 # ── Family Tree Graphic Node & Card Renderer ─────────────────────────
 class TreeNode:
-    def __init__(self, uid: int, name: str, tag: str, role: str, av_bytes: bytes | None = None, spouse: "TreeNode | None" = None, children: list["TreeNode"] | None = None):
+    def __init__(self, uid: int, name: str, tag: str, role: str, is_direct: bool = True, av_bytes: bytes | None = None, spouse: "TreeNode | None" = None, children: list["TreeNode"] | None = None):
         self.uid = uid
         self.name = name
         self.tag = tag
         self.role = role
+        self.is_direct = is_direct
         self.av_bytes = av_bytes
         self.spouse = spouse
         self.children = children or []
@@ -653,70 +654,106 @@ def _render_tree_card(
         for i, gp in enumerate(grandparents):
             render_node(start_gp_x + i * 110, tier_gp_y, gp, size=60, role_label="Grandparent")
 
+    # ── Focus Coordinates Preparation ──
+    focus_x = cx - 85 if spouse else cx
+    spouse_x = cx + 85 if spouse else None
+
+    # ── Parents Tier ──
     tier_p_y = 0
     if has_parents:
         tier_p_y = curr_tier_y + 45
         curr_tier_y += tier_height
+
+    # ── Focus Tier ──
+    tier_focus_y = curr_tier_y + 50
+    curr_tier_y += tier_height
+
+    # Render Parents
+    if has_parents:
+        direct_parents = [p for p in parents if getattr(p, "is_direct", True)]
+        step_parents = [p for p in parents if not getattr(p, "is_direct", True)]
+
         if len(parents) == 1:
-            render_node(cx, tier_p_y, parents[0], size=68, role_label="Parent")
-        else:
-            p1_x = cx - 95
-            p2_x = cx + 95
-            render_node(p1_x, tier_p_y, parents[0], size=68, role_label="Parent")
-            render_node(p2_x, tier_p_y, parents[1], size=68, role_label="Parent")
-            draw.line([(p1_x + 34, tier_p_y), (cx - 16, tier_p_y)], fill=(255, 255, 255, 75), width=2)
-            draw.line([(cx + 16, tier_p_y), (p2_x - 34, tier_p_y)], fill=(255, 255, 255, 75), width=2)
-            _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
+            p_node = parents[0]
+            p_x = focus_x
+            render_node(p_x, tier_p_y, p_node, size=68, role_label="Parent")
+
+            # Direct drop line straight down from Parent to Focus
+            p_drop_start = tier_p_y + 76
+            focus_top = tier_focus_y - 44
+            draw.line([(p_x, p_drop_start), (p_x, focus_top)], fill=(255, 255, 255, 75), width=2)
+            draw.ellipse([p_x - 3, focus_top - 2, p_x + 3, focus_top + 4], fill=(255, 255, 255, 140))
+
+        elif len(parents) == 2:
+            p1, p2 = parents[0], parents[1]
+            if len(direct_parents) == 1:
+                dir_p = direct_parents[0]
+                step_p = step_parents[0] if step_parents else (p2 if p1 == dir_p else p1)
+
+                dir_x = focus_x
+                step_x = focus_x + 160 if focus_x <= cx else focus_x - 160
+
+                render_node(dir_x, tier_p_y, dir_p, size=68, role_label="Parent")
+                render_node(step_x, tier_p_y, step_p, size=64, role_label="In-law")
+
+                mid_x = (dir_x + step_x) // 2
+                draw.line([(min(dir_x, step_x) + 34, tier_p_y), (mid_x - 14, tier_p_y)], fill=(255, 255, 255, 75), width=2)
+                draw.line([(mid_x + 14, tier_p_y), (max(dir_x, step_x) - 34, tier_p_y)], fill=(255, 255, 255, 75), width=2)
+                _draw_interlocking_rings(draw, mid_x, tier_p_y, r=7)
+
+                # DIRECT LINEAGE DROP: Drops straight down from direct parent (TreLoco) to Focus (tempest)!
+                p_drop_start = tier_p_y + 76
+                focus_top = tier_focus_y - 44
+                draw.line([(dir_x, p_drop_start), (dir_x, focus_top)], fill=(255, 255, 255, 85), width=2)
+                draw.ellipse([dir_x - 3, focus_top - 2, dir_x + 3, focus_top + 4], fill=(255, 255, 255, 160))
+
+            else:
+                p1_x = cx - 95
+                p2_x = cx + 95
+                render_node(p1_x, tier_p_y, p1, size=68, role_label="Parent")
+                render_node(p2_x, tier_p_y, p2, size=68, role_label="Parent")
+                draw.line([(p1_x + 34, tier_p_y), (cx - 16, tier_p_y)], fill=(255, 255, 255, 75), width=2)
+                draw.line([(cx + 16, tier_p_y), (p2_x - 34, tier_p_y)], fill=(255, 255, 255, 75), width=2)
+                _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
+
+                drop_start = tier_p_y + 14
+                focus_top = tier_focus_y - 44
+                draw.line([(cx, drop_start), (cx, (drop_start + focus_top) // 2), (focus_x, (drop_start + focus_top) // 2), (focus_x, focus_top)], fill=(255, 255, 255, 65), width=2)
+                draw.ellipse([focus_x - 3, focus_top - 2, focus_x + 3, focus_top + 4], fill=(255, 255, 255, 140))
 
         if has_grandparents and tier_gp_y:
             draw.line([(cx, tier_gp_y + 44), (cx, tier_p_y - 42)], fill=(255, 255, 255, 45), width=1)
 
-    tier_focus_y = curr_tier_y + 50
-    curr_tier_y += tier_height
-
-    # Parent drop line to Focus:
-    # If 2 parents: starts at wedding rings (cx, tier_p_y + 14)
-    # If 1 parent: starts below parent badge (cx, tier_p_y + 76)
-    if has_parents and tier_p_y:
-        drop_start_y = tier_p_y + 14 if len(parents) > 1 else tier_p_y + 76
-        focus_top_target = tier_focus_y - 42
-        if focus_top_target > drop_start_y:
-            draw.line([(cx, drop_start_y), (cx, focus_top_target)], fill=(255, 255, 255, 55), width=2)
-            draw.ellipse([cx - 3, focus_top_target - 2, cx + 3, focus_top_target + 4], fill=(255, 255, 255, 140))
-
+    # ── Focus Tier ──
     if spouse:
-        f_x = cx - 85
-        sp_x = cx + 85
-        render_node(f_x, tier_focus_y, focus_user, size=80, is_focus=True, role_label="Focus")
-        render_node(sp_x, tier_focus_y, spouse, size=74, role_label="Spouse")
-        draw.line([(f_x + 40, tier_focus_y), (cx - 16, tier_focus_y)], fill=(255, 255, 255, 85), width=2)
-        draw.line([(cx + 16, tier_focus_y), (sp_x - 37, tier_focus_y)], fill=(255, 255, 255, 85), width=2)
+        render_node(focus_x, tier_focus_y, focus_user, size=80, is_focus=True, role_label="Focus")
+        render_node(spouse_x, tier_focus_y, spouse, size=74, role_label="Spouse")
+        draw.line([(focus_x + 40, tier_focus_y), (cx - 16, tier_focus_y)], fill=(255, 255, 255, 85), width=2)
+        draw.line([(cx + 16, tier_focus_y), (spouse_x - 37, tier_focus_y)], fill=(255, 255, 255, 85), width=2)
         _draw_interlocking_rings(draw, cx, tier_focus_y, r=7)
     else:
-        f_x = cx
-        render_node(f_x, tier_focus_y, focus_user, size=82, is_focus=True, role_label="Focus")
+        render_node(focus_x, tier_focus_y, focus_user, size=82, is_focus=True, role_label="Focus")
 
     if siblings:
         for i, sib in enumerate(siblings[:4]):
             if spouse:
-                sib_x = cx - 85 - 110 - (i // 2) * 105 if i % 2 == 0 else cx + 85 + 110 + (i // 2) * 105
+                sib_x = cx - 85 - 115 - (i // 2) * 105 if i % 2 == 0 else cx + 85 + 115 + (i // 2) * 105
             else:
-                sib_x = cx - 120 - (i // 2) * 105 if i % 2 == 0 else cx + 120 + (i // 2) * 105
+                sib_x = cx - 125 - (i // 2) * 105 if i % 2 == 0 else cx + 125 + (i // 2) * 105
             render_node(sib_x, tier_focus_y, sib, size=60, role_label="Sibling")
             if has_parents and tier_p_y:
-                draw.line([(sib_x, tier_focus_y - 36), (sib_x, tier_focus_y - 48), (cx, tier_focus_y - 48)], fill=(255, 255, 255, 40), width=1)
+                draw.line([(sib_x, tier_focus_y - 36), (sib_x, tier_focus_y - 48), (focus_x, tier_focus_y - 48)], fill=(255, 255, 255, 40), width=1)
 
+    # ── Children Tier ──
     if has_children:
         tier_child_y = curr_tier_y + 45
         curr_tier_y += tier_height
         tier_grandchild_y = curr_tier_y + 45 if has_grandchildren else 0
 
-        # Focus drop line to children bus:
-        # If spouse present: starts at (cx, tier_focus_y + 14)
-        # If no spouse: starts below focus badge at (cx, tier_focus_y + 86)
-        focus_child_drop_start = tier_focus_y + 14 if spouse else tier_focus_y + 86
-        bus_y = max(tier_focus_y + 95, focus_child_drop_start + 15)
-        draw.line([(cx, focus_child_drop_start), (cx, bus_y)], fill=(255, 255, 255, 55), width=2)
+        # Direct drop from Focus to children bus
+        focus_child_drop_start = tier_focus_y + 86
+        bus_y = max(tier_focus_y + 98, focus_child_drop_start + 15)
+        draw.line([(focus_x, focus_child_drop_start), (focus_x, bus_y)], fill=(255, 255, 255, 65), width=2)
 
         c_count = len(children_trees)
         cluster_widths = []
@@ -728,9 +765,9 @@ def _render_tree_card(
         total_span = sum(cluster_widths) + (c_count - 1) * 30
         curr_cluster_x = cx - total_span // 2
 
-        draw.line([(cx - total_span // 2 + cluster_widths[0] // 2, bus_y), 
-                   (cx - total_span // 2 + total_span - cluster_widths[-1] // 2, bus_y)], 
-                  fill=(255, 255, 255, 55), width=2)
+        bus_start_x = min(focus_x, curr_cluster_x + cluster_widths[0] // 2)
+        bus_end_x = max(focus_x, curr_cluster_x + total_span - cluster_widths[-1] // 2)
+        draw.line([(bus_start_x, bus_y), (bus_end_x, bus_y)], fill=(255, 255, 255, 55), width=2)
 
         for i, child_tree in enumerate(children_trees):
             c_w = cluster_widths[i]
@@ -2474,15 +2511,11 @@ class Social(commands.Cog, name="Social"):
         target = user or ctx.author
         m = await self.get_marriage(target.id)
         spouse_id = m[0] if m else None
-        parent_ids = await self.get_parents(target.id)
-        if len(parent_ids) == 1:
-            p_m = await self.get_marriage(parent_ids[0])
-            if p_m and p_m[0] not in parent_ids and p_m[0] != target.id:
-                parent_ids.append(p_m[0])
+        direct_parent_ids = await self.get_parents(target.id)
 
-        # Grandparents (parents of parents)
+        # Grandparents (parents of direct parents)
         grandparent_ids = []
-        for pid in parent_ids[:2]:
+        for pid in direct_parent_ids[:2]:
             gp_list = await self.get_parents(pid)
             for gp in gp_list:
                 if gp not in grandparent_ids:
@@ -2496,7 +2529,7 @@ class Social(commands.Cog, name="Social"):
         sibling_ids = await self.get_siblings(target.id)
         fam_name = await self.get_family_name(target.id)
 
-        async def fetch_node(uid: int, role: str) -> TreeNode:
+        async def fetch_node(uid: int, role: str, is_direct: bool = True) -> TreeNode:
             name, tag = await self._get_user_display(uid, ctx.guild)
             member_obj = ctx.guild.get_member(uid) or self.bot.get_user(uid) if ctx.guild else self.bot.get_user(uid)
             if member_obj is None:
@@ -2505,12 +2538,22 @@ class Social(commands.Cog, name="Social"):
                 except Exception:
                     pass
             av_bytes = await self._fetch_avatar(member_obj)
-            return TreeNode(uid, name, tag, role, av_bytes)
+            return TreeNode(uid, name, tag, role, is_direct=is_direct, av_bytes=av_bytes)
 
-        focus_node = await fetch_node(target.id, "Focus")
-        spouse_node = await fetch_node(spouse_id, "Spouse") if spouse_id else None
+        focus_node = await fetch_node(target.id, "Focus", is_direct=True)
+        spouse_node = await fetch_node(spouse_id, "Spouse", is_direct=True) if spouse_id else None
 
-        parent_nodes = await asyncio.gather(*[fetch_node(pid, "Parent") for pid in parent_ids[:2]])
+        parent_tasks = []
+        if len(direct_parent_ids) == 1:
+            parent_tasks.append(fetch_node(direct_parent_ids[0], "Parent", is_direct=True))
+            p_m = await self.get_marriage(direct_parent_ids[0])
+            if p_m and p_m[0] not in direct_parent_ids and p_m[0] != target.id:
+                parent_tasks.append(fetch_node(p_m[0], "In-law", is_direct=False))
+        elif len(direct_parent_ids) >= 2:
+            for pid in direct_parent_ids[:2]:
+                parent_tasks.append(fetch_node(pid, "Parent", is_direct=True))
+
+        parent_nodes = await asyncio.gather(*parent_tasks) if parent_tasks else []
         grandparent_nodes = await asyncio.gather(*[fetch_node(gpid, "Grandparent") for gpid in grandparent_ids[:4]])
         sibling_nodes = await asyncio.gather(*[fetch_node(sid, "Sibling") for sid in sibling_ids[:3]])
 
