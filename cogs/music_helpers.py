@@ -233,7 +233,10 @@ class SpotifyClient:
                 return
             session = await self._get_session()
             creds = base64.b64encode(f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()).decode()
-            headers = {"Authorization": f"Basic {creds}"}
+            headers = {
+                "Authorization": f"Basic {creds}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
             data = {"grant_type": "client_credentials"}
             async with session.post(SPOTIFY_TOKEN_URL, headers=headers, data=data) as r:
                 if r.status != 200:
