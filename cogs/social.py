@@ -495,13 +495,14 @@ def _render_tree_card(
     bg = Image.alpha_composite(bg, glow)
     draw = ImageDraw.Draw(bg)
 
+    f_star = _load_font(10)
     stars = [
         (50, 70), (120, 140), (W - 60, 90), (W - 120, 200),
         (80, H - 90), (W - 80, H - 80), (130, cy), (W - 130, cy),
         (200, 60), (W - 200, 60), (cx, 45), (cx, H - 45),
     ]
     for sx, sy in stars:
-        draw.text((sx, sy), "✦", fill=(255, 255, 255, 40), anchor="mm", font=_load_font(10))
+        f_star.draw(draw, (sx - 4, sy - 4), "✦", fill=(255, 255, 255, 40))
 
     pad_x, pad_y = 24, 20
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -544,7 +545,7 @@ def _render_tree_card(
         outline=(255, 255, 255, 120),
         width=1,
     )
-    draw.text(((W - tw) // 2, pill_y + 6), title_text, fill=(12, 14, 18, 255), font=f_title)
+    f_title.draw(draw, ((W - tw) // 2, pill_y + 6), title_text, fill=(12, 14, 18, 255))
 
     draw.line([(pad_x + 60, pill_y + 13), (pill_x - 16, pill_y + 13)], fill=(255, 255, 255, 45), width=1)
     draw.ellipse([pill_x - 20, pill_y + 11, pill_x - 16, pill_y + 15], fill=(255, 255, 255, 120))
@@ -563,7 +564,7 @@ def _render_tree_card(
 
         n_txt = node.name[:11]
         nw = f_name.getlength(n_txt)
-        draw.text((x - nw // 2, y + size // 2 + 5), n_txt, fill=(255, 255, 255, 245), font=f_name)
+        f_name.draw(draw, (x - nw // 2, y + size // 2 + 5), n_txt, fill=(255, 255, 255, 245))
 
         role_txt = role_label or node.role
         if role_txt:
@@ -575,7 +576,7 @@ def _render_tree_card(
             bg_col = (255, 255, 255, 225) if is_focus else (32, 35, 44, 230)
             txt_col = (12, 14, 18, 255) if is_focus else (185, 190, 205, 255)
             draw.rounded_rectangle([rb_x, rb_y, rb_x + rb_w, rb_y + rb_h], radius=7, fill=bg_col, outline=(255, 255, 255, 40), width=1)
-            draw.text((rb_x + 6, rb_y + 1), role_txt, fill=txt_col, font=f_badge)
+            f_badge.draw(draw, (rb_x + 6, rb_y + 1), role_txt, fill=txt_col)
 
     curr_tier_y = pad_y + 80
 
@@ -707,7 +708,7 @@ def _render_tree_card(
         outline=(255, 255, 255, 120),
         width=1,
     )
-    draw.text((spill_x + 16, spill_y + 5), stats_text, fill=(12, 14, 18, 255), font=f_title)
+    f_title.draw(draw, (spill_x + 16, spill_y + 5), stats_text, fill=(12, 14, 18, 255))
 
     out = io.BytesIO()
     bg.convert("RGB").save(out, format="PNG")
