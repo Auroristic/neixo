@@ -552,7 +552,11 @@ def _render_tree_card(
     f_name = _load_font(12, bold=True)
     f_badge = _load_font(9, bold=True)
 
-    title_text = f"✦   HOUSE OF {family_name.upper()}   ✦" if family_name else f"✦   {focus_user.name.upper()}'S FAMILY DYNASTY   ✦"
+    if family_name:
+        clean_name = re.sub(r"^house\s+of\s+", "", family_name.strip(), flags=re.IGNORECASE)
+        title_text = f"✦   HOUSE OF {clean_name.upper()}   ✦"
+    else:
+        title_text = f"✦   {focus_user.name.upper()}'S FAMILY DYNASTY   ✦"
     tw = f_title.getlength(title_text)
     pill_w = tw + 36
     pill_h = 26
