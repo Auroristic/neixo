@@ -654,11 +654,14 @@ def _render_tree_card(
         render_node(f_x, tier_focus_y, focus_user, size=82, is_focus=True, role_label="Focus")
 
     if siblings:
-        for i, sib in enumerate(siblings[:3]):
-            sib_x = pad_x + 75 + i * 85 if i % 2 == 0 else W - pad_x - 75 - (i // 2) * 85
+        for i, sib in enumerate(siblings[:4]):
+            if spouse:
+                sib_x = cx - 85 - 110 - (i // 2) * 105 if i % 2 == 0 else cx + 85 + 110 + (i // 2) * 105
+            else:
+                sib_x = cx - 120 - (i // 2) * 105 if i % 2 == 0 else cx + 120 + (i // 2) * 105
             render_node(sib_x, tier_focus_y, sib, size=60, role_label="Sibling")
             if has_parents and tier_p_y:
-                draw.line([(sib_x, tier_focus_y - 40), (sib_x, tier_p_y + 60), (cx, tier_p_y + 60)], fill=(255, 255, 255, 25), width=1)
+                draw.line([(sib_x, tier_focus_y - 36), (sib_x, tier_focus_y - 48), (cx, tier_focus_y - 48)], fill=(255, 255, 255, 40), width=1)
 
     if has_children:
         tier_child_y = curr_tier_y + 45
