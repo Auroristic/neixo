@@ -503,7 +503,14 @@ def _render_tree_card(
     tier_height = 180
     H = max(580, tier_count * tier_height + 150)
 
-    bg = Image.new("RGBA", (W, H), (7, 8, 12, 255))
+    if focus_user.av_bytes:
+        try:
+            bg = _make_glass_backdrop(focus_user.av_bytes, W, H, dark_tint=0.64, blur_radius=26)
+        except Exception:
+            bg = Image.new("RGBA", (W, H), (7, 8, 12, 255))
+    else:
+        bg = Image.new("RGBA", (W, H), (7, 8, 12, 255))
+
     cx = W // 2
     cy = H // 2
 
@@ -511,11 +518,11 @@ def _render_tree_card(
     nebula = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ndraw = ImageDraw.Draw(nebula)
     cloud_points = [
-        (W // 4, H // 4, 180, 24),
-        (3 * W // 4, H // 3, 220, 20),
-        (W // 2, H // 2, 260, 32),
-        (W // 5, 3 * H // 4, 190, 22),
-        (4 * W // 5, 4 * H // 5, 220, 26),
+        (W // 4, H // 4, 180, 20),
+        (3 * W // 4, H // 3, 220, 18),
+        (W // 2, H // 2, 260, 24),
+        (W // 5, 3 * H // 4, 190, 18),
+        (4 * W // 5, 4 * H // 5, 220, 20),
     ]
     for ncx, ncy, rad, alpha in cloud_points:
         for r in range(rad, 20, -30):
