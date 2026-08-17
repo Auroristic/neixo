@@ -504,88 +504,61 @@ def _render_tree_card(
     tier_height = 180
     H = max(580, tier_count * tier_height + 150)
 
-    if focus_user.av_bytes:
-        try:
-            bg = _make_glass_backdrop(focus_user.av_bytes, W, H, dark_tint=0.64, blur_radius=26)
-        except Exception:
-            bg = Image.new("RGBA", (W, H), (7, 8, 12, 255))
-    else:
-        bg = Image.new("RGBA", (W, H), (7, 8, 12, 255))
+    bg = _make_glass_backdrop(focus_user.av_bytes, W, H, dark_tint=0.62, blur_radius=24)
 
-    cx = W // 2
-    cy = H // 2
+    # 1. Cosmic Constellation & Sacred Geometry Layer
+    cosmic = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    c_draw = ImageDraw.Draw(cosmic)
 
-    # 1. Galactic Stardust Nebulae Clouds (Gaussian blurred)
-    nebula = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ndraw = ImageDraw.Draw(nebula)
-    cloud_points = [
-        (W // 4, H // 4, 180, 20),
-        (3 * W // 4, H // 3, 220, 18),
-        (W // 2, H // 2, 260, 24),
-        (W // 5, 3 * H // 4, 190, 18),
-        (4 * W // 5, 4 * H // 5, 220, 20),
-    ]
-    for ncx, ncy, rad, alpha in cloud_points:
-        for r in range(rad, 20, -30):
-            a = int(alpha * (1 - (r / rad) ** 1.5))
-            ndraw.ellipse([ncx - r, ncy - r, ncx + r, ncy + r], fill=(255, 255, 255, a))
-    nebula = nebula.filter(ImageFilter.GaussianBlur(32))
-    bg = Image.alpha_composite(bg, nebula)
+    random.seed(42)
+    for _ in range(50):
+        sx = random.randint(30, W - 30)
+        sy = random.randint(25, H - 25)
+        size = random.choice([1, 1, 2, 2, 3])
+        alpha = random.randint(25, 75)
+        c_draw.ellipse([sx, sy, sx + size, sy + size], fill=(255, 255, 255, alpha))
 
-    # 2. Translucent Obsidian Glass Card
-    pad_x, pad_y = 24, 20
+    # Sacred orbital rings in background center
+    cx, cy = W // 2, H // 2
+    for r, a in [(140, 14), (240, 10), (360, 6)]:
+        c_draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(255, 255, 255, a), width=1)
+    c_draw.line([(cx - 300, cy), (cx + 300, cy)], fill=(255, 255, 255, 8), width=1)
+    c_draw.line([(cx, cy - 200), (cx, cy + 200)], fill=(255, 255, 255, 8), width=1)
+
+    bg = Image.alpha_composite(bg, cosmic)
+
+    # 2. Glass Frame & Ornamental Corner Filigree
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    cdraw = ImageDraw.Draw(card)
-    cdraw.rounded_rectangle(
+    cd = ImageDraw.Draw(card)
+    pad_x, pad_y = 26, 20
+
+    cd.rounded_rectangle(
         [pad_x, pad_y, W - pad_x, H - pad_y],
-        radius=18,
-        fill=(12, 14, 20, 205),
-        outline=(255, 255, 255, 36),
+        radius=26,
+        fill=(0, 0, 0, 125),
+        outline=(255, 255, 255, 45),
         width=1,
     )
+    cd.rounded_rectangle(
+        [pad_x + 6, pad_y + 6, W - pad_x - 6, H - pad_y - 6],
+        radius=20,
+        outline=(255, 255, 255, 18),
+        width=1,
+    )
+    cd.line([(pad_x + 35, pad_y + 1), (W - pad_x - 35, pad_y + 1)], fill=(255, 255, 255, 110), width=1)
 
-    def draw_corner(x, y, dx, dy):
-        cdraw.line([(x, y), (x + dx * 20, y)], fill=(255, 255, 255, 110), width=2)
-        cdraw.line([(x, y), (x, y + dy * 20)], fill=(255, 255, 255, 110), width=2)
-        cdraw.rectangle([x - 2, y - 2, x + 2, y + 2], fill=(255, 255, 255, 190))
+    def draw_corner_ornament(x, y, dx, dy):
+        cd.line([(x, y), (x + dx * 16, y)], fill=(255, 255, 255, 90), width=1)
+        cd.line([(x, y), (x, y + dy * 16)], fill=(255, 255, 255, 90), width=1)
+        px, py = x + dx * 8, y + dy * 8
+        cd.polygon([(px, py - 2), (px + 2, py), (px, py + 2), (px - 2, py)], fill=(255, 255, 255, 140))
 
-    draw_corner(pad_x + 10, pad_y + 10, 1, 1)
-    draw_corner(W - pad_x - 10, pad_y + 10, -1, 1)
-    draw_corner(pad_x + 10, H - pad_y - 10, 1, -1)
-    draw_corner(W - pad_x - 10, H - pad_y - 10, -1, -1)
+    draw_corner_ornament(pad_x + 12, pad_y + 12, 1, 1)
+    draw_corner_ornament(W - pad_x - 12, pad_y + 12, -1, 1)
+    draw_corner_ornament(pad_x + 12, H - pad_y - 12, 1, -1)
+    draw_corner_ornament(W - pad_x - 12, H - pad_y - 12, -1, -1)
+
     bg = Image.alpha_composite(bg, card)
-
-    # 3. Celestial Starfield & Orbital Rings on top of glass
-    cosmic_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    cdraw2 = ImageDraw.Draw(cosmic_layer)
-
-    # Concentric orbital rings around center
-    for ring_r in [140, 270, 420, 580, 750]:
-        cdraw2.ellipse([cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r], outline=(255, 255, 255, 12), width=1)
-
-    # Soft pinprick starlight
-    rnd = random.Random(42)
-    for _ in range(85):
-        sx = rnd.randint(pad_x + 20, W - pad_x - 20)
-        sy = rnd.randint(pad_y + 20, H - pad_y - 20)
-        bright = rnd.randint(25, 140)
-        cdraw2.point((sx, sy), fill=(255, 255, 255, bright))
-        if bright > 100:
-            cdraw2.ellipse([sx - 1, sy - 1, sx + 1, sy + 1], fill=(255, 255, 255, bright // 2))
-
-    # Glowing ✦ diamond stars
-    f_star = _load_font(10)
-    stars = [
-        (55, 75), (130, 145), (W - 65, 95), (W - 130, 210),
-        (85, H - 95), (W - 85, H - 85), (130, cy), (W - 130, cy),
-        (210, 65), (W - 210, 65), (cx - 200, cy - 130), (cx + 200, cy + 130),
-        (cx, 45), (cx, H - 45),
-    ]
-    for sx, sy in stars:
-        f_star.draw(cdraw2, (sx - 4, sy - 4), "✦", fill=(255, 255, 255, 55))
-        cdraw2.ellipse([sx - 5, sy - 5, sx + 5, sy + 5], fill=(255, 255, 255, 16))
-
-    bg = Image.alpha_composite(bg, cosmic_layer)
     draw = ImageDraw.Draw(bg)
 
     f_title = _load_font(11, bold=True)
@@ -825,7 +798,7 @@ def _render_tree_card(
     f_title.draw(draw, (spill_x + 16, spill_y + 5), stats_text, fill=(12, 14, 18, 255))
 
     out = io.BytesIO()
-    bg.convert("RGB").save(out, format="PNG")
+    bg.save(out, format="PNG")
     out.seek(0)
     return out
 
