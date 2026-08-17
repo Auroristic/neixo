@@ -16,6 +16,7 @@ import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw
 
+from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 from utils import CONFIG_FILE, DATA_DIR, get_embed_color, help_meta, is_owner_or_creator, load_json
 
 log = logging.getLogger(__name__)
