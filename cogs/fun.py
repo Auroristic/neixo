@@ -33,6 +33,12 @@ COG_META = {
 # ── uwulock state (persisted) ───────────────────────────────────
 UWULOCKED_FILE = f"{DATA_DIR}/uwulocked.json"
 
+# guild_id in _server_locks -> entire server is uwulocked
+_server_locks: set[int] = set()
+
+# channel_id in _channel_locks -> entire channel is uwulocked
+_channel_locks: set[int] = set()
+
 # (guild_id, user_id) -> {"all": bool, "channels": set[int]}
 _lock_scopes: dict[tuple[int, int], dict] = {}
 
@@ -41,6 +47,10 @@ _webhooks: dict[tuple[int, int], discord.Webhook] = {}
 
 
 def _is_locked(guild_id: int, user_id: int, channel_id: int) -> bool:
+    if guild_id in _server_locks:
+        return True
+    if channel_id in _channel_locks:
+        return True
     s = _lock_scopes.get((guild_id, user_id))
     if not s:
         return False
@@ -48,28 +58,43 @@ def _is_locked(guild_id: int, user_id: int, channel_id: int) -> bool:
 
 
 def _save_state() -> None:
-    """Persist current lock scopes + cached webhook URLs."""
-    data = {}
+    """Persist current lock scopes + server/channel locks + cached webhook URLs."""
+    users_data = {}
     for (gid, uid), scope in _lock_scopes.items():
         whs = {
             str(cid): wh.url
             for (u, cid), wh in _webhooks.items()
             if u == uid
         }
-        data[f"{gid}_{uid}"] = {
+        users_data[f"{gid}_{uid}"] = {
             "all": bool(scope.get("all", False)),
             "channels": [str(c) for c in scope.get("channels", set())],
             "webhooks": whs,
         }
+    data = {
+        "servers": list(_server_locks),
+        "channels": list(_channel_locks),
+        "users": users_data,
+    }
     save_json(UWULOCKED_FILE, data)
 
 
 def _load_state(bot: commands.Bot) -> None:
     """Rehydrate locks + webhooks from disk on cog load."""
+    _server_locks.clear()
+    _channel_locks.clear()
     _lock_scopes.clear()
     _webhooks.clear()
     raw = load_json(UWULOCKED_FILE) or {}
-    for key_str, info in raw.items():
+
+    if "users" in raw or "servers" in raw or "channels" in raw:
+        _server_locks.update(int(s) for s in raw.get("servers", []) if str(s).isdigit())
+        _channel_locks.update(int(c) for c in raw.get("channels", []) if str(c).isdigit())
+        user_dict = raw.get("users", {})
+    else:
+        user_dict = raw
+
+    for key_str, info in user_dict.items():
         if "_" in key_str:
             parts = key_str.split("_", 1)
             try:
@@ -247,22 +272,22 @@ class FunCog(commands.Cog, name="Fun"):
 
     @commands.command(name="uwulock")
     @help_meta(
-        usage="`.uwulock <@user> [#channel]`",
-        desc="Toggles uwulock on a user — all their messages are converted to uwu format via webhooks.",
+        usage="`.uwulock <@user | #channel | all> [#channel]`",
+        desc="Toggles uwulock on a user, a specific channel, or the entire server.",
         section="Moderation",
         perm_tier="whitelist",
         discord_perms=["manage_messages"],
-        examples=[".uwulock @someone", ".uwulock @someone #general"],
+        examples=[".uwulock @someone", ".uwulock @someone #general", ".uwulock #general", ".uwulock all"],
         params=[
-            {"name": "member", "type": "user", "required": True, "desc": "The member to uwulock."},
-            {"name": "channel", "type": "channel", "required": False, "desc": "Specific channel to restrict lock to (omit for all channels)."},
+            {"name": "target", "type": "user|channel|all", "required": True, "desc": "The member, channel, or 'all' to toggle uwulock for."},
+            {"name": "channel", "type": "channel", "required": False, "desc": "Specific channel to restrict lock to (when targeting a user)."},
         ],
         note="Whitelisted / Server Owner only. Webhooks are automatically managed and garbage collected.",
     )
     async def uwulock(
         self,
         ctx,
-        member: discord.Member = None,
+        target: str = None,
         channel: discord.TextChannel = None,
     ):
         if not ctx.guild:
@@ -274,8 +299,54 @@ class FunCog(commands.Cog, name="Fun"):
         if not is_owner_or_creator(ctx) and str(ctx.author.id) not in {str(uid) for uid in whitelist}:
             return await ctx.send("no perms")
 
-        if not member:
-            return await ctx.send("who? `.uwulock @user [#channel]`")
+        if not target:
+            return await ctx.send("usage: `.uwulock <@user | #channel | all> [#channel]`")
+
+        target_lower = target.lower()
+
+        # 1. Server-wide toggle
+        if target_lower in ("all", "server", "guild"):
+            if ctx.guild.id in _server_locks:
+                _server_locks.discard(ctx.guild.id)
+                reaction = "<:redlotus:1263556248310386800>"
+            else:
+                _server_locks.add(ctx.guild.id)
+                reaction = "<:pinklotus:1263556545686405170>"
+            _save_state()
+            try:
+                await ctx.message.add_reaction(reaction)
+            except Exception:
+                pass
+            return
+
+        # 2. Channel toggle
+        try:
+            target_chan = await commands.TextChannelConverter().convert(ctx, target)
+        except Exception:
+            target_chan = None
+
+        if target_chan is not None:
+            if target_chan.id in _channel_locks:
+                _channel_locks.discard(target_chan.id)
+                reaction = "<:redlotus:1263556248310386800>"
+            else:
+                _channel_locks.add(target_chan.id)
+                reaction = "<:pinklotus:1263556545686405170>"
+            _save_state()
+            try:
+                await ctx.message.add_reaction(reaction)
+            except Exception:
+                pass
+            return
+
+        # 3. Member toggle
+        try:
+            member = await commands.MemberConverter().convert(ctx, target)
+        except Exception:
+            member = None
+
+        if member is None:
+            return await ctx.send("invalid target. use: `.uwulock <@user | #channel | all> [#channel]`")
 
         if member.bot:
             return await ctx.send("can't uwulock bots silly!")
@@ -317,7 +388,7 @@ class FunCog(commands.Cog, name="Fun"):
     @commands.command(name="uwulist")
     @help_meta(
         usage="`.uwulist`",
-        desc="Shows all members who are currently uwulocked in this server.",
+        desc="Shows all active uwulocks (server, channels, and members) in this server.",
         section="Moderation",
         perm_tier="whitelist",
         discord_perms=["manage_messages"],
@@ -331,27 +402,36 @@ class FunCog(commands.Cog, name="Fun"):
         if not is_owner_or_creator(ctx) and not ctx.author.guild_permissions.manage_messages:
             return await ctx.send("no perms")
 
+        is_server_locked = ctx.guild.id in _server_locks
+        locked_channels = [c for c in _channel_locks if ctx.guild.get_channel(c) is not None]
         guild_locks = {
             uid: scope for (gid, uid), scope in _lock_scopes.items() if gid == ctx.guild.id
         }
 
-        if not guild_locks:
+        if not is_server_locked and not locked_channels and not guild_locks:
             embed = discord.Embed(
-                description="no one is uwulocked rn",
+                description="no active uwulocks rn",
                 color=get_embed_color(ctx.guild.id),
             )
             return await ctx.send(embed=embed)
 
         lines = []
-        for uid, scope in guild_locks.items():
-            if scope.get("all"):
-                scope_str = "all channels"
-            else:
-                chans = scope.get("channels", set())
-                scope_str = ", ".join(f"<#{c}>" for c in chans) or "(none)"
-            lines.append(f"• <@{uid}> — {scope_str}")
+        if is_server_locked:
+            lines.append("• **server:** `entire server locked`")
+        if locked_channels:
+            lines.append("• **channels:** " + ", ".join(f"<#{c}>" for c in locked_channels))
+        if guild_locks:
+            lines.append("• **members:**")
+            for uid, scope in guild_locks.items():
+                if scope.get("all"):
+                    scope_str = "all channels"
+                else:
+                    chans = scope.get("channels", set())
+                    scope_str = ", ".join(f"<#{c}>" for c in chans) or "(none)"
+                lines.append(f"  - <@{uid}> — {scope_str}")
+
         embed = discord.Embed(
-            title="uwulocked members",
+            title="active uwulocks",
             description="\n".join(lines),
             color=get_embed_color(ctx.guild.id),
         )
@@ -363,7 +443,9 @@ class FunCog(commands.Cog, name="Fun"):
             return
         if not _is_locked(message.guild.id, message.author.id, message.channel.id):
             return
-        if message.content.startswith("."):
+
+        ctx = await self.bot.get_context(message)
+        if ctx.valid:
             return
 
         has_links = any(
