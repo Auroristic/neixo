@@ -438,6 +438,26 @@ class TreeNode:
         self.children = children or []
 
 
+def _safe_circle_avatar(img_bytes: bytes | None, size: int) -> Image.Image:
+    im = None
+    if img_bytes:
+        try:
+            im = Image.open(io.BytesIO(img_bytes)).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+        except Exception:
+            im = None
+    if im is None:
+        im = Image.new("RGBA", (size, size), (22, 25, 33, 255))
+        d = ImageDraw.Draw(im)
+        f_av = _load_font(size // 3, bold=True)
+        f_av.draw(d, (size // 3, size // 4), "✦", fill=(120, 125, 145, 255))
+
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(im, (0, 0), mask)
+    return out
+
+
 def _draw_interlocking_rings(draw: ImageDraw.ImageDraw, cx: int, cy: int, r: int = 7):
     draw.ellipse([cx - r - 3, cy - r, cx + r - 3, cy + r], outline=(255, 255, 255, 220), width=2)
     draw.ellipse([cx - r + 3, cy - r, cx + r + 3, cy + r], outline=(255, 255, 255, 220), width=2)
@@ -553,7 +573,7 @@ def _render_tree_card(
     draw.ellipse([pill_x + pill_w + 16, pill_y + 11, pill_x + pill_w + 20, pill_y + 15], fill=(255, 255, 255, 120))
 
     def render_node(x: int, y: int, node: TreeNode, size: int = 68, is_focus: bool = False, role_label: str | None = None):
-        av_img = _circle_avatar(node.av_bytes, size)
+        av_img = _safe_circle_avatar(node.av_bytes, size)
         bg.paste(av_img, (x - size // 2, y - size // 2), av_img)
 
         border_col = (255, 255, 255, 230) if is_focus else (255, 255, 255, 110)
