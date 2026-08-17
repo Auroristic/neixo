@@ -60,7 +60,7 @@ WYR_QUESTIONS = [
 
 
 # ── Marriage Card Renderers & Time Helpers ─────────────────────────
-def _format_married_duration(married_dt: datetime) -> tuple[str, str, int]:
+def _format_married_duration(married_dt: datetime) -> tuple[str, str, int, str]:
     now = datetime.now(timezone.utc)
     delta = now - married_dt
     total_seconds = max(0, int(delta.total_seconds()))
@@ -82,7 +82,20 @@ def _format_married_duration(married_dt: datetime) -> tuple[str, str, int]:
         long_str = f"{seconds} Second{'s' if seconds != 1 else ''}"
         short_str = f"{seconds}s"
 
-    return long_str, short_str, days
+    if days < 1:
+        tier_title = "✦  N E W L Y W E D S  ✦"
+    elif days < 7:
+        tier_title = "✦  S W E E T H E A R T S  ✦"
+    elif days < 30:
+        tier_title = "✦  D E V O T E D   H E A R T S  ✦"
+    elif days < 90:
+        tier_title = "✦  S O U L B O U N D  ✦"
+    elif days < 365:
+        tier_title = "✦  T W I N   F L A M E S  ✦"
+    else:
+        tier_title = "✦  E T E R N A L   V O W  ✦"
+
+    return long_str, short_str, days, tier_title
 
 
 def _render_marriage_card(
@@ -96,6 +109,7 @@ def _render_marriage_card(
     date_str: str,
     sent_proposals: int = 0,
     recv_proposals: int = 0,
+    header_title: str = "✦  E T E R N A L   V O W  ✦",
 ) -> io.BytesIO:
     from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 
@@ -168,7 +182,7 @@ def _render_marriage_card(
     f_symbols = _load_font(16, bold=False)
 
     # ── 3. Top Header Badge ──────────────────────────────────────────
-    header_text = "✦  E T E R N A L   V O W  ✦"
+    header_text = header_title
     hw = f_title.getlength(header_text)
     pill_w = hw + 36
     pill_h = 28
@@ -417,6 +431,11 @@ class MarryProposalView(discord.ui.View):
         self.target = target
         self.cog = cog
         self.value = None
+        self.message: discord.Message | None = None
+
+    def _release_locks(self):
+        self.cog._active_proposals.discard(self.author.id)
+        self.cog._active_proposals.discard(self.target.id)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.target.id:
@@ -429,6 +448,7 @@ class MarryProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = True
+        self._release_locks()
         await self.cog.create_marriage(self.author.id, self.target.id, interaction.guild_id or 0)
         await self.cog.record_proposal_result(self.author.id, self.target.id, accepted=True)
         
@@ -454,6 +474,7 @@ class MarryProposalView(discord.ui.View):
                 date_str,
                 sent,
                 recv,
+                "✦  N E W L Y W E D S  ✦",
             )
             file = discord.File(card_buf, filename="wedding.png")
             await interaction.message.edit(content=None, attachments=[file], view=self)
@@ -470,6 +491,7 @@ class MarryProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = False
+        self._release_locks()
         await self.cog.record_proposal_result(self.author.id, self.target.id, accepted=False)
         await interaction.response.edit_message(
             content=f"-# {self.target.mention} declined {self.author.mention}'s proposal",
@@ -478,8 +500,67 @@ class MarryProposalView(discord.ui.View):
         self.stop()
 
     async def on_timeout(self):
+        self._release_locks()
         for item in self.children:
             item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(
+                    content=f"-# proposal from {self.author.mention} to {self.target.mention} timed out ⏳",
+                    view=self,
+                )
+            except discord.HTTPException:
+                pass
+        self.stop()
+
+
+# ── Divorce Confirmation View ──────────────────────────────────────
+class DivorceConfirmView(discord.ui.View):
+    def __init__(self, author: discord.Member, partner_id: int, cog: "Social"):
+        super().__init__(timeout=30)
+        self.author = author
+        self.partner_id = partner_id
+        self.cog = cog
+        self.value = None
+        self.message: discord.Message | None = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author.id:
+            await interaction.response.send_message("-# not your confirmation", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="divorce", style=discord.ButtonStyle.danger, emoji="💔")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = True
+        await self.cog.delete_marriage(self.author.id)
+        await interaction.response.edit_message(
+            content=f"-# you and <@{self.partner_id}> are now divorced 💔",
+            view=self,
+        )
+        self.stop()
+
+    @discord.ui.button(label="cancel", style=discord.ButtonStyle.secondary, emoji="✖")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = False
+        await interaction.response.edit_message(
+            content="-# divorce cancelled",
+            view=self,
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(content="-# divorce confirmation timed out", view=self)
+            except discord.HTTPException:
+                pass
         self.stop()
 
 
@@ -652,6 +733,7 @@ class Social(commands.Cog, name="Social"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: aiosqlite.Connection | None = None
+        self._active_proposals: set[int] = set()
 
     async def cog_load(self):
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -791,7 +873,7 @@ class Social(commands.Cog, name="Social"):
 
     # ── Marriage Commands ───────────────────────────────────────────
     @commands.command(name="marry", aliases=["propose"])
-    @commands.cooldown(1, 10, commands.BucketType.user)
+    @commands.cooldown(1, 15, commands.BucketType.user)
     @help_meta(
         usage="`.marry <@user>`",
         desc="Proposes to another server member with an interactive wedding proposal.",
@@ -821,24 +903,33 @@ class Social(commands.Cog, name="Social"):
         if m2:
             return await ctx.send(f"-# {user.display_name} is already married to <@{m2[0]}>")
 
+        if ctx.author.id in self._active_proposals:
+            return await ctx.send("-# you already have an active proposal pending. please wait for it to finish")
+        if user.id in self._active_proposals:
+            return await ctx.send(f"-# {user.display_name} is currently considering another proposal. please try again in a moment")
+
+        self._active_proposals.add(ctx.author.id)
+        self._active_proposals.add(user.id)
+
         await self.record_proposal(ctx.author.id, user.id)
 
         view = MarryProposalView(ctx.author, user, self)
-        await ctx.send(
+        msg = await ctx.send(
             f"{user.mention}, **{ctx.author.display_name}** has proposed to you 💍",
             view=view,
         )
+        view.message = msg
 
     @commands.command(name="divorce")
-    @commands.cooldown(1, 10, commands.BucketType.user)
+    @commands.cooldown(1, 20, commands.BucketType.user)
     @help_meta(
         usage="`.divorce`",
-        desc="Divorces your current married partner.",
+        desc="Divorces your current married partner with safety confirmation.",
         section="Fun",
         perm_tier="public",
         examples=[".divorce"],
         params=[],
-        note="Ends active marriage immediately.",
+        note="Requires interactive confirmation before dissolving marriage.",
     )
     async def divorce(self, ctx: commands.Context):
         if ctx.guild is None:
@@ -848,8 +939,15 @@ class Social(commands.Cog, name="Social"):
             return await ctx.send("-# you aren't married to anyone")
 
         partner_id = m[0]
-        await self.delete_marriage(ctx.author.id)
-        await ctx.send(f"-# you and <@{partner_id}> are now divorced 💔")
+        partner = ctx.guild.get_member(partner_id) or self.bot.get_user(partner_id)
+        p_name = partner.display_name if partner else f"<@{partner_id}>"
+
+        view = DivorceConfirmView(ctx.author, partner_id, self)
+        msg = await ctx.send(
+            f"-# are you sure you want to divorce **{p_name}**?",
+            view=view,
+        )
+        view.message = msg
 
     @commands.command(name="marriage", aliases=["marrystatus"])
     @commands.cooldown(2, 5, commands.BucketType.user)
@@ -887,12 +985,14 @@ class Social(commands.Cog, name="Social"):
         partner_id, iso_str, _ = m
         try:
             married_dt = datetime.fromisoformat(iso_str)
-            long_dur, short_dur, days = _format_married_duration(married_dt)
+            long_dur, short_dur, days, tier_title = _format_married_duration(married_dt)
             married_ts = int(married_dt.timestamp())
             date_str = married_dt.strftime("%b %d, %Y")
         except Exception:
             long_dur = "Some Time"
             short_dur = "some time"
+            days = 0
+            tier_title = "✦  E T E R N A L   V O W  ✦"
             married_ts = int(datetime.now(timezone.utc).timestamp())
             date_str = "Recently"
 
@@ -921,6 +1021,7 @@ class Social(commands.Cog, name="Social"):
             date_str,
             sent,
             recv,
+            tier_title,
         )
 
         file = discord.File(card_buf, filename="marriage.png")
