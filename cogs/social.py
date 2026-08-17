@@ -126,14 +126,18 @@ def _render_marriage_card(
     # Top Header Badge
     header_text = "M A R R I A G E   C E R T I F I C A T E"
     hw = f_title.getlength(header_text)
+    pill_w1 = hw + 32
+    pill_h1 = 28
+    pill_x1 = (W - pill_w1) // 2
+    pill_y1 = pad_y + 12
     draw.rounded_rectangle(
-        [(W - hw) // 2 - 16, pad_y + 12, (W + hw) // 2 + 16, pad_y + 36],
-        radius=12,
-        fill=(255, 255, 255, 20),
-        outline=(255, 255, 255, 40),
+        [pill_x1, pill_y1, pill_x1 + pill_w1, pill_y1 + pill_h1],
+        radius=14,
+        fill=(240, 245, 255, 245),
+        outline=(255, 255, 255, 100),
         width=1,
     )
-    f_title.draw(draw, ((W - hw) // 2, pad_y + 17), header_text, fill=(235, 240, 255, 220))
+    f_title.draw(draw, ((W - hw) // 2, pill_y1 + 7), header_text, fill=(12, 14, 18, 255))
 
     av_size = 115
     # Left avatar
@@ -201,11 +205,11 @@ def _render_marriage_card(
     draw.rounded_rectangle(
         [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
         radius=16,
-        fill=(255, 255, 255, 16),
-        outline=(255, 255, 255, 35),
+        fill=(240, 245, 255, 245),
+        outline=(255, 255, 255, 100),
         width=1,
     )
-    f_badge.draw(draw, (pill_x + 16, pill_y + 8), stats_text, fill=(225, 230, 245, 230))
+    f_badge.draw(draw, (pill_x + 16, pill_y + 8), stats_text, fill=(12, 14, 18, 255))
 
     out = io.BytesIO()
     bg.convert("RGB").save(out, format="PNG")
@@ -248,14 +252,18 @@ def _render_single_card(
 
     header_text = "M A R R I A G E   P R O F I L E"
     hw = f_title.getlength(header_text)
+    pill_w1 = hw + 28
+    pill_h1 = 26
+    pill_x1 = (W - pill_w1) // 2
+    pill_y1 = pad_y + 12
     draw.rounded_rectangle(
-        [(W - hw) // 2 - 14, pad_y + 12, (W + hw) // 2 + 14, pad_y + 34],
-        radius=11,
-        fill=(255, 255, 255, 20),
-        outline=(255, 255, 255, 40),
+        [pill_x1, pill_y1, pill_x1 + pill_w1, pill_y1 + pill_h1],
+        radius=13,
+        fill=(240, 245, 255, 245),
+        outline=(255, 255, 255, 100),
         width=1,
     )
-    f_title.draw(draw, ((W - hw) // 2, pad_y + 16), header_text, fill=(235, 240, 255, 220))
+    f_title.draw(draw, ((W - hw) // 2, pill_y1 + 6), header_text, fill=(12, 14, 18, 255))
 
     av_size = 100
     av_x, av_y = pad_x + 40, pad_y + 48
@@ -287,11 +295,11 @@ def _render_single_card(
     draw.rounded_rectangle(
         [info_x, pill_y, info_x + pill_w, pill_y + pill_h],
         radius=15,
-        fill=(255, 255, 255, 16),
-        outline=(255, 255, 255, 35),
+        fill=(240, 245, 255, 245),
+        outline=(255, 255, 255, 100),
         width=1,
     )
-    f_badge.draw(draw, (info_x + 14, pill_y + 7), stats_text, fill=(225, 230, 245, 230))
+    f_badge.draw(draw, (info_x + 14, pill_y + 7), stats_text, fill=(12, 14, 18, 255))
 
     out = io.BytesIO()
     bg.convert("RGB").save(out, format="PNG")
@@ -345,13 +353,8 @@ class MarryProposalView(discord.ui.View):
                 sent,
                 recv,
             )
-            embed = discord.Embed(
-                description=f"💍 {self.author.mention} and {self.target.mention} are now married!\n-# congratulations on the lovely wedding ✦",
-                color=get_embed_color(interaction.guild_id or 0),
-            )
             file = discord.File(card_buf, filename="wedding.png")
-            embed.set_image(url="attachment://wedding.png")
-            await interaction.message.edit(content=None, embed=embed, attachments=[file], view=self)
+            await interaction.message.edit(content=None, attachments=[file], view=self)
         except Exception as e:
             log.warning(f"error rendering wedding card: {e}")
             await interaction.message.edit(
@@ -776,13 +779,8 @@ class Social(commands.Cog, name="Social"):
                 sent,
                 recv,
             )
-            embed = discord.Embed(
-                description=f"**{target.display_name}** is not married\n-# proposals: `{sent}` sent • `{recv}` received",
-                color=get_embed_color(ctx.guild.id),
-            )
             file = discord.File(card_buf, filename="marriage.png")
-            embed.set_image(url="attachment://marriage.png")
-            return await ctx.send(embed=embed, file=file)
+            return await ctx.send(file=file)
 
         partner_id, iso_str, _ = m
         try:
@@ -823,17 +821,8 @@ class Social(commands.Cog, name="Social"):
             recv,
         )
 
-        embed = discord.Embed(
-            description=(
-                f"💍 **{target.display_name}** is married to **{partner_name}**\n"
-                f"-# married on <t:{married_ts}:D> (<t:{married_ts}:R>) • together for {short_dur}\n"
-                f"-# proposals: `{sent}` sent • `{recv}` received"
-            ),
-            color=get_embed_color(ctx.guild.id),
-        )
         file = discord.File(card_buf, filename="marriage.png")
-        embed.set_image(url="attachment://marriage.png")
-        await ctx.send(embed=embed, file=file)
+        await ctx.send(file=file)
 
     @commands.command(name="marrysetstats", aliases=["setproposals"])
     @help_meta(
