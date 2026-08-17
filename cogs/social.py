@@ -628,8 +628,8 @@ def _render_tree_card(
             render_node(start_gp_x + i * 110, tier_gp_y, gp, size=60, role_label="Grandparent")
 
     # ── Focus Coordinates Preparation ──
-    focus_x = cx - 85 if spouse else cx
-    spouse_x = cx + 85 if spouse else None
+    focus_x = cx - 75 if spouse else cx
+    spouse_x = cx + 75 if spouse else None
 
     # ── Parents Tier ──
     tier_p_y = 0
@@ -642,20 +642,15 @@ def _render_tree_card(
     curr_tier_y += tier_height
 
     # Render Parents
+    parent_drop_x = cx
     if has_parents:
         direct_parents = [p for p in parents if getattr(p, "is_direct", True)]
         step_parents = [p for p in parents if not getattr(p, "is_direct", True)]
 
         if len(parents) == 1:
             p_node = parents[0]
-            p_x = focus_x
-            render_node(p_x, tier_p_y, p_node, size=68, role_label="Parent")
-
-            # Direct drop line straight down from Parent to Focus
-            p_drop_start = tier_p_y + 76
-            focus_top = tier_focus_y - 44
-            draw.line([(p_x, p_drop_start), (p_x, focus_top)], fill=(255, 255, 255, 75), width=2)
-            draw.ellipse([p_x - 3, focus_top - 2, p_x + 3, focus_top + 4], fill=(255, 255, 255, 140))
+            render_node(cx, tier_p_y, p_node, size=68, role_label="Parent")
+            parent_drop_x = cx
 
         elif len(parents) == 2:
             p1, p2 = parents[0], parents[1]
@@ -663,59 +658,75 @@ def _render_tree_card(
                 dir_p = direct_parents[0]
                 step_p = step_parents[0] if step_parents else (p2 if p1 == dir_p else p1)
 
-                dir_x = focus_x
-                step_x = focus_x + 160 if focus_x <= cx else focus_x - 160
+                p1_x = cx - 80
+                p2_x = cx + 80
+                render_node(p1_x, tier_p_y, dir_p, size=68, role_label="Parent")
+                render_node(p2_x, tier_p_y, step_p, size=64, role_label="In-law")
 
-                render_node(dir_x, tier_p_y, dir_p, size=68, role_label="Parent")
-                render_node(step_x, tier_p_y, step_p, size=64, role_label="In-law")
-
-                mid_x = (dir_x + step_x) // 2
-                draw.line([(min(dir_x, step_x) + 34, tier_p_y), (mid_x - 14, tier_p_y)], fill=(255, 255, 255, 75), width=2)
-                draw.line([(mid_x + 14, tier_p_y), (max(dir_x, step_x) - 34, tier_p_y)], fill=(255, 255, 255, 75), width=2)
-                _draw_interlocking_rings(draw, mid_x, tier_p_y, r=7)
-
-                # DIRECT LINEAGE DROP: Drops straight down from direct parent (TreLoco) to Focus (tempest)!
-                p_drop_start = tier_p_y + 76
-                focus_top = tier_focus_y - 44
-                draw.line([(dir_x, p_drop_start), (dir_x, focus_top)], fill=(255, 255, 255, 85), width=2)
-                draw.ellipse([dir_x - 3, focus_top - 2, dir_x + 3, focus_top + 4], fill=(255, 255, 255, 160))
+                draw.line([(p1_x + 34, tier_p_y), (cx - 14, tier_p_y)], fill=(255, 255, 255, 75), width=2)
+                draw.line([(cx + 14, tier_p_y), (p2_x - 32, tier_p_y)], fill=(255, 255, 255, 75), width=2)
+                _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
+                parent_drop_x = p1_x  # Drop starts directly from adopting parent
 
             else:
-                p1_x = cx - 95
-                p2_x = cx + 95
+                p1_x = cx - 90
+                p2_x = cx + 90
                 render_node(p1_x, tier_p_y, p1, size=68, role_label="Parent")
                 render_node(p2_x, tier_p_y, p2, size=68, role_label="Parent")
                 draw.line([(p1_x + 34, tier_p_y), (cx - 16, tier_p_y)], fill=(255, 255, 255, 75), width=2)
                 draw.line([(cx + 16, tier_p_y), (p2_x - 34, tier_p_y)], fill=(255, 255, 255, 75), width=2)
                 _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
-
-                drop_start = tier_p_y + 14
-                focus_top = tier_focus_y - 44
-                draw.line([(cx, drop_start), (cx, (drop_start + focus_top) // 2), (focus_x, (drop_start + focus_top) // 2), (focus_x, focus_top)], fill=(255, 255, 255, 65), width=2)
-                draw.ellipse([focus_x - 3, focus_top - 2, focus_x + 3, focus_top + 4], fill=(255, 255, 255, 140))
+                parent_drop_x = cx
 
         if has_grandparents and tier_gp_y:
             draw.line([(cx, tier_gp_y + 44), (cx, tier_p_y - 42)], fill=(255, 255, 255, 45), width=1)
 
-    # ── Focus Tier ──
+    # ── Focus Tier Nodes ──
     if spouse:
         render_node(focus_x, tier_focus_y, focus_user, size=80, is_focus=True, role_label="Focus")
         render_node(spouse_x, tier_focus_y, spouse, size=74, role_label="Spouse")
-        draw.line([(focus_x + 40, tier_focus_y), (cx - 16, tier_focus_y)], fill=(255, 255, 255, 85), width=2)
-        draw.line([(cx + 16, tier_focus_y), (spouse_x - 37, tier_focus_y)], fill=(255, 255, 255, 85), width=2)
+        draw.line([(focus_x + 40, tier_focus_y), (cx - 14, tier_focus_y)], fill=(255, 255, 255, 85), width=2)
+        draw.line([(cx + 14, tier_focus_y), (spouse_x - 37, tier_focus_y)], fill=(255, 255, 255, 85), width=2)
         _draw_interlocking_rings(draw, cx, tier_focus_y, r=7)
     else:
         render_node(focus_x, tier_focus_y, focus_user, size=82, is_focus=True, role_label="Focus")
 
+    # Sibling Nodes
+    sibling_x_list = []
     if siblings:
         for i, sib in enumerate(siblings[:4]):
             if spouse:
-                sib_x = cx - 85 - 115 - (i // 2) * 105 if i % 2 == 0 else cx + 85 + 115 + (i // 2) * 105
+                sib_x = cx - 75 - 120 - (i // 2) * 110 if i % 2 == 0 else cx + 75 + 120 + (i // 2) * 110
             else:
-                sib_x = cx - 125 - (i // 2) * 105 if i % 2 == 0 else cx + 125 + (i // 2) * 105
+                sib_x = cx - 130 - (i // 2) * 110 if i % 2 == 0 else cx + 130 + (i // 2) * 110
             render_node(sib_x, tier_focus_y, sib, size=60, role_label="Sibling")
-            if has_parents and tier_p_y:
-                draw.line([(sib_x, tier_focus_y - 36), (sib_x, tier_focus_y - 48), (focus_x, tier_focus_y - 48)], fill=(255, 255, 255, 40), width=1)
+            sibling_x_list.append(sib_x)
+
+    # ── Parent to Children (Focus + Siblings) Clean Branching ──
+    if has_parents:
+        p_drop_start = tier_p_y + 76
+        focus_top = tier_focus_y - 44
+        branch_y = tier_focus_y - 48
+
+        all_child_xs = [focus_x] + sibling_x_list
+        min_x = min(all_child_xs)
+        max_x = max(all_child_xs)
+
+        if len(sibling_x_list) == 0:
+            if parent_drop_x == focus_x:
+                draw.line([(focus_x, p_drop_start), (focus_x, focus_top)], fill=(255, 255, 255, 75), width=2)
+            else:
+                draw.line([(parent_drop_x, p_drop_start), (parent_drop_x, branch_y), (focus_x, branch_y), (focus_x, focus_top)], fill=(255, 255, 255, 75), width=2)
+            draw.ellipse([focus_x - 3, focus_top - 2, focus_x + 3, focus_top + 4], fill=(255, 255, 255, 140))
+        else:
+            # Sibling horizontal branch bar
+            draw.line([(parent_drop_x, p_drop_start), (parent_drop_x, branch_y)], fill=(255, 255, 255, 75), width=2)
+            draw.line([(min_x, branch_y), (max_x, branch_y)], fill=(255, 255, 255, 75), width=2)
+
+            for x_pos in all_child_xs:
+                top_y = tier_focus_y - 44 if x_pos == focus_x else tier_focus_y - 36
+                draw.line([(x_pos, branch_y), (x_pos, top_y)], fill=(255, 255, 255, 75), width=2)
+                draw.ellipse([x_pos - 3, top_y - 2, x_pos + 3, top_y + 4], fill=(255, 255, 255, 140))
 
     # ── Children Tier ──
     if has_children:
@@ -723,10 +734,11 @@ def _render_tree_card(
         curr_tier_y += tier_height
         tier_grandchild_y = curr_tier_y + 45 if has_grandchildren else 0
 
-        # Direct drop from Focus to children bus
-        focus_child_drop_start = tier_focus_y + 86
+        # Children drop directly from marriage union (cx) if married, or focus_x if single
+        focus_child_drop_start = tier_focus_y + 14 if spouse else tier_focus_y + 86
+        drop_source_x = cx if spouse else focus_x
         bus_y = max(tier_focus_y + 98, focus_child_drop_start + 15)
-        draw.line([(focus_x, focus_child_drop_start), (focus_x, bus_y)], fill=(255, 255, 255, 65), width=2)
+        draw.line([(drop_source_x, focus_child_drop_start), (drop_source_x, bus_y)], fill=(255, 255, 255, 65), width=2)
 
         c_count = len(children_trees)
         cluster_widths = []
@@ -738,8 +750,8 @@ def _render_tree_card(
         total_span = sum(cluster_widths) + (c_count - 1) * 30
         curr_cluster_x = cx - total_span // 2
 
-        bus_start_x = min(focus_x, curr_cluster_x + cluster_widths[0] // 2)
-        bus_end_x = max(focus_x, curr_cluster_x + total_span - cluster_widths[-1] // 2)
+        bus_start_x = min(drop_source_x, curr_cluster_x + cluster_widths[0] // 2)
+        bus_end_x = max(drop_source_x, curr_cluster_x + total_span - cluster_widths[-1] // 2)
         draw.line([(bus_start_x, bus_y), (bus_end_x, bus_y)], fill=(255, 255, 255, 55), width=2)
 
         for i, child_tree in enumerate(children_trees):
