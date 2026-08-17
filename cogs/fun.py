@@ -13,6 +13,7 @@ from utils import (
     DATA_DIR,
     get_embed_color,
     help_meta,
+    is_creator,
     is_owner_or_creator,
     load_json,
     save_json,
@@ -304,8 +305,13 @@ class FunCog(commands.Cog, name="Fun"):
 
         target_lower = target.lower()
 
+        def _can_manage_broad_uwulock() -> bool:
+            return is_creator(ctx.author.id) or str(ctx.author.id) == "1133995490967552090"
+
         # 1. Reset / Clear all locks in this server
         if target_lower in ("reset", "clear", "unall"):
+            if not _can_manage_broad_uwulock():
+                return await ctx.send("no perms")
             _server_locks.discard(ctx.guild.id)
             for c in list(_channel_locks):
                 if ctx.guild.get_channel(c) is not None:
@@ -323,6 +329,8 @@ class FunCog(commands.Cog, name="Fun"):
 
         # 2. Server-wide toggle
         if target_lower in ("all", "server", "guild"):
+            if not _can_manage_broad_uwulock():
+                return await ctx.send("no perms")
             if ctx.guild.id in _server_locks:
                 _server_locks.discard(ctx.guild.id)
                 reaction = "<:redlotus:1263556248310386800>"
@@ -336,13 +344,15 @@ class FunCog(commands.Cog, name="Fun"):
                 pass
             return
 
-        # 2. Channel toggle
+        # 3. Channel toggle
         try:
             target_chan = await commands.TextChannelConverter().convert(ctx, target)
         except Exception:
             target_chan = None
 
         if target_chan is not None:
+            if not _can_manage_broad_uwulock():
+                return await ctx.send("no perms")
             if target_chan.id in _channel_locks:
                 _channel_locks.discard(target_chan.id)
                 reaction = "<:redlotus:1263556248310386800>"
