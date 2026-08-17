@@ -14,7 +14,7 @@ import aiohttp
 import aiosqlite
 import discord
 from discord.ext import commands
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 from utils import CONFIG_FILE, DATA_DIR, get_embed_color, help_meta, is_owner_or_creator, load_json
@@ -500,52 +500,84 @@ def _render_tree_card(
     if has_children: tier_count += 1
     if has_grandchildren: tier_count += 1
 
-    tier_height = 175
-    H = max(600, tier_count * tier_height + 150)
+    tier_height = 180
+    H = max(580, tier_count * tier_height + 150)
 
-    bg = Image.new("RGBA", (W, H), (7, 8, 11, 255))
-
+    bg = Image.new("RGBA", (W, H), (7, 8, 12, 255))
     cx = W // 2
     cy = H // 2
-    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    gdraw = ImageDraw.Draw(glow)
-    for r in range(min(W, H) // 2, 40, -40):
-        alpha = int(7 * (1 - r / (min(W, H) // 2)))
-        gdraw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 255, 255, alpha))
-    bg = Image.alpha_composite(bg, glow)
-    draw = ImageDraw.Draw(bg)
 
-    f_star = _load_font(10)
-    stars = [
-        (50, 70), (120, 140), (W - 60, 90), (W - 120, 200),
-        (80, H - 90), (W - 80, H - 80), (130, cy), (W - 130, cy),
-        (200, 60), (W - 200, 60), (cx, 45), (cx, H - 45),
+    # 1. Galactic Stardust Nebulae Clouds (Gaussian blurred)
+    nebula = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ndraw = ImageDraw.Draw(nebula)
+    cloud_points = [
+        (W // 4, H // 4, 180, 24),
+        (3 * W // 4, H // 3, 220, 20),
+        (W // 2, H // 2, 260, 32),
+        (W // 5, 3 * H // 4, 190, 22),
+        (4 * W // 5, 4 * H // 5, 220, 26),
     ]
-    for sx, sy in stars:
-        f_star.draw(draw, (sx - 4, sy - 4), "✦", fill=(255, 255, 255, 40))
+    for ncx, ncy, rad, alpha in cloud_points:
+        for r in range(rad, 20, -30):
+            a = int(alpha * (1 - (r / rad) ** 1.5))
+            ndraw.ellipse([ncx - r, ncy - r, ncx + r, ncy + r], fill=(255, 255, 255, a))
+    nebula = nebula.filter(ImageFilter.GaussianBlur(32))
+    bg = Image.alpha_composite(bg, nebula)
 
+    # 2. Translucent Obsidian Glass Card
     pad_x, pad_y = 24, 20
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cdraw = ImageDraw.Draw(card)
     cdraw.rounded_rectangle(
         [pad_x, pad_y, W - pad_x, H - pad_y],
         radius=18,
-        fill=(13, 15, 20, 230),
-        outline=(255, 255, 255, 32),
+        fill=(12, 14, 20, 205),
+        outline=(255, 255, 255, 36),
         width=1,
     )
 
     def draw_corner(x, y, dx, dy):
-        cdraw.line([(x, y), (x + dx * 20, y)], fill=(255, 255, 255, 100), width=2)
-        cdraw.line([(x, y), (x, y + dy * 20)], fill=(255, 255, 255, 100), width=2)
-        cdraw.rectangle([x - 2, y - 2, x + 2, y + 2], fill=(255, 255, 255, 180))
+        cdraw.line([(x, y), (x + dx * 20, y)], fill=(255, 255, 255, 110), width=2)
+        cdraw.line([(x, y), (x, y + dy * 20)], fill=(255, 255, 255, 110), width=2)
+        cdraw.rectangle([x - 2, y - 2, x + 2, y + 2], fill=(255, 255, 255, 190))
 
     draw_corner(pad_x + 10, pad_y + 10, 1, 1)
     draw_corner(W - pad_x - 10, pad_y + 10, -1, 1)
     draw_corner(pad_x + 10, H - pad_y - 10, 1, -1)
     draw_corner(W - pad_x - 10, H - pad_y - 10, -1, -1)
-
     bg = Image.alpha_composite(bg, card)
+
+    # 3. Celestial Starfield & Orbital Rings on top of glass
+    cosmic_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cdraw2 = ImageDraw.Draw(cosmic_layer)
+
+    # Concentric orbital rings around center
+    for ring_r in [140, 270, 420, 580, 750]:
+        cdraw2.ellipse([cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r], outline=(255, 255, 255, 12), width=1)
+
+    # Soft pinprick starlight
+    rnd = random.Random(42)
+    for _ in range(85):
+        sx = rnd.randint(pad_x + 20, W - pad_x - 20)
+        sy = rnd.randint(pad_y + 20, H - pad_y - 20)
+        bright = rnd.randint(25, 140)
+        cdraw2.point((sx, sy), fill=(255, 255, 255, bright))
+        if bright > 100:
+            cdraw2.ellipse([sx - 1, sy - 1, sx + 1, sy + 1], fill=(255, 255, 255, bright // 2))
+
+    # Glowing ✦ diamond stars
+    f_star = _load_font(10)
+    stars = [
+        (55, 75), (130, 145), (W - 65, 95), (W - 130, 210),
+        (85, H - 95), (W - 85, H - 85), (130, cy), (W - 130, cy),
+        (210, 65), (W - 210, 65), (cx - 200, cy - 130), (cx + 200, cy + 130),
+        (cx, 45), (cx, H - 45),
+    ]
+    for sx, sy in stars:
+        f_star.draw(cdraw2, (sx - 4, sy - 4), "✦", fill=(255, 255, 255, 55))
+        cdraw2.ellipse([sx - 5, sy - 5, sx + 5, sy + 5], fill=(255, 255, 255, 16))
+
+    bg = Image.alpha_composite(bg, cosmic_layer)
     draw = ImageDraw.Draw(bg)
 
     f_title = _load_font(11, bold=True)
