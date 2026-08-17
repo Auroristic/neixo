@@ -626,15 +626,20 @@ def _render_tree_card(
             _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
 
         if has_grandparents and tier_gp_y:
-            draw.line([(cx, tier_gp_y + 46), (cx, tier_p_y - 48)], fill=(255, 255, 255, 45), width=1)
+            draw.line([(cx, tier_gp_y + 44), (cx, tier_p_y - 42)], fill=(255, 255, 255, 45), width=1)
 
     tier_focus_y = curr_tier_y + 50
     curr_tier_y += tier_height
 
+    # Parent drop line to Focus:
+    # If 2 parents: starts at wedding rings (cx, tier_p_y + 14)
+    # If 1 parent: starts below parent badge (cx, tier_p_y + 76)
     if has_parents and tier_p_y:
-        drop_top = tier_p_y + (12 if len(parents) > 1 else 46)
-        draw.line([(cx, drop_top), (cx, tier_focus_y - 50)], fill=(255, 255, 255, 55), width=2)
-        draw.ellipse([cx - 3, tier_focus_y - 52, cx + 3, tier_focus_y - 46], fill=(255, 255, 255, 140))
+        drop_start_y = tier_p_y + 14 if len(parents) > 1 else tier_p_y + 76
+        focus_top_target = tier_focus_y - 42
+        if focus_top_target > drop_start_y:
+            draw.line([(cx, drop_start_y), (cx, focus_top_target)], fill=(255, 255, 255, 55), width=2)
+            draw.ellipse([cx - 3, focus_top_target - 2, cx + 3, focus_top_target + 4], fill=(255, 255, 255, 140))
 
     if spouse:
         f_x = cx - 85
@@ -660,7 +665,12 @@ def _render_tree_card(
         curr_tier_y += tier_height
         tier_grandchild_y = curr_tier_y + 45 if has_grandchildren else 0
 
-        draw.line([(cx, tier_focus_y + 48), (cx, tier_focus_y + 82)], fill=(255, 255, 255, 55), width=2)
+        # Focus drop line to children bus:
+        # If spouse present: starts at (cx, tier_focus_y + 14)
+        # If no spouse: starts below focus badge at (cx, tier_focus_y + 86)
+        focus_child_drop_start = tier_focus_y + 14 if spouse else tier_focus_y + 86
+        bus_y = max(tier_focus_y + 95, focus_child_drop_start + 15)
+        draw.line([(cx, focus_child_drop_start), (cx, bus_y)], fill=(255, 255, 255, 55), width=2)
 
         c_count = len(children_trees)
         cluster_widths = []
@@ -672,7 +682,6 @@ def _render_tree_card(
         total_span = sum(cluster_widths) + (c_count - 1) * 30
         curr_cluster_x = cx - total_span // 2
 
-        bus_y = tier_focus_y + 82
         draw.line([(cx - total_span // 2 + cluster_widths[0] // 2, bus_y), 
                    (cx - total_span // 2 + total_span - cluster_widths[-1] // 2, bus_y)], 
                   fill=(255, 255, 255, 55), width=2)
@@ -681,8 +690,9 @@ def _render_tree_card(
             c_w = cluster_widths[i]
             c_center_x = curr_cluster_x + c_w // 2
 
-            draw.line([(c_center_x, bus_y), (c_center_x, tier_child_y - 42)], fill=(255, 255, 255, 55), width=2)
-            draw.ellipse([c_center_x - 3, tier_child_y - 44, c_center_x + 3, tier_child_y - 38], fill=(255, 255, 255, 140))
+            child_top_target = tier_child_y - 42
+            draw.line([(c_center_x, bus_y), (c_center_x, child_top_target)], fill=(255, 255, 255, 55), width=2)
+            draw.ellipse([c_center_x - 3, child_top_target - 2, c_center_x + 3, child_top_target + 4], fill=(255, 255, 255, 140))
 
             if child_tree.spouse:
                 ch_x1 = c_center_x - 45
@@ -697,8 +707,8 @@ def _render_tree_card(
 
             if child_tree.children and tier_grandchild_y:
                 gk_count = len(child_tree.children)
-                gk_drop_top = tier_child_y + (10 if child_tree.spouse else 44)
-                gk_bus_y = tier_child_y + 75
+                gk_drop_top = tier_child_y + 14 if child_tree.spouse else tier_child_y + 76
+                gk_bus_y = max(tier_child_y + 85, gk_drop_top + 15)
                 draw.line([(c_center_x, gk_drop_top), (c_center_x, gk_bus_y)], fill=(255, 255, 255, 45), width=2)
 
                 gk_span = (gk_count - 1) * 95
@@ -708,7 +718,8 @@ def _render_tree_card(
 
                 for j, gk in enumerate(child_tree.children):
                     gk_x = gk_start_x + j * 95
-                    draw.line([(gk_x, gk_bus_y), (gk_x, tier_grandchild_y - 38)], fill=(255, 255, 255, 45), width=2)
+                    gk_top_target = tier_grandchild_y - 38
+                    draw.line([(gk_x, gk_bus_y), (gk_x, gk_top_target)], fill=(255, 255, 255, 45), width=2)
                     render_node(gk_x, tier_grandchild_y, gk, size=58, role_label="Grandchild")
 
             curr_cluster_x += c_w + 30
@@ -2342,6 +2353,11 @@ class Social(commands.Cog, name="Social"):
         target = user or ctx.author
         m = await self.get_marriage(target.id)
         parents = await self.get_parents(target.id)
+        if len(parents) == 1:
+            p_m = await self.get_marriage(parents[0])
+            if p_m and p_m[0] not in parents and p_m[0] != target.id:
+                parents.append(p_m[0])
+
         children = await self.get_children(target.id)
         siblings = await self.get_siblings(target.id)
         fam_size = await self.get_family_size(target.id)
@@ -2413,6 +2429,10 @@ class Social(commands.Cog, name="Social"):
         m = await self.get_marriage(target.id)
         spouse_id = m[0] if m else None
         parent_ids = await self.get_parents(target.id)
+        if len(parent_ids) == 1:
+            p_m = await self.get_marriage(parent_ids[0])
+            if p_m and p_m[0] not in parent_ids and p_m[0] != target.id:
+                parent_ids.append(p_m[0])
 
         # Grandparents (parents of parents)
         grandparent_ids = []
