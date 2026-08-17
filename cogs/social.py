@@ -724,10 +724,6 @@ class MarryProposalView(discord.ui.View):
         self.value = None
         self.message: discord.Message | None = None
 
-    def _release_locks(self):
-        self.cog._active_proposals.discard(self.author.id)
-        self.cog._active_proposals.discard(self.target.id)
-
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.target.id:
             await interaction.response.send_message("-# this proposal isn't for you", ephemeral=True)
@@ -739,7 +735,20 @@ class MarryProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = True
-        self._release_locks()
+
+        m1 = await self.cog.get_marriage(self.author.id)
+        if m1:
+            return await interaction.response.edit_message(
+                content=f"-# {self.author.mention} is already married to <@{m1[0]}>",
+                view=self,
+            )
+        m2 = await self.cog.get_marriage(self.target.id)
+        if m2:
+            return await interaction.response.edit_message(
+                content=f"-# {self.target.mention} is already married to <@{m2[0]}>",
+                view=self,
+            )
+
         await self.cog.create_marriage(self.author.id, self.target.id, interaction.guild_id or 0)
         await self.cog.record_proposal_result(self.author.id, self.target.id, accepted=True)
         
@@ -782,7 +791,6 @@ class MarryProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = False
-        self._release_locks()
         await self.cog.record_proposal_result(self.author.id, self.target.id, accepted=False)
         await interaction.response.edit_message(
             content=f"-# {self.target.mention} declined {self.author.mention}'s proposal",
@@ -791,7 +799,6 @@ class MarryProposalView(discord.ui.View):
         self.stop()
 
     async def on_timeout(self):
-        self._release_locks()
         for item in self.children:
             item.disabled = True
         if self.message:
@@ -815,9 +822,6 @@ class AdoptProposalView(discord.ui.View):
         self.value = None
         self.message: discord.Message | None = None
 
-    def _release_locks(self):
-        self.cog._release_locks(self.author.id, self.target.id)
-
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.target.id:
             await interaction.response.send_message("-# this proposal isn't for you", ephemeral=True)
@@ -829,9 +833,7 @@ class AdoptProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = True
-        self._release_locks()
 
-        # Race-condition safeguards
         parents = await self.cog.get_parents(self.target.id)
         if len(parents) >= 2:
             return await interaction.response.edit_message(
@@ -856,7 +858,6 @@ class AdoptProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = False
-        self._release_locks()
         await interaction.response.edit_message(
             content=f"-# {self.target.mention} declined {self.author.mention}'s adoption request",
             view=self,
@@ -864,7 +865,6 @@ class AdoptProposalView(discord.ui.View):
         self.stop()
 
     async def on_timeout(self):
-        self._release_locks()
         for item in self.children:
             item.disabled = True
         if self.message:
@@ -888,9 +888,6 @@ class MakeParentProposalView(discord.ui.View):
         self.value = None
         self.message: discord.Message | None = None
 
-    def _release_locks(self):
-        self.cog._release_locks(self.author.id, self.target.id)
-
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.target.id:
             await interaction.response.send_message("-# this proposal isn't for you", ephemeral=True)
@@ -902,7 +899,6 @@ class MakeParentProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = True
-        self._release_locks()
 
         parents = await self.cog.get_parents(self.author.id)
         if len(parents) >= 2:
@@ -929,7 +925,6 @@ class MakeParentProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = False
-        self._release_locks()
         await interaction.response.edit_message(
             content=f"-# {self.target.mention} declined to be {self.author.mention}'s parent",
             view=self,
@@ -937,7 +932,6 @@ class MakeParentProposalView(discord.ui.View):
         self.stop()
 
     async def on_timeout(self):
-        self._release_locks()
         for item in self.children:
             item.disabled = True
         if self.message:
@@ -1915,12 +1909,6 @@ class Social(commands.Cog, name="Social"):
         if rel in {"Parent", "Child", "Sibling", "Grandparent", "Grandchild", "Aunt/Uncle", "Niece/Nephew", "Ancestor", "Descendant"}:
             return await ctx.send(f"-# you cannot marry {user.display_name} ({rel.lower()} relation)")
 
-        if self._is_locked(ctx.author.id):
-            return await ctx.send("-# you already have an active proposal pending. please wait for it to finish")
-        if self._is_locked(user.id):
-            return await ctx.send(f"-# {user.display_name} is currently considering another proposal. please try again in a moment")
-
-        self._acquire_locks(ctx.author.id, user.id, ttl=65.0)
         await self.record_proposal(ctx.author.id, user.id)
 
         view = MarryProposalView(ctx.author, user, self)
@@ -2143,14 +2131,6 @@ class Social(commands.Cog, name="Social"):
         if await self.is_ancestor_or_descendant(ctx.author.id, user.id):
             return await ctx.send(f"-# you cannot adopt {user.display_name} due to family cycle")
 
-        # Lock check
-        if self._is_locked(ctx.author.id):
-            return await ctx.send("-# you already have an active proposal pending")
-        if self._is_locked(user.id):
-            return await ctx.send(f"-# {user.display_name} is currently considering another proposal")
-
-        self._acquire_locks(ctx.author.id, user.id, ttl=65.0)
-
         view = AdoptProposalView(ctx.author, user, self)
         msg = await ctx.send(
             f"{user.mention}, **{ctx.author.display_name}** wants to adopt you 🌿",
@@ -2200,13 +2180,6 @@ class Social(commands.Cog, name="Social"):
         # Cycle check
         if await self.is_ancestor_or_descendant(user.id, ctx.author.id):
             return await ctx.send(f"-# you cannot make {user.display_name} your parent due to family cycle")
-
-        if self._is_locked(ctx.author.id):
-            return await ctx.send("-# you already have an active proposal pending")
-        if self._is_locked(user.id):
-            return await ctx.send(f"-# {user.display_name} is currently considering another proposal")
-
-        self._acquire_locks(ctx.author.id, user.id, ttl=65.0)
 
         view = MakeParentProposalView(ctx.author, user, self)
         msg = await ctx.send(
