@@ -1,9 +1,6 @@
-"""
-cogs/social.py  —  social interactions, marriage system, and interactive mini-games
-"""
-
 import asyncio
 import html
+import io
 import logging
 import os
 import random
@@ -14,8 +11,9 @@ import aiohttp
 import aiosqlite
 import discord
 from discord.ext import commands
+from PIL import Image, ImageDraw
 
-from utils import DATA_DIR, get_embed_color, help_meta
+from utils import CONFIG_FILE, DATA_DIR, get_embed_color, help_meta, is_owner_or_creator, load_json
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +58,247 @@ WYR_QUESTIONS = [
 ]
 
 
+# ── Marriage Card Renderers & Time Helpers ─────────────────────────
+def _format_married_duration(married_dt: datetime) -> tuple[str, str, int]:
+    now = datetime.now(timezone.utc)
+    delta = now - married_dt
+    total_seconds = max(0, int(delta.total_seconds()))
+    days = delta.days
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+
+    if days > 0:
+        long_str = f"{days} Day{'s' if days != 1 else ''}, {hours} Hour{'s' if hours != 1 else ''}"
+        short_str = f"{days}d {hours}h {minutes}m"
+    elif hours > 0:
+        long_str = f"{hours} Hour{'s' if hours != 1 else ''}, {minutes} Minute{'s' if minutes != 1 else ''}"
+        short_str = f"{hours}h {minutes}m {seconds}s"
+    elif minutes > 0:
+        long_str = f"{minutes} Minute{'s' if minutes != 1 else ''}, {seconds} Second{'s' if seconds != 1 else ''}"
+        short_str = f"{minutes}m {seconds}s"
+    else:
+        long_str = f"{seconds} Second{'s' if seconds != 1 else ''}"
+        short_str = f"{seconds}s"
+
+    return long_str, short_str, days
+
+
+def _render_marriage_card(
+    av1_bytes: bytes | None,
+    av2_bytes: bytes | None,
+    name1: str,
+    name2: str,
+    tag1: str,
+    tag2: str,
+    duration_str: str,
+    date_str: str,
+    sent_proposals: int = 0,
+    recv_proposals: int = 0,
+) -> io.BytesIO:
+    from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
+
+    W, H = 860, 360
+    source_bytes = av1_bytes or av2_bytes
+    bg = _make_glass_backdrop(source_bytes, W, H, dark_tint=0.60, blur_radius=22)
+
+    card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(card)
+    pad_x, pad_y = 28, 22
+    cd.rounded_rectangle(
+        [pad_x, pad_y, W - pad_x, H - pad_y],
+        radius=26,
+        fill=(0, 0, 0, 115),
+        outline=(255, 255, 255, 45),
+        width=1,
+    )
+    cd.line([(pad_x + 25, pad_y + 1), (W - pad_x - 25, pad_y + 1)], fill=(255, 255, 255, 90), width=1)
+    bg = Image.alpha_composite(bg, card)
+    draw = ImageDraw.Draw(bg)
+
+    f_title = _load_font(13, bold=True)
+    f_huge = _load_font(28, bold=True)
+    f_sub = _load_font(16, bold=False)
+    f_name = _load_font(20, bold=True)
+    f_tag = _load_font(14, bold=False)
+    f_badge = _load_font(14, bold=True)
+
+    # Top Header Badge
+    header_text = "M A R R I A G E   C E R T I F I C A T E"
+    hw = f_title.getlength(header_text)
+    draw.rounded_rectangle(
+        [(W - hw) // 2 - 16, pad_y + 12, (W + hw) // 2 + 16, pad_y + 36],
+        radius=12,
+        fill=(255, 255, 255, 20),
+        outline=(255, 255, 255, 40),
+        width=1,
+    )
+    f_title.draw(draw, ((W - hw) // 2, pad_y + 17), header_text, fill=(235, 240, 255, 220))
+
+    av_size = 115
+    # Left avatar
+    av1_x, av1_y = pad_x + 45, pad_y + 48
+    if av1_bytes:
+        try:
+            av1_img = _circle_avatar(av1_bytes, av_size)
+            bg.paste(av1_img, (av1_x, av1_y), av1_img)
+            draw.ellipse([av1_x, av1_y, av1_x + av_size, av1_y + av_size], outline=(255, 255, 255, 80), width=2)
+            draw.ellipse([av1_x - 4, av1_y - 4, av1_x + av_size + 4, av1_y + av_size + 4], outline=(255, 255, 255, 25), width=1)
+        except Exception:
+            pass
+
+    # Right avatar
+    av2_x, av2_y = W - pad_x - 45 - av_size, pad_y + 48
+    if av2_bytes:
+        try:
+            av2_img = _circle_avatar(av2_bytes, av_size)
+            bg.paste(av2_img, (av2_x, av2_y), av2_img)
+            draw.ellipse([av2_x, av2_y, av2_x + av_size, av2_y + av_size], outline=(255, 255, 255, 80), width=2)
+            draw.ellipse([av2_x - 4, av2_y - 4, av2_x + av_size + 4, av2_y + av_size + 4], outline=(255, 255, 255, 25), width=1)
+        except Exception:
+            pass
+
+    # User 1 name & tag
+    w1 = f_name.getlength(name1[:14])
+    f_name.draw(draw, (av1_x + (av_size - w1) // 2, av1_y + av_size + 14), name1[:14], fill=(255, 255, 255, 240))
+    t1_w = f_tag.getlength(tag1[:16])
+    f_tag.draw(draw, (av1_x + (av_size - t1_w) // 2, av1_y + av_size + 38), tag1[:16], fill=(170, 175, 190, 200))
+
+    # User 2 name & tag
+    w2 = f_name.getlength(name2[:14])
+    f_name.draw(draw, (av2_x + (av_size - w2) // 2, av2_y + av_size + 14), name2[:14], fill=(255, 255, 255, 240))
+    t2_w = f_tag.getlength(tag2[:16])
+    f_tag.draw(draw, (av2_x + (av_size - t2_w) // 2, av2_y + av_size + 38), tag2[:16], fill=(170, 175, 190, 200))
+
+    # Center connector line with rings
+    cx = W // 2
+    cy = pad_y + 85
+
+    draw.line([(av1_x + av_size + 20, cy), (cx - 50, cy)], fill=(255, 255, 255, 40), width=1)
+    draw.line([(cx + 50, cy), (av2_x - 20, cy)], fill=(255, 255, 255, 40), width=1)
+
+    ring_sym = "💍"
+    f_ring = _load_font(28, bold=False)
+    rw = f_ring.getlength(ring_sym)
+    f_ring.draw(draw, (cx - rw // 2, cy - 18), ring_sym, fill=(255, 255, 255, 250))
+
+    # Duration text
+    dw = f_huge.getlength(duration_str)
+    f_huge.draw(draw, ((W - dw) // 2, cy + 26), duration_str, fill=(255, 255, 255, 255))
+
+    # Married since date
+    date_text = f"Married on {date_str}" if not date_str.startswith("Married") else date_str
+    date_w = f_sub.getlength(date_text)
+    f_sub.draw(draw, ((W - date_w) // 2, cy + 64), date_text, fill=(185, 190, 205, 210))
+
+    # Bottom proposal stats pill
+    stats_text = f"Proposals: {sent_proposals} sent  •  {recv_proposals} received"
+    sw = f_badge.getlength(stats_text)
+    pill_w = sw + 32
+    pill_h = 32
+    pill_x = (W - pill_w) // 2
+    pill_y = H - pad_y - 48
+    draw.rounded_rectangle(
+        [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
+        radius=16,
+        fill=(255, 255, 255, 16),
+        outline=(255, 255, 255, 35),
+        width=1,
+    )
+    f_badge.draw(draw, (pill_x + 16, pill_y + 8), stats_text, fill=(225, 230, 245, 230))
+
+    out = io.BytesIO()
+    bg.convert("RGB").save(out, format="PNG")
+    out.seek(0)
+    return out
+
+
+def _render_single_card(
+    av_bytes: bytes | None,
+    name: str,
+    tag: str,
+    sent_proposals: int = 0,
+    recv_proposals: int = 0,
+) -> io.BytesIO:
+    from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
+
+    W, H = 680, 270
+    bg = _make_glass_backdrop(av_bytes, W, H, dark_tint=0.60, blur_radius=22)
+
+    card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(card)
+    pad_x, pad_y = 26, 20
+    cd.rounded_rectangle(
+        [pad_x, pad_y, W - pad_x, H - pad_y],
+        radius=24,
+        fill=(0, 0, 0, 115),
+        outline=(255, 255, 255, 45),
+        width=1,
+    )
+    cd.line([(pad_x + 20, pad_y + 1), (W - pad_x - 20, pad_y + 1)], fill=(255, 255, 255, 90), width=1)
+    bg = Image.alpha_composite(bg, card)
+    draw = ImageDraw.Draw(bg)
+
+    f_title = _load_font(12, bold=True)
+    f_huge = _load_font(24, bold=True)
+    f_sub = _load_font(15, bold=False)
+    f_name = _load_font(20, bold=True)
+    f_tag = _load_font(14, bold=False)
+    f_badge = _load_font(13, bold=True)
+
+    header_text = "M A R R I A G E   P R O F I L E"
+    hw = f_title.getlength(header_text)
+    draw.rounded_rectangle(
+        [(W - hw) // 2 - 14, pad_y + 12, (W + hw) // 2 + 14, pad_y + 34],
+        radius=11,
+        fill=(255, 255, 255, 20),
+        outline=(255, 255, 255, 40),
+        width=1,
+    )
+    f_title.draw(draw, ((W - hw) // 2, pad_y + 16), header_text, fill=(235, 240, 255, 220))
+
+    av_size = 100
+    av_x, av_y = pad_x + 40, pad_y + 48
+    if av_bytes:
+        try:
+            av_img = _circle_avatar(av_bytes, av_size)
+            bg.paste(av_img, (av_x, av_y), av_img)
+            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 75), width=2)
+            draw.ellipse([av_x - 3, av_y - 3, av_x + av_size + 3, av_y + av_size + 3], outline=(255, 255, 255, 20), width=1)
+        except Exception:
+            pass
+
+    info_x = av_x + av_size + 35
+    w_n = f_name.getlength(name[:16])
+    f_name.draw(draw, (info_x, pad_y + 54), name[:16], fill=(255, 255, 255, 245))
+    f_tag.draw(draw, (info_x + w_n + 10, pad_y + 59), tag[:16], fill=(160, 165, 180, 190))
+
+    status_text = "Single  •  Not Married"
+    f_huge.draw(draw, (info_x, pad_y + 84), status_text, fill=(245, 245, 255, 250))
+
+    f_sub.draw(draw, (info_x, pad_y + 116), "Use `.marry @someone` to propose!", fill=(175, 180, 195, 200))
+
+    # Stats pill
+    stats_text = f"Proposals: {sent_proposals} sent  •  {recv_proposals} received"
+    sw = f_badge.getlength(stats_text)
+    pill_w = sw + 28
+    pill_h = 30
+    pill_y = H - pad_y - 42
+    draw.rounded_rectangle(
+        [info_x, pill_y, info_x + pill_w, pill_y + pill_h],
+        radius=15,
+        fill=(255, 255, 255, 16),
+        outline=(255, 255, 255, 35),
+        width=1,
+    )
+    f_badge.draw(draw, (info_x + 14, pill_y + 7), stats_text, fill=(225, 230, 245, 230))
+
+    out = io.BytesIO()
+    bg.convert("RGB").save(out, format="PNG")
+    out.seek(0)
+    return out
+
+
 # ── Marriage Proposal View ─────────────────────────────────────────
 class MarryProposalView(discord.ui.View):
     def __init__(self, author: discord.Member, target: discord.Member, cog: "Social"):
@@ -81,10 +320,44 @@ class MarryProposalView(discord.ui.View):
             item.disabled = True
         self.value = True
         await self.cog.create_marriage(self.author.id, self.target.id, interaction.guild_id or 0)
-        await interaction.response.edit_message(
-            content=f"-# {self.author.mention} and {self.target.mention} are now married 💍",
-            view=self,
-        )
+        await self.cog.record_proposal_result(self.author.id, self.target.id, accepted=True)
+        
+        await interaction.response.defer()
+        try:
+            av1_bytes = await self.cog._fetch_avatar(self.author)
+            av2_bytes = await self.cog._fetch_avatar(self.target)
+            now_dt = datetime.now(timezone.utc)
+            date_str = now_dt.strftime("%b %d, %Y")
+            
+            stats = await self.cog.get_proposal_stats(self.author.id)
+            sent, recv, _, _ = stats
+            
+            card_buf = await asyncio.to_thread(
+                _render_marriage_card,
+                av1_bytes,
+                av2_bytes,
+                self.author.display_name,
+                self.target.display_name,
+                f"@{self.author.name}",
+                f"@{self.target.name}",
+                "Just Married 💍",
+                date_str,
+                sent,
+                recv,
+            )
+            embed = discord.Embed(
+                description=f"💍 {self.author.mention} and {self.target.mention} are now married!\n-# congratulations on the lovely wedding ✦",
+                color=get_embed_color(interaction.guild_id or 0),
+            )
+            file = discord.File(card_buf, filename="wedding.png")
+            embed.set_image(url="attachment://wedding.png")
+            await interaction.message.edit(content=None, embed=embed, attachments=[file], view=self)
+        except Exception as e:
+            log.warning(f"error rendering wedding card: {e}")
+            await interaction.message.edit(
+                content=f"-# {self.author.mention} and {self.target.mention} are now married 💍",
+                view=self,
+            )
         self.stop()
 
     @discord.ui.button(label="decline", style=discord.ButtonStyle.secondary, emoji="💔")
@@ -92,6 +365,7 @@ class MarryProposalView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.value = False
+        await self.cog.record_proposal_result(self.author.id, self.target.id, accepted=False)
         await interaction.response.edit_message(
             content=f"-# {self.target.mention} declined {self.author.mention}'s proposal",
             view=self,
@@ -290,12 +564,35 @@ class Social(commands.Cog, name="Social"):
         """)
         await self.db.execute("CREATE INDEX IF NOT EXISTS idx_marriages_u1 ON marriages(user1_id)")
         await self.db.execute("CREATE INDEX IF NOT EXISTS idx_marriages_u2 ON marriages(user2_id)")
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS proposal_stats (
+                user_id INTEGER PRIMARY KEY,
+                sent_count INTEGER NOT NULL DEFAULT 0,
+                received_count INTEGER NOT NULL DEFAULT 0,
+                accepted_count INTEGER NOT NULL DEFAULT 0,
+                declined_count INTEGER NOT NULL DEFAULT 0
+            )
+        """)
         await self.db.commit()
 
     async def cog_unload(self):
         if self.db:
             await self.db.close()
             self.db = None
+
+    async def _fetch_avatar(self, user: discord.abc.User | discord.Member | None) -> bytes | None:
+        if user is None:
+            return None
+        try:
+            url = str(user.display_avatar.with_format("png").with_size(256).url)
+            timeout = aiohttp.ClientTimeout(total=6)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as r:
+                    if r.status == 200:
+                        return await r.read()
+        except Exception as e:
+            log.warning(f"failed to fetch avatar for {getattr(user, 'id', None)}: {e}")
+        return None
 
     async def get_marriage(self, user_id: int) -> tuple[int, str, int] | None:
         """Returns (partner_id, married_at_iso, guild_id) or None."""
@@ -337,6 +634,56 @@ class Social(commands.Cog, name="Social"):
         )
         await self.db.commit()
 
+    async def get_proposal_stats(self, user_id: int) -> tuple[int, int, int, int]:
+        """Returns (sent_count, received_count, accepted_count, declined_count)."""
+        if not self.db:
+            return 0, 0, 0, 0
+        async with self.db.execute(
+            "SELECT sent_count, received_count, accepted_count, declined_count FROM proposal_stats WHERE user_id = ?",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            if row:
+                return row[0], row[1], row[2], row[3]
+        return 0, 0, 0, 0
+
+    async def record_proposal(self, sender_id: int, target_id: int):
+        if not self.db:
+            return
+        await self.db.execute("""
+            INSERT INTO proposal_stats (user_id, sent_count, received_count, accepted_count, declined_count)
+            VALUES (?, 1, 0, 0, 0)
+            ON CONFLICT(user_id) DO UPDATE SET sent_count = sent_count + 1
+        """, (sender_id,))
+        await self.db.execute("""
+            INSERT INTO proposal_stats (user_id, sent_count, received_count, accepted_count, declined_count)
+            VALUES (?, 0, 1, 0, 0)
+            ON CONFLICT(user_id) DO UPDATE SET received_count = received_count + 1
+        """, (target_id,))
+        await self.db.commit()
+
+    async def record_proposal_result(self, sender_id: int, target_id: int, accepted: bool):
+        if not self.db:
+            return
+        col = "accepted_count" if accepted else "declined_count"
+        for uid in (sender_id, target_id):
+            await self.db.execute(f"""
+                INSERT INTO proposal_stats (user_id, sent_count, received_count, accepted_count, declined_count)
+                VALUES (?, 0, 0, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET {col} = {col} + 1
+            """, (uid, 1 if accepted else 0, 1 if not accepted else 0))
+        await self.db.commit()
+
+    async def set_proposal_stats(self, user_id: int, sent: int, received: int):
+        if not self.db:
+            return
+        await self.db.execute("""
+            INSERT INTO proposal_stats (user_id, sent_count, received_count, accepted_count, declined_count)
+            VALUES (?, ?, ?, 0, 0)
+            ON CONFLICT(user_id) DO UPDATE SET sent_count = ?, received_count = ?
+        """, (user_id, sent, received, sent, received))
+        await self.db.commit()
+
     # ── Marriage Commands ───────────────────────────────────────────
     @commands.command(name="marry", aliases=["propose"])
     @commands.cooldown(1, 10, commands.BucketType.user)
@@ -368,6 +715,8 @@ class Social(commands.Cog, name="Social"):
         m2 = await self.get_marriage(user.id)
         if m2:
             return await ctx.send(f"-# {user.display_name} is already married to <@{m2[0]}>")
+
+        await self.record_proposal(ctx.author.id, user.id)
 
         view = MarryProposalView(ctx.author, user, self)
         await ctx.send(
@@ -401,7 +750,7 @@ class Social(commands.Cog, name="Social"):
     @commands.cooldown(2, 5, commands.BucketType.user)
     @help_meta(
         usage="`.marriage [@user]`",
-        desc="Displays marriage status, partner, date, and anniversary duration.",
+        desc="Displays marriage status, partner, anniversary duration, proposal statistics, and custom glass card.",
         section="Fun",
         perm_tier="public",
         examples=[".marriage", ".marriage @someone"],
@@ -414,25 +763,108 @@ class Social(commands.Cog, name="Social"):
             return await ctx.send("-# this command only works in servers.")
         target = user or ctx.author
         m = await self.get_marriage(target.id)
+        stats = await self.get_proposal_stats(target.id)
+        sent, recv, accepted, declined = stats
+
         if not m:
-            return await ctx.send(f"-# {target.display_name} is not married")
+            av_bytes = await self._fetch_avatar(target)
+            card_buf = await asyncio.to_thread(
+                _render_single_card,
+                av_bytes,
+                target.display_name,
+                f"@{target.name}",
+                sent,
+                recv,
+            )
+            embed = discord.Embed(
+                description=f"**{target.display_name}** is not married\n-# proposals: `{sent}` sent • `{recv}` received",
+                color=get_embed_color(ctx.guild.id),
+            )
+            file = discord.File(card_buf, filename="marriage.png")
+            embed.set_image(url="attachment://marriage.png")
+            return await ctx.send(embed=embed, file=file)
 
         partner_id, iso_str, _ = m
         try:
             married_dt = datetime.fromisoformat(iso_str)
-            days = (datetime.now(timezone.utc) - married_dt).days
-            duration = f"{days} days" if days != 1 else "1 day"
+            long_dur, short_dur, days = _format_married_duration(married_dt)
+            married_ts = int(married_dt.timestamp())
+            date_str = married_dt.strftime("%b %d, %Y")
         except Exception:
-            duration = "some time"
+            long_dur = "Some Time"
+            short_dur = "some time"
+            married_ts = int(datetime.now(timezone.utc).timestamp())
+            date_str = "Recently"
 
         partner = ctx.guild.get_member(partner_id) or self.bot.get_user(partner_id)
+        if partner is None:
+            try:
+                partner = await self.bot.fetch_user(partner_id)
+            except Exception:
+                pass
+
         partner_name = partner.display_name if partner else f"User {partner_id}"
+        partner_tag = f"@{partner.name}" if partner else f"@{partner_id}"
+
+        av1_bytes = await self._fetch_avatar(target)
+        av2_bytes = await self._fetch_avatar(partner) if partner else None
+
+        card_buf = await asyncio.to_thread(
+            _render_marriage_card,
+            av1_bytes,
+            av2_bytes,
+            target.display_name,
+            partner_name,
+            f"@{target.name}",
+            partner_tag,
+            long_dur,
+            date_str,
+            sent,
+            recv,
+        )
 
         embed = discord.Embed(
-            description=f"💍 **{target.display_name}** is married to **{partner_name}**\n-# together for {duration}",
+            description=(
+                f"💍 **{target.display_name}** is married to **{partner_name}**\n"
+                f"-# married on <t:{married_ts}:D> (<t:{married_ts}:R>) • together for {short_dur}\n"
+                f"-# proposals: `{sent}` sent • `{recv}` received"
+            ),
             color=get_embed_color(ctx.guild.id),
         )
-        await ctx.send(embed=embed)
+        file = discord.File(card_buf, filename="marriage.png")
+        embed.set_image(url="attachment://marriage.png")
+        await ctx.send(embed=embed, file=file)
+
+    @commands.command(name="marrysetstats", aliases=["setproposals"])
+    @help_meta(
+        usage="`.marrysetstats <@user> <sent> <received>`",
+        desc="Sets the proposal statistics for a user.",
+        section="Fun",
+        perm_tier="whitelist",
+        examples=[".marrysetstats @someone 5 12"],
+        params=[
+            {"name": "user", "type": "user", "required": True, "desc": "Member to update."},
+            {"name": "sent", "type": "int", "required": True, "desc": "Proposals sent count."},
+            {"name": "received", "type": "int", "required": True, "desc": "Proposals received count."},
+        ],
+        note="Server Owner / Whitelisted only.",
+    )
+    async def marrysetstats(self, ctx: commands.Context, user: discord.Member = None, sent: int = 0, received: int = 0):
+        if not is_owner_or_creator(ctx):
+            config = load_json(CONFIG_FILE)
+            guild_config = config.get(str(ctx.guild.id), {}) if ctx.guild else {}
+            whitelist = guild_config.get("whitelist", [])
+            if str(ctx.author.id) not in {str(uid) for uid in whitelist}:
+                return await ctx.send("no perms")
+
+        if user is None:
+            return await ctx.send("usage: `.marrysetstats <@user> <sent> <received>`")
+
+        await self.set_proposal_stats(user.id, max(0, sent), max(0, received))
+        try:
+            await ctx.message.add_reaction("<:pinklotus:1263556545686405170>")
+        except Exception:
+            await ctx.send(f"-# updated proposal stats for {user.display_name}: `{sent}` sent • `{received}` received")
 
     @commands.command(name="marriages", aliases=["marrylist"])
     @commands.cooldown(1, 10, commands.BucketType.channel)
