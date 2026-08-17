@@ -425,6 +425,242 @@ def _render_single_card(
     return out
 
 
+# ── Family Tree Graphic Node & Card Renderer ─────────────────────────
+class TreeNode:
+    def __init__(self, uid: int, name: str, tag: str, role: str, av_bytes: bytes | None = None):
+        self.uid = uid
+        self.name = name
+        self.tag = tag
+        self.role = role
+        self.av_bytes = av_bytes
+
+
+def _draw_interlocking_rings(draw: ImageDraw.ImageDraw, cx: int, cy: int, r: int = 8):
+    draw.ellipse([cx - r - 4, cy - r, cx + r - 4, cy + r], outline=(255, 255, 255, 220), width=2)
+    draw.ellipse([cx - r + 4, cy - r, cx + r + 4, cy + r], outline=(255, 255, 255, 220), width=2)
+    draw.rectangle([cx - 5, cy - r - 2, cx - 3, cy - r + 2], fill=(255, 255, 255, 255))
+    draw.rectangle([cx + 3, cy - r - 2, cx + 5, cy - r + 2], fill=(255, 255, 255, 255))
+
+
+def _render_tree_card(
+    focus_user: TreeNode,
+    spouse: TreeNode | None,
+    parents: list[TreeNode],      # up to 2
+    children: list[TreeNode],     # up to 5
+    siblings: list[TreeNode],     # up to 4
+    family_name: str | None = None,
+) -> io.BytesIO:
+    has_parents = len(parents) > 0
+    has_children = len(children) > 0
+
+    W = 900
+    H = 720 if (has_parents and has_children) else (560 if (has_parents or has_children) else 440)
+
+    bg = Image.new("RGBA", (W, H), (7, 8, 11, 255))
+
+    # 1. Subtle background glow (bounded)
+    cx = W // 2
+    cy = H // 2
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gdraw = ImageDraw.Draw(glow)
+    for r in range(240, 30, -30):
+        alpha = int(7 * (1 - r / 240))
+        gdraw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 255, 255, alpha))
+    bg = Image.alpha_composite(bg, glow)
+    draw = ImageDraw.Draw(bg)
+
+    # Star particles
+    stars = [
+        (50, 70), (120, 140), (840, 90), (780, 200),
+        (80, H - 90), (820, H - 80), (130, cy), (770, cy),
+        (200, 60), (700, 60), (cx, 45), (cx, H - 45),
+    ]
+    for sx, sy in stars:
+        draw.text((sx, sy), "✦", fill=(255, 255, 255, 45), anchor="mm", font=_load_font(10))
+
+    # 2. Main Glassmorphic Panel
+    pad_x, pad_y = 24, 20
+    card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cdraw = ImageDraw.Draw(card)
+    cdraw.rounded_rectangle(
+        [pad_x, pad_y, W - pad_x, H - pad_y],
+        radius=18,
+        fill=(13, 15, 20, 230),
+        outline=(255, 255, 255, 32),
+        width=1,
+    )
+
+    def draw_corner(x, y, dx, dy):
+        cdraw.line([(x, y), (x + dx * 20, y)], fill=(255, 255, 255, 100), width=2)
+        cdraw.line([(x, y), (x, y + dy * 20)], fill=(255, 255, 255, 100), width=2)
+        cdraw.rectangle([x - 2, y - 2, x + 2, y + 2], fill=(255, 255, 255, 180))
+
+    draw_corner(pad_x + 10, pad_y + 10, 1, 1)
+    draw_corner(W - pad_x - 10, pad_y + 10, -1, 1)
+    draw_corner(pad_x + 10, H - pad_y - 10, 1, -1)
+    draw_corner(W - pad_x - 10, H - pad_y - 10, -1, -1)
+
+    bg = Image.alpha_composite(bg, card)
+    draw = ImageDraw.Draw(bg)
+
+    f_title = _load_font(11, bold=True)
+    f_name = _load_font(13, bold=True)
+    f_badge = _load_font(10, bold=True)
+
+    # 3. Top Header Pill Badge
+    title_text = f"✦   HOUSE OF {family_name.upper()}   ✦" if family_name else f"✦   {focus_user.name.upper()}'S FAMILY LINEAGE   ✦"
+    tw = f_title.getlength(title_text)
+    pill_w = tw + 36
+    pill_h = 26
+    pill_x = (W - pill_w) // 2
+    pill_y = pad_y + 16
+    draw.rounded_rectangle(
+        [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
+        radius=13,
+        fill=(245, 248, 255, 245),
+        outline=(255, 255, 255, 120),
+        width=1,
+    )
+    draw.text(((W - tw) // 2, pill_y + 6), title_text, fill=(12, 14, 18, 255), font=f_title)
+
+    # Top accent line
+    draw.line([(pad_x + 60, pill_y + 13), (pill_x - 16, pill_y + 13)], fill=(255, 255, 255, 45), width=1)
+    draw.ellipse([pill_x - 20, pill_y + 11, pill_x - 16, pill_y + 15], fill=(255, 255, 255, 120))
+    draw.line([(pill_x + pill_w + 16, pill_y + 13), (W - pad_x - 60, pill_y + 13)], fill=(255, 255, 255, 45), width=1)
+    draw.ellipse([pill_x + pill_w + 16, pill_y + 11, pill_x + pill_w + 20, pill_y + 15], fill=(255, 255, 255, 120))
+
+    # Node renderer helper
+    def render_node(x: int, y: int, node: TreeNode, size: int = 74, is_focus: bool = False, role_label: str | None = None):
+        av_img = _circle_avatar(node.av_bytes, size)
+        bg.paste(av_img, (x - size // 2, y - size // 2), av_img)
+
+        # Concentric Aura Rings
+        border_col = (255, 255, 255, 230) if is_focus else (255, 255, 255, 110)
+        draw.ellipse([x - size // 2, y - size // 2, x + size // 2, y + size // 2], outline=border_col, width=2 if not is_focus else 3)
+        draw.ellipse([x - size // 2 - 4, y - size // 2 - 4, x + size // 2 + 4, y + size // 2 + 4], outline=(255, 255, 255, 45), width=1)
+        if is_focus:
+            draw.ellipse([x - size // 2 - 8, y - size // 2 - 8, x + size // 2 + 8, y + size // 2 + 8], outline=(255, 255, 255, 22), width=1)
+
+        # Name
+        n_txt = node.name[:13]
+        nw = f_name.getlength(n_txt)
+        draw.text((x - nw // 2, y + size // 2 + 6), n_txt, fill=(255, 255, 255, 245), font=f_name)
+
+        # Role Badge
+        role_txt = role_label or node.role
+        if role_txt:
+            rw = f_badge.getlength(role_txt)
+            rb_w = rw + 14
+            rb_h = 16
+            rb_x = x - rb_w // 2
+            rb_y = y + size // 2 + 25
+            bg_col = (255, 255, 255, 225) if is_focus else (32, 35, 44, 230)
+            txt_col = (12, 14, 18, 255) if is_focus else (185, 190, 205, 255)
+            draw.rounded_rectangle([rb_x, rb_y, rb_x + rb_w, rb_y + rb_h], radius=8, fill=bg_col, outline=(255, 255, 255, 40), width=1)
+            draw.text((rb_x + 7, rb_y + 1), role_txt, fill=txt_col, font=f_badge)
+
+    # Dynamic Tier Positioning
+    if has_parents and has_children:
+        tier1_y = 140
+        tier2_y = 335
+        tier3_y = 535
+    elif has_parents and not has_children:
+        tier1_y = 175
+        tier2_y = 385
+        tier3_y = 0
+    elif not has_parents and has_children:
+        tier1_y = 0
+        tier2_y = 185
+        tier3_y = 395
+    else:
+        tier1_y = 0
+        tier2_y = 230
+        tier3_y = 0
+
+    # Layout Parents (Tier 1)
+    if has_parents:
+        if len(parents) == 1:
+            px = cx
+            render_node(px, tier1_y, parents[0], size=70, role_label="Parent")
+            draw.line([(cx, tier1_y + 50), (cx, tier2_y - 52)], fill=(255, 255, 255, 55), width=2)
+            draw.ellipse([cx - 3, tier2_y - 54, cx + 3, tier2_y - 48], fill=(255, 255, 255, 140))
+        else:
+            p1_x = cx - 110
+            p2_x = cx + 110
+            render_node(p1_x, tier1_y, parents[0], size=70, role_label="Parent")
+            render_node(p2_x, tier1_y, parents[1], size=70, role_label="Parent")
+
+            draw.line([(p1_x + 35, tier1_y), (cx - 18, tier1_y)], fill=(255, 255, 255, 75), width=2)
+            draw.line([(cx + 18, tier1_y), (p2_x - 35, tier1_y)], fill=(255, 255, 255, 75), width=2)
+            _draw_interlocking_rings(draw, cx, tier1_y, r=8)
+
+            draw.line([(cx, tier1_y + 12), (cx, tier2_y - 52)], fill=(255, 255, 255, 55), width=2)
+            draw.ellipse([cx - 3, tier2_y - 54, cx + 3, tier2_y - 48], fill=(255, 255, 255, 140))
+
+    # Layout Focus & Spouse (Tier 2)
+    if spouse:
+        f_x = cx - 95
+        sp_x = cx + 95
+        render_node(f_x, tier2_y, focus_user, size=84, is_focus=True, role_label="Focus")
+        render_node(sp_x, tier2_y, spouse, size=78, role_label="Spouse")
+        draw.line([(f_x + 42, tier2_y), (cx - 18, tier2_y)], fill=(255, 255, 255, 85), width=2)
+        draw.line([(cx + 18, tier2_y), (sp_x - 39, tier2_y)], fill=(255, 255, 255, 85), width=2)
+        _draw_interlocking_rings(draw, cx, tier2_y, r=8)
+    else:
+        f_x = cx
+        render_node(f_x, tier2_y, focus_user, size=86, is_focus=True, role_label="Focus")
+
+    # Layout Siblings (Tier 2 sides)
+    if siblings:
+        for i, sib in enumerate(siblings[:3]):
+            sib_x = pad_x + 80 + i * 90 if i % 2 == 0 else W - pad_x - 80 - (i // 2) * 90
+            render_node(sib_x, tier2_y, sib, size=64, role_label="Sibling")
+            if has_parents:
+                draw.line([(sib_x, tier2_y - 44), (sib_x, tier1_y + 70), (cx, tier1_y + 70)], fill=(255, 255, 255, 25), width=1)
+
+    # Layout Children (Tier 3)
+    if has_children:
+        c_count = min(len(children), 5)
+        mid_top_x = cx
+        drop_start_y = tier2_y + 52
+        bus_y = tier2_y + 92
+        draw.line([(mid_top_x, drop_start_y), (mid_top_x, bus_y)], fill=(255, 255, 255, 55), width=2)
+
+        span_w = (c_count - 1) * 140
+        start_x = cx - span_w // 2
+
+        if c_count > 1:
+            draw.line([(start_x, bus_y), (start_x + span_w, bus_y)], fill=(255, 255, 255, 55), width=2)
+
+        for i in range(c_count):
+            ch_x = start_x + i * 140
+            draw.line([(ch_x, bus_y), (ch_x, tier3_y - 44)], fill=(255, 255, 255, 55), width=2)
+            draw.ellipse([ch_x - 3, tier3_y - 46, ch_x + 3, tier3_y - 40], fill=(255, 255, 255, 140))
+            render_node(ch_x, tier3_y, children[i], size=68, role_label="Child")
+
+    # 5. Bottom Stats Pill
+    total_relatives = 1 + (1 if spouse else 0) + len(parents) + len(children) + len(siblings)
+    stats_text = f"✦   LINEAGE NETWORK   •   {total_relatives}   MEMBERS   ✦"
+    stw = f_title.getlength(stats_text)
+    spill_w = stw + 32
+    spill_h = 24
+    spill_x = (W - spill_w) // 2
+    spill_y = H - pad_y - 30
+    draw.rounded_rectangle(
+        [spill_x, spill_y, spill_x + spill_w, spill_y + spill_h],
+        radius=12,
+        fill=(245, 248, 255, 245),
+        outline=(255, 255, 255, 120),
+        width=1,
+    )
+    draw.text((spill_x + 16, spill_y + 5), stats_text, fill=(12, 14, 18, 255), font=f_title)
+
+    out = io.BytesIO()
+    bg.convert("RGB").save(out, format="PNG")
+    out.seek(0)
+    return out
+
+
 # ── Marriage Proposal View ─────────────────────────────────────────
 class MarryProposalView(discord.ui.View):
     def __init__(self, author: discord.Member, target: discord.Member, cog: "Social"):
@@ -2116,7 +2352,7 @@ class Social(commands.Cog, name="Social"):
     @commands.cooldown(1, 10, commands.BucketType.user)
     @help_meta(
         usage="`.tree [@user]`",
-        desc="Generates a full hierarchical Unicode family lineage tree.",
+        desc="Generates a customized visual family lineage graphic card.",
         section="Fun",
         perm_tier="public",
         examples=[".tree", ".tree @someone"],
@@ -2126,19 +2362,46 @@ class Social(commands.Cog, name="Social"):
     )
     async def tree(self, ctx: commands.Context, user: discord.Member = None):
         target = user or ctx.author
-        pages = await self._build_tree_pages(target.id, ctx.guild)
-        color = get_embed_color(ctx.guild.id if ctx.guild else 0)
+        m = await self.get_marriage(target.id)
+        spouse_id = m[0] if m else None
+        parent_ids = await self.get_parents(target.id)
+        child_ids = await self.get_children(target.id)
+        if spouse_id:
+            for sc in await self.get_children(spouse_id):
+                if sc not in child_ids:
+                    child_ids.append(sc)
+        sibling_ids = await self.get_siblings(target.id)
+        fam_name = await self.get_family_name(target.id)
 
-        if len(pages) == 1:
-            embed = discord.Embed(
-                title=f"{target.display_name}'s family tree ✦",
-                description=f"```\n{pages[0]}\n```",
-                color=color,
-            )
-            return await ctx.send(embed=embed)
+        async def fetch_node(uid: int, role: str) -> TreeNode:
+            name, tag = await self._get_user_display(uid, ctx.guild)
+            member_obj = ctx.guild.get_member(uid) or self.bot.get_user(uid) if ctx.guild else self.bot.get_user(uid)
+            if member_obj is None:
+                try:
+                    member_obj = await self.bot.fetch_user(uid)
+                except Exception:
+                    pass
+            av_bytes = await self._fetch_avatar(member_obj)
+            return TreeNode(uid, name, tag, role, av_bytes)
 
-        view = TreePaginationView(ctx.author, pages, f"{target.display_name}'s family tree ✦", color)
-        await ctx.send(embed=view.get_embed(), view=view)
+        focus_node = await fetch_node(target.id, "Focus")
+        spouse_node = await fetch_node(spouse_id, "Spouse") if spouse_id else None
+
+        parent_nodes = await asyncio.gather(*[fetch_node(pid, "Parent") for pid in parent_ids[:2]])
+        child_nodes = await asyncio.gather(*[fetch_node(cid, "Child") for cid in child_ids[:5]])
+        sibling_nodes = await asyncio.gather(*[fetch_node(sid, "Sibling") for sid in sibling_ids[:3]])
+
+        card_buf = await asyncio.to_thread(
+            _render_tree_card,
+            focus_node,
+            spouse_node,
+            list(parent_nodes),
+            list(child_nodes),
+            list(sibling_nodes),
+            fam_name,
+        )
+        file = discord.File(card_buf, filename="tree.png")
+        await ctx.send(file=file)
 
     @commands.command(name="relationship", aliases=["rel", "relation"])
     @commands.cooldown(2, 5, commands.BucketType.user)
