@@ -272,14 +272,14 @@ class FunCog(commands.Cog, name="Fun"):
 
     @commands.command(name="uwulock")
     @help_meta(
-        usage="`.uwulock <@user | #channel | all> [#channel]`",
-        desc="Toggles uwulock on a user, a specific channel, or the entire server.",
+        usage="`.uwulock <@user | #channel | all | reset> [#channel]`",
+        desc="Toggles uwulock on a user, a specific channel, the entire server, or resets all active locks.",
         section="Moderation",
         perm_tier="whitelist",
         discord_perms=["manage_messages"],
-        examples=[".uwulock @someone", ".uwulock @someone #general", ".uwulock #general", ".uwulock all"],
+        examples=[".uwulock @someone", ".uwulock @someone #general", ".uwulock #general", ".uwulock all", ".uwulock reset"],
         params=[
-            {"name": "target", "type": "user|channel|all", "required": True, "desc": "The member, channel, or 'all' to toggle uwulock for."},
+            {"name": "target", "type": "user|channel|all|reset", "required": True, "desc": "The member, channel, 'all', or 'reset' to toggle/clear uwulock for."},
             {"name": "channel", "type": "channel", "required": False, "desc": "Specific channel to restrict lock to (when targeting a user)."},
         ],
         note="Whitelisted / Server Owner only. Webhooks are automatically managed and garbage collected.",
@@ -300,11 +300,28 @@ class FunCog(commands.Cog, name="Fun"):
             return await ctx.send("no perms")
 
         if not target:
-            return await ctx.send("usage: `.uwulock <@user | #channel | all> [#channel]`")
+            return await ctx.send("usage: `.uwulock <@user | #channel | all | reset> [#channel]`")
 
         target_lower = target.lower()
 
-        # 1. Server-wide toggle
+        # 1. Reset / Clear all locks in this server
+        if target_lower in ("reset", "clear", "unall"):
+            _server_locks.discard(ctx.guild.id)
+            for c in list(_channel_locks):
+                if ctx.guild.get_channel(c) is not None:
+                    _channel_locks.discard(c)
+            for (gid, uid) in list(_lock_scopes.keys()):
+                if gid == ctx.guild.id:
+                    _lock_scopes.pop((gid, uid), None)
+                    await self._gc_webhooks_for(uid)
+            _save_state()
+            try:
+                await ctx.message.add_reaction("<:redlotus:1263556248310386800>")
+            except Exception:
+                pass
+            return
+
+        # 2. Server-wide toggle
         if target_lower in ("all", "server", "guild"):
             if ctx.guild.id in _server_locks:
                 _server_locks.discard(ctx.guild.id)
