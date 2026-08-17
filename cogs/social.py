@@ -6,6 +6,8 @@ import math
 import os
 import random
 import re
+import time
+from collections import deque
 from datetime import datetime, timezone
 
 import aiohttp
@@ -514,12 +516,158 @@ class MarryProposalView(discord.ui.View):
         self.stop()
 
 
-# ── Divorce Confirmation View ──────────────────────────────────────
-class DivorceConfirmView(discord.ui.View):
-    def __init__(self, author: discord.Member, partner_id: int, cog: "Social"):
+# ── Adoption Proposal View ─────────────────────────────────────────
+class AdoptProposalView(discord.ui.View):
+    def __init__(self, author: discord.Member, target: discord.Member, cog: "Social"):
+        super().__init__(timeout=60)
+        self.author = author
+        self.target = target
+        self.cog = cog
+        self.value = None
+        self.message: discord.Message | None = None
+
+    def _release_locks(self):
+        self.cog._release_locks(self.author.id, self.target.id)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.target.id:
+            await interaction.response.send_message("-# this proposal isn't for you", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="accept", style=discord.ButtonStyle.secondary, emoji="🌿")
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = True
+        self._release_locks()
+
+        # Race-condition safeguards
+        parents = await self.cog.get_parents(self.target.id)
+        if len(parents) >= 2:
+            return await interaction.response.edit_message(
+                content=f"-# {self.target.mention} already has the maximum of 2 parents",
+                view=self,
+            )
+        if await self.cog.is_ancestor_or_descendant(self.author.id, self.target.id):
+            return await interaction.response.edit_message(
+                content="-# cannot complete adoption due to family cycle",
+                view=self,
+            )
+
+        await self.cog.create_adoption(self.author.id, self.target.id, interaction.guild_id or 0)
+        await interaction.response.edit_message(
+            content=f"-# 🌿 {self.target.mention} is now adopted by {self.author.mention} ✦",
+            view=self,
+        )
+        self.stop()
+
+    @discord.ui.button(label="decline", style=discord.ButtonStyle.secondary, emoji="✖")
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = False
+        self._release_locks()
+        await interaction.response.edit_message(
+            content=f"-# {self.target.mention} declined {self.author.mention}'s adoption request",
+            view=self,
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        self._release_locks()
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(
+                    content=f"-# adoption proposal from {self.author.mention} to {self.target.mention} timed out ⏳",
+                    view=self,
+                )
+            except discord.HTTPException:
+                pass
+        self.stop()
+
+
+# ── Make Parent Proposal View ──────────────────────────────────────
+class MakeParentProposalView(discord.ui.View):
+    def __init__(self, author: discord.Member, target: discord.Member, cog: "Social"):
+        super().__init__(timeout=60)
+        self.author = author
+        self.target = target
+        self.cog = cog
+        self.value = None
+        self.message: discord.Message | None = None
+
+    def _release_locks(self):
+        self.cog._release_locks(self.author.id, self.target.id)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.target.id:
+            await interaction.response.send_message("-# this proposal isn't for you", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="accept", style=discord.ButtonStyle.secondary, emoji="🌿")
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = True
+        self._release_locks()
+
+        parents = await self.cog.get_parents(self.author.id)
+        if len(parents) >= 2:
+            return await interaction.response.edit_message(
+                content=f"-# {self.author.mention} already has the maximum of 2 parents",
+                view=self,
+            )
+        if await self.cog.is_ancestor_or_descendant(self.target.id, self.author.id):
+            return await interaction.response.edit_message(
+                content="-# cannot complete adoption due to family cycle",
+                view=self,
+            )
+
+        # target becomes parent, author becomes child
+        await self.cog.create_adoption(self.target.id, self.author.id, interaction.guild_id or 0)
+        await interaction.response.edit_message(
+            content=f"-# 🌿 {self.target.mention} is now the parent of {self.author.mention} ✦",
+            view=self,
+        )
+        self.stop()
+
+    @discord.ui.button(label="decline", style=discord.ButtonStyle.secondary, emoji="✖")
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = False
+        self._release_locks()
+        await interaction.response.edit_message(
+            content=f"-# {self.target.mention} declined to be {self.author.mention}'s parent",
+            view=self,
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        self._release_locks()
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(
+                    content=f"-# parent request from {self.author.mention} to {self.target.mention} timed out ⏳",
+                    view=self,
+                )
+            except discord.HTTPException:
+                pass
+        self.stop()
+
+
+# ── Disown Confirmation View ───────────────────────────────────────
+class DisownConfirmView(discord.ui.View):
+    def __init__(self, author: discord.Member, child_id: int, cog: "Social"):
         super().__init__(timeout=30)
         self.author = author
-        self.partner_id = partner_id
+        self.child_id = child_id
         self.cog = cog
         self.value = None
         self.message: discord.Message | None = None
@@ -530,14 +678,14 @@ class DivorceConfirmView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="divorce", style=discord.ButtonStyle.danger, emoji="💔")
+    @discord.ui.button(label="disown", style=discord.ButtonStyle.danger, emoji="💔")
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         for item in self.children:
             item.disabled = True
         self.value = True
-        await self.cog.delete_marriage(self.author.id)
+        await self.cog.delete_adoption(self.author.id, self.child_id)
         await interaction.response.edit_message(
-            content=f"-# you and <@{self.partner_id}> are now divorced 💔",
+            content=f"-# you have disowned <@{self.child_id}> 💔",
             view=self,
         )
         self.stop()
@@ -548,7 +696,7 @@ class DivorceConfirmView(discord.ui.View):
             item.disabled = True
         self.value = False
         await interaction.response.edit_message(
-            content="-# divorce cancelled",
+            content="-# disown cancelled",
             view=self,
         )
         self.stop()
@@ -558,9 +706,114 @@ class DivorceConfirmView(discord.ui.View):
             item.disabled = True
         if self.message:
             try:
-                await self.message.edit(content="-# divorce confirmation timed out", view=self)
+                await self.message.edit(content="-# disown confirmation timed out", view=self)
             except discord.HTTPException:
                 pass
+        self.stop()
+
+
+# ── Emancipate Confirmation View ───────────────────────────────────
+class EmancipateConfirmView(discord.ui.View):
+    def __init__(self, author: discord.Member, parent_ids: list[int], cog: "Social"):
+        super().__init__(timeout=30)
+        self.author = author
+        self.parent_ids = parent_ids
+        self.cog = cog
+        self.value = None
+        self.message: discord.Message | None = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author.id:
+            await interaction.response.send_message("-# not your confirmation", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="emancipate", style=discord.ButtonStyle.danger, emoji="🏃")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = True
+        for p in self.parent_ids:
+            await self.cog.delete_adoption(p, self.author.id)
+        await interaction.response.edit_message(
+            content="-# you have emancipated and left your family lineage ✦",
+            view=self,
+        )
+        self.stop()
+
+    @discord.ui.button(label="cancel", style=discord.ButtonStyle.secondary, emoji="✖")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = False
+        await interaction.response.edit_message(
+            content="-# emancipation cancelled",
+            view=self,
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(content="-# emancipation confirmation timed out", view=self)
+            except discord.HTTPException:
+                pass
+        self.stop()
+
+
+# ── Tree Pagination View ───────────────────────────────────────────
+class TreePaginationView(discord.ui.View):
+    def __init__(self, author: discord.Member, pages: list[str], title: str, color: int):
+        super().__init__(timeout=60)
+        self.author = author
+        self.pages = pages
+        self.title = title
+        self.color = color
+        self.current_page = 0
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.btn_prev.disabled = (self.current_page == 0)
+        self.btn_next.disabled = (self.current_page >= len(self.pages) - 1)
+        self.btn_indicator.label = f"{self.current_page + 1} / {len(self.pages)}"
+
+    def get_embed(self) -> discord.Embed:
+        embed = discord.Embed(
+            title=self.title,
+            description=f"```\n{self.pages[self.current_page]}\n```",
+            color=self.color,
+        )
+        return embed
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author.id:
+            await interaction.response.send_message("-# not your menu", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+    async def btn_prev(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._update_buttons()
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @discord.ui.button(label="1 / 1", style=discord.ButtonStyle.secondary, disabled=True)
+    async def btn_indicator(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    async def btn_next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < len(self.pages) - 1:
+            self.current_page += 1
+            self._update_buttons()
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
         self.stop()
 
 
@@ -733,7 +986,8 @@ class Social(commands.Cog, name="Social"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: aiosqlite.Connection | None = None
-        self._active_proposals: set[int] = set()
+        self._active_proposals: dict[int, float] = {}  # user_id -> monotonic expiration timestamp
+        self._kinship_cache: dict[tuple[int, int, str], tuple[str, float]] = {}
 
     async def cog_load(self):
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -760,6 +1014,38 @@ class Social(commands.Cog, name="Social"):
                 declined_count INTEGER NOT NULL DEFAULT 0
             )
         """)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS adoptions (
+                parent_id INTEGER NOT NULL,
+                child_id INTEGER NOT NULL,
+                adopted_at TEXT NOT NULL,
+                guild_id INTEGER NOT NULL,
+                PRIMARY KEY (parent_id, child_id)
+            )
+        """)
+        await self.db.execute("CREATE INDEX IF NOT EXISTS idx_adoptions_parent ON adoptions(parent_id)")
+        await self.db.execute("CREATE INDEX IF NOT EXISTS idx_adoptions_child ON adoptions(child_id)")
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS family_milestones (
+                user_id INTEGER NOT NULL,
+                milestone_type TEXT NOT NULL,
+                achieved_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, milestone_type)
+            )
+        """)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS family_names (
+                user_id INTEGER PRIMARY KEY,
+                family_name TEXT NOT NULL,
+                set_at TEXT NOT NULL
+            )
+        """)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS social_optout (
+                user_id INTEGER PRIMARY KEY,
+                opted_out_at TEXT NOT NULL
+            )
+        """)
         await self.db.commit()
 
     async def cog_unload(self):
@@ -767,6 +1053,43 @@ class Social(commands.Cog, name="Social"):
             await self.db.close()
             self.db = None
 
+    # ── State Lock & Cache Helpers ─────────────────────────────────
+    def _is_locked(self, user_id: int) -> bool:
+        now = time.monotonic()
+        self._active_proposals = {uid: exp for uid, exp in self._active_proposals.items() if exp > now}
+        return user_id in self._active_proposals
+
+    def _acquire_locks(self, *user_ids: int, ttl: float = 65.0):
+        now = time.monotonic()
+        exp = now + ttl
+        for uid in user_ids:
+            self._active_proposals[uid] = exp
+
+    def _release_locks(self, *user_ids: int):
+        for uid in user_ids:
+            self._active_proposals.pop(uid, None)
+
+    def _invalidate_kinship_cache(self):
+        self._kinship_cache.clear()
+
+    # ── Privacy Opt-Out ─────────────────────────────────────────────
+    async def is_opted_out(self, user_id: int) -> bool:
+        if not self.db:
+            return False
+        async with self.db.execute("SELECT 1 FROM social_optout WHERE user_id = ?", (user_id,)) as cur:
+            return (await cur.fetchone()) is not None
+
+    async def set_optout(self, user_id: int, optout: bool):
+        if not self.db:
+            return
+        if optout:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await self.db.execute("INSERT OR REPLACE INTO social_optout (user_id, opted_out_at) VALUES (?, ?)", (user_id, now_iso))
+        else:
+            await self.db.execute("DELETE FROM social_optout WHERE user_id = ?", (user_id,))
+        await self.db.commit()
+
+    # ── Avatar & Formatting Helpers ────────────────────────────────
     async def _fetch_avatar(self, user: discord.abc.User | discord.Member | None) -> bytes | None:
         if user is None:
             return None
@@ -781,6 +1104,22 @@ class Social(commands.Cog, name="Social"):
             log.warning(f"failed to fetch avatar for {getattr(user, 'id', None)}: {e}")
         return None
 
+    async def _get_user_display(self, user_id: int, guild: discord.Guild | None = None) -> tuple[str, str]:
+        member = guild.get_member(user_id) if guild else None
+        if member:
+            return member.display_name, f"@{member.name}"
+        u = self.bot.get_user(user_id)
+        if u:
+            return u.display_name, f"@{u.name}"
+        try:
+            u = await self.bot.fetch_user(user_id)
+            if u:
+                return u.display_name, f"@{u.name}"
+        except Exception:
+            pass
+        return f"User {user_id}", f"@{user_id}"
+
+    # ── Marriage DB Methods ─────────────────────────────────────────
     async def get_marriage(self, user_id: int) -> tuple[int, str, int] | None:
         """Returns (partner_id, married_at_iso, guild_id) or None."""
         if not self.db:
@@ -811,6 +1150,7 @@ class Social(commands.Cog, name="Social"):
             (u1, u2, now_iso, guild_id),
         )
         await self.db.commit()
+        self._invalidate_kinship_cache()
 
     async def delete_marriage(self, user_id: int):
         if not self.db:
@@ -820,9 +1160,267 @@ class Social(commands.Cog, name="Social"):
             (user_id, user_id),
         )
         await self.db.commit()
+        self._invalidate_kinship_cache()
 
+    # ── Adoption & Lineage DB Methods ──────────────────────────────
+    async def create_adoption(self, parent_id: int, child_id: int, guild_id: int):
+        if not self.db:
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await self.db.execute(
+            "INSERT OR REPLACE INTO adoptions (parent_id, child_id, adopted_at, guild_id) VALUES (?, ?, ?, ?)",
+            (parent_id, child_id, now_iso, guild_id),
+        )
+        await self.db.commit()
+        self._invalidate_kinship_cache()
+
+    async def delete_adoption(self, parent_id: int, child_id: int):
+        if not self.db:
+            return
+        await self.db.execute(
+            "DELETE FROM adoptions WHERE parent_id = ? AND child_id = ?",
+            (parent_id, child_id),
+        )
+        await self.db.commit()
+        self._invalidate_kinship_cache()
+
+    async def get_parents(self, child_id: int) -> list[int]:
+        if not self.db:
+            return []
+        async with self.db.execute(
+            "SELECT parent_id FROM adoptions WHERE child_id = ? ORDER BY adopted_at ASC",
+            (child_id,),
+        ) as cur:
+            return [r[0] for r in await cur.fetchall()]
+
+    async def get_children(self, parent_id: int) -> list[int]:
+        if not self.db:
+            return []
+        async with self.db.execute(
+            "SELECT child_id FROM adoptions WHERE parent_id = ? ORDER BY adopted_at ASC",
+            (parent_id,),
+        ) as cur:
+            return [r[0] for r in await cur.fetchall()]
+
+    async def get_siblings(self, user_id: int) -> list[int]:
+        parents = await self.get_parents(user_id)
+        if not parents:
+            return []
+        siblings = set()
+        for p in parents:
+            for c in await self.get_children(p):
+                if c != user_id:
+                    siblings.add(c)
+        return sorted(siblings)
+
+    async def is_ancestor(self, potential_ancestor: int, target: int, visited: set[int] = None) -> bool:
+        if visited is None:
+            visited = set()
+        if target in visited:
+            return False
+        visited.add(target)
+        target_parents = await self.get_parents(target)
+        if potential_ancestor in target_parents:
+            return True
+        for p in target_parents:
+            if await self.is_ancestor(potential_ancestor, p, visited):
+                return True
+        return False
+
+    async def is_descendant(self, potential_descendant: int, target: int, visited: set[int] = None) -> bool:
+        if visited is None:
+            visited = set()
+        if target in visited:
+            return False
+        visited.add(target)
+        target_children = await self.get_children(target)
+        if potential_descendant in target_children:
+            return True
+        for c in target_children:
+            if await self.is_descendant(potential_descendant, c, visited):
+                return True
+        return False
+
+    async def is_ancestor_or_descendant(self, u1: int, u2: int) -> bool:
+        return (await self.is_ancestor(u1, u2)) or (await self.is_descendant(u1, u2))
+
+    # ── Kinship Resolver ────────────────────────────────────────────
+    async def resolve_relationship(self, u1: int, u2: int, mode: str = "combined") -> str:
+        if u1 == u2:
+            return "Self"
+
+        # Check direct spouse
+        m1 = await self.get_marriage(u1)
+        if m1 and m1[0] == u2:
+            return "Married (Spouse)"
+
+        cache_key = (u1, u2, mode)
+        cached = self._kinship_cache.get(cache_key)
+        now = time.monotonic()
+        if cached and cached[1] > now:
+            return cached[0]
+
+        u1_parents = set(await self.get_parents(u1))
+        u2_parents = set(await self.get_parents(u2))
+        u1_children = set(await self.get_children(u1))
+        u2_children = set(await self.get_children(u2))
+
+        # 1. Direct Parent / Child
+        if u2 in u1_children:
+            res = "Child"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+        if u1 in u2_children:
+            res = "Parent"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+
+        # 2. Siblings (Shared parent)
+        if u1_parents and u2_parents and (u1_parents & u2_parents):
+            res = "Sibling"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+
+        # 3. Grandparent / Grandchild
+        for p in u2_parents:
+            p_parents = set(await self.get_parents(p))
+            if u1 in p_parents:
+                res = "Grandparent"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+        for p in u1_parents:
+            p_parents = set(await self.get_parents(p))
+            if u2 in p_parents:
+                res = "Grandchild"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+
+        # 4. Aunt/Uncle vs Niece/Nephew
+        for p in u2_parents:
+            p_parents = set(await self.get_parents(p))
+            if p_parents and (p_parents & u1_parents):
+                res = "Aunt/Uncle"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+        for p in u1_parents:
+            p_parents = set(await self.get_parents(p))
+            if p_parents and (p_parents & u2_parents):
+                res = "Niece/Nephew"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+
+        # 5. First Cousins
+        u1_grandparents = set()
+        for p in u1_parents:
+            u1_grandparents.update(await self.get_parents(p))
+        u2_grandparents = set()
+        for p in u2_parents:
+            u2_grandparents.update(await self.get_parents(p))
+        if u1_grandparents and u2_grandparents and (u1_grandparents & u2_grandparents):
+            res = "Cousin"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+
+        if mode == "blood":
+            if await self.is_ancestor(u1, u2):
+                res = "Ancestor"
+            elif await self.is_descendant(u1, u2):
+                res = "Descendant"
+            else:
+                res = "Unrelated"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+
+        # In combined mode, check in-law and step relations
+        m2 = await self.get_marriage(u2)
+        u1_spouse = m1[0] if m1 else None
+        u2_spouse = m2[0] if m2 else None
+
+        # Parent-in-law / Child-in-law
+        if u1_spouse and u2 in await self.get_parents(u1_spouse):
+            res = "Parent-in-law"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+        if u2_spouse and u2_spouse in u1_children:
+            res = "Child-in-law"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+
+        # Sibling-in-law
+        if u1_spouse:
+            u1_sp_parents = set(await self.get_parents(u1_spouse))
+            if u1_sp_parents and (u1_sp_parents & u2_parents):
+                res = "Sibling-in-law"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+        if u2_spouse:
+            u2_sp_parents = set(await self.get_parents(u2_spouse))
+            if u2_sp_parents and (u2_sp_parents & u1_parents):
+                res = "Sibling-in-law"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+
+        # Step-child / Step-parent
+        if u1_spouse and u2 in await self.get_children(u1_spouse):
+            res = "Step-Child"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+        for p in u1_parents:
+            pm = await self.get_marriage(p)
+            if pm and pm[0] == u2:
+                res = "Step-Parent"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+
+        # Deep search across all connections (up to depth 6)
+        network = await self.get_family_network(u1, max_depth=6)
+        res = "Extended Family" if u2 in network else "Unrelated"
+        self._kinship_cache[cache_key] = (res, now + 120)
+        return res
+
+    async def get_family_network(self, user_id: int, max_depth: int = 6) -> set[int]:
+        if not self.db:
+            return {user_id}
+        visited = {user_id}
+        q = deque([(user_id, 0)])
+        while q:
+            curr, depth = q.popleft()
+            if depth >= max_depth:
+                continue
+            parents = await self.get_parents(curr)
+            children = await self.get_children(curr)
+            m = await self.get_marriage(curr)
+            neighbors = set(parents) | set(children)
+            if m:
+                neighbors.add(m[0])
+            for n in neighbors:
+                if n not in visited:
+                    visited.add(n)
+                    q.append((n, depth + 1))
+        return visited
+
+    async def get_family_size(self, user_id: int) -> int:
+        return len(await self.get_family_network(user_id, max_depth=6))
+
+    async def get_family_name(self, user_id: int) -> str | None:
+        if not self.db:
+            return None
+        async with self.db.execute("SELECT family_name FROM family_names WHERE user_id = ?", (user_id,)) as cur:
+            r = await cur.fetchone()
+            return r[0] if r else None
+
+    async def set_family_name(self, user_id: int, name: str):
+        if not self.db:
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await self.db.execute(
+            "INSERT OR REPLACE INTO family_names (user_id, family_name, set_at) VALUES (?, ?, ?)",
+            (user_id, name, now_iso),
+        )
+        await self.db.commit()
+
+    # ── Proposal Statistics DB Methods ─────────────────────────────
     async def get_proposal_stats(self, user_id: int) -> tuple[int, int, int, int]:
-        """Returns (sent_count, received_count, accepted_count, declined_count)."""
         if not self.db:
             return 0, 0, 0, 0
         async with self.db.execute(
@@ -871,6 +1469,120 @@ class Social(commands.Cog, name="Social"):
         """, (user_id, sent, received, sent, received))
         await self.db.commit()
 
+    # ── Tree Lineage Builder Helper ────────────────────────────────
+    async def _build_tree_pages(self, user_id: int, guild: discord.Guild | None) -> list[str]:
+        lines = []
+        user_name, _ = await self._get_user_display(user_id, guild)
+        m = await self.get_marriage(user_id)
+        spouse_id = m[0] if m else None
+        if spouse_id:
+            sp_name, _ = await self._get_user_display(spouse_id, guild)
+            spouse_name = f" 💍 {sp_name}"
+        else:
+            spouse_name = ""
+
+        # 1. Parents & Grandparents
+        user_parents = await self.get_parents(user_id)
+        if user_parents:
+            lines.append("Ancestors ✦")
+            for i, p in enumerate(user_parents):
+                is_last_p = (i == len(user_parents) - 1)
+                p_prefix = "└── " if is_last_p else "├── "
+                p_name, _ = await self._get_user_display(p, guild)
+                pm = await self.get_marriage(p)
+                p_spouse = pm[0] if pm else None
+                if p_spouse and p_spouse not in user_parents:
+                    psp_name, _ = await self._get_user_display(p_spouse, guild)
+                    p_sp_str = f" 💍 {psp_name}"
+                else:
+                    p_sp_str = ""
+                lines.append(f"{p_prefix}{p_name}{p_sp_str} (Parent)")
+
+                # Grandparents
+                p_parents = await self.get_parents(p)
+                for j, gp in enumerate(p_parents):
+                    is_last_gp = (j == len(p_parents) - 1)
+                    sub_prefix = "    " if is_last_p else "│   "
+                    gp_branch = "└── " if is_last_gp else "├── "
+                    gp_name, _ = await self._get_user_display(gp, guild)
+                    lines.append(f"{sub_prefix}{gp_branch}{gp_name} (Grandparent)")
+            lines.append("│")
+
+        # 2. Main Focus & Spouse
+        fam_name = await self.get_family_name(user_id)
+        dynasty_str = f" [House of {fam_name}]" if fam_name else ""
+        lines.append(f"● {user_name}{spouse_name}{dynasty_str}")
+
+        # 3. Siblings
+        siblings = await self.get_siblings(user_id)
+        if siblings:
+            lines.append("│")
+            lines.append("├── Siblings ✦")
+            for s in siblings:
+                s_name, _ = await self._get_user_display(s, guild)
+                sm = await self.get_marriage(s)
+                s_sp = sm[0] if sm else None
+                s_sp_str = ""
+                if s_sp:
+                    s_sp_name, _ = await self._get_user_display(s_sp, guild)
+                    s_sp_str = f" 💍 {s_sp_name}"
+                lines.append(f"│   ├── {s_name}{s_sp_str}")
+
+        # 4. Children & Grandchildren
+        user_children = await self.get_children(user_id)
+        if spouse_id:
+            for sc in await self.get_children(spouse_id):
+                if sc not in user_children:
+                    user_children.append(sc)
+
+        if user_children:
+            lines.append("│")
+            lines.append("└── Children ✦")
+            for i, c in enumerate(user_children):
+                is_last_c = (i == len(user_children) - 1)
+                c_branch = "└── " if is_last_c else "├── "
+                c_name, _ = await self._get_user_display(c, guild)
+                cm = await self.get_marriage(c)
+                c_spouse = cm[0] if cm else None
+                c_sp_str = ""
+                if c_spouse:
+                    c_sp_name, _ = await self._get_user_display(c_spouse, guild)
+                    c_sp_str = f" 💍 {c_sp_name}"
+                lines.append(f"    {c_branch}{c_name}{c_sp_str}")
+
+                # Grandchildren
+                c_children = await self.get_children(c)
+                if c_spouse:
+                    for gc in await self.get_children(c_spouse):
+                        if gc not in c_children:
+                            c_children.append(gc)
+                for j, gc in enumerate(c_children):
+                    is_last_gc = (j == len(c_children) - 1)
+                    sub_indent = "    " if is_last_c else "│   "
+                    gc_branch = "└── " if is_last_gc else "├── "
+                    gc_name, _ = await self._get_user_display(gc, guild)
+                    lines.append(f"    {sub_indent}{gc_branch}{gc_name}")
+
+        full_text = "\n".join(lines)
+        if len(full_text) <= 1800:
+            return [full_text]
+
+        # Paginate lines if long
+        pages = []
+        cur_page = []
+        cur_len = 0
+        for line in lines:
+            if cur_len + len(line) + 1 > 1800:
+                pages.append("\n".join(cur_page))
+                cur_page = [line]
+                cur_len = len(line)
+            else:
+                cur_page.append(line)
+                cur_len += len(line) + 1
+        if cur_page:
+            pages.append("\n".join(cur_page))
+        return pages
+
     # ── Marriage Commands ───────────────────────────────────────────
     @commands.command(name="marry", aliases=["propose"])
     @commands.cooldown(1, 15, commands.BucketType.user)
@@ -895,6 +1607,12 @@ class Social(commands.Cog, name="Social"):
         if user.bot:
             return await ctx.send("-# you can't marry a bot")
 
+        # Opt-out checks
+        if await self.is_opted_out(ctx.author.id):
+            return await ctx.send("-# you have opted out of social proposals. use `.optout` to re-enable")
+        if await self.is_opted_out(user.id):
+            return await ctx.send(f"-# {user.display_name} has opted out of social proposals")
+
         m1 = await self.get_marriage(ctx.author.id)
         if m1:
             return await ctx.send(f"-# you're already married to <@{m1[0]}>. use `.divorce` first")
@@ -903,14 +1621,17 @@ class Social(commands.Cog, name="Social"):
         if m2:
             return await ctx.send(f"-# {user.display_name} is already married to <@{m2[0]}>")
 
-        if ctx.author.id in self._active_proposals:
+        # Kinship blocker (direct bloodline check)
+        rel = await self.resolve_relationship(ctx.author.id, user.id, mode="blood")
+        if rel in {"Parent", "Child", "Sibling", "Grandparent", "Grandchild", "Aunt/Uncle", "Niece/Nephew", "Ancestor", "Descendant"}:
+            return await ctx.send(f"-# you cannot marry {user.display_name} ({rel.lower()} relation)")
+
+        if self._is_locked(ctx.author.id):
             return await ctx.send("-# you already have an active proposal pending. please wait for it to finish")
-        if user.id in self._active_proposals:
+        if self._is_locked(user.id):
             return await ctx.send(f"-# {user.display_name} is currently considering another proposal. please try again in a moment")
 
-        self._active_proposals.add(ctx.author.id)
-        self._active_proposals.add(user.id)
-
+        self._acquire_locks(ctx.author.id, user.id, ttl=65.0)
         await self.record_proposal(ctx.author.id, user.id)
 
         view = MarryProposalView(ctx.author, user, self)
@@ -939,8 +1660,7 @@ class Social(commands.Cog, name="Social"):
             return await ctx.send("-# you aren't married to anyone")
 
         partner_id = m[0]
-        partner = ctx.guild.get_member(partner_id) or self.bot.get_user(partner_id)
-        p_name = partner.display_name if partner else f"<@{partner_id}>"
+        p_name, _ = await self._get_user_display(partner_id, ctx.guild)
 
         view = DivorceConfirmView(ctx.author, partner_id, self)
         msg = await ctx.send(
@@ -986,28 +1706,17 @@ class Social(commands.Cog, name="Social"):
         try:
             married_dt = datetime.fromisoformat(iso_str)
             long_dur, short_dur, days, tier_title = _format_married_duration(married_dt)
-            married_ts = int(married_dt.timestamp())
             date_str = married_dt.strftime("%b %d, %Y")
         except Exception:
             long_dur = "Some Time"
-            short_dur = "some time"
-            days = 0
             tier_title = "✦  E T E R N A L   V O W  ✦"
-            married_ts = int(datetime.now(timezone.utc).timestamp())
             date_str = "Recently"
 
-        partner = ctx.guild.get_member(partner_id) or self.bot.get_user(partner_id)
-        if partner is None:
-            try:
-                partner = await self.bot.fetch_user(partner_id)
-            except Exception:
-                pass
-
-        partner_name = partner.display_name if partner else f"User {partner_id}"
-        partner_tag = f"@{partner.name}" if partner else f"@{partner_id}"
+        partner_name, partner_tag = await self._get_user_display(partner_id, ctx.guild)
+        partner_obj = ctx.guild.get_member(partner_id) or self.bot.get_user(partner_id)
 
         av1_bytes = await self._fetch_avatar(target)
-        av2_bytes = await self._fetch_avatar(partner) if partner else None
+        av2_bytes = await self._fetch_avatar(partner_obj) if partner_obj else None
 
         card_buf = await asyncio.to_thread(
             _render_marriage_card,
@@ -1058,14 +1767,14 @@ class Social(commands.Cog, name="Social"):
         except Exception:
             await ctx.send(f"-# updated proposal stats for {user.display_name}: `{sent}` sent • `{received}` received")
 
-    @commands.command(name="marriages", aliases=["marrylist"])
+    @commands.command(name="marriages", aliases=["marrylist", "marrytop"])
     @commands.cooldown(1, 10, commands.BucketType.channel)
     @help_meta(
         usage="`.marriages`",
-        desc="Lists all active marriages in this server.",
+        desc="Lists the top longest lasting marriages in this server.",
         section="Fun",
         perm_tier="public",
-        examples=[".marriages"],
+        examples=[".marriages", ".marrytop"],
         params=[],
     )
     async def marrylist(self, ctx: commands.Context):
@@ -1075,7 +1784,7 @@ class Social(commands.Cog, name="Social"):
             return await ctx.send("-# no marriage records found")
 
         async with self.db.execute(
-            "SELECT user1_id, user2_id, married_at FROM marriages WHERE guild_id = ?",
+            "SELECT user1_id, user2_id, married_at FROM marriages WHERE guild_id = ? ORDER BY married_at ASC",
             (ctx.guild.id,),
         ) as cur:
             rows = await cur.fetchall()
@@ -1084,13 +1793,13 @@ class Social(commands.Cog, name="Social"):
             return await ctx.send("-# no marriages in this server yet")
 
         lines = []
-        for u1, u2, iso_str in rows[:20]:
+        for i, (u1, u2, iso_str) in enumerate(rows[:20], 1):
             try:
                 days = (datetime.now(timezone.utc) - datetime.fromisoformat(iso_str)).days
                 d_str = f"{days}d"
             except Exception:
                 d_str = "?"
-            lines.append(f"💍 <@{u1}> & <@{u2}> — `{d_str}`")
+            lines.append(f"`{i}.` 💍 <@{u1}> & <@{u2}> — `{d_str}`")
 
         embed = discord.Embed(
             title="server marriages",
@@ -1098,6 +1807,518 @@ class Social(commands.Cog, name="Social"):
             color=get_embed_color(ctx.guild.id),
         )
         await ctx.send(embed=embed)
+
+    # ── Adoption & Family Commands ─────────────────────────────────
+    @commands.command(name="adopt")
+    @commands.cooldown(1, 15, commands.BucketType.user)
+    @help_meta(
+        usage="`.adopt <@user>`",
+        desc="Sends an adoption proposal to adopt another member into your family.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".adopt @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": True, "desc": "Member to adopt."},
+        ],
+        note="Target user must accept within 60 seconds.",
+    )
+    async def adopt(self, ctx: commands.Context, user: discord.Member = None):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if user is None:
+            return await ctx.send("-# usage: `.adopt <@user>`")
+        if user.id == ctx.author.id:
+            return await ctx.send("-# you can't adopt yourself")
+        if user.bot:
+            return await ctx.send("-# you can't adopt a bot")
+
+        # Opt-out checks
+        if await self.is_opted_out(ctx.author.id):
+            return await ctx.send("-# you have opted out of social proposals. use `.optout` to re-enable")
+        if await self.is_opted_out(user.id):
+            return await ctx.send(f"-# {user.display_name} has opted out of social proposals")
+
+        # Check existing parents cap (max 2)
+        parents = await self.get_parents(user.id)
+        if len(parents) >= 2:
+            return await ctx.send(f"-# {user.display_name} already has 2 parents")
+        if ctx.author.id in parents:
+            return await ctx.send(f"-# {user.display_name} is already your child")
+
+        # Spouse check
+        m = await self.get_marriage(ctx.author.id)
+        if m and m[0] == user.id:
+            return await ctx.send(f"-# you cannot adopt your married spouse")
+
+        # Cycle check
+        if await self.is_ancestor_or_descendant(ctx.author.id, user.id):
+            return await ctx.send(f"-# you cannot adopt {user.display_name} due to family cycle")
+
+        # Lock check
+        if self._is_locked(ctx.author.id):
+            return await ctx.send("-# you already have an active proposal pending")
+        if self._is_locked(user.id):
+            return await ctx.send(f"-# {user.display_name} is currently considering another proposal")
+
+        self._acquire_locks(ctx.author.id, user.id, ttl=65.0)
+
+        view = AdoptProposalView(ctx.author, user, self)
+        msg = await ctx.send(
+            f"{user.mention}, **{ctx.author.display_name}** wants to adopt you 🌿",
+            view=view,
+        )
+        view.message = msg
+
+    @commands.command(name="makeparent", aliases=["askparent"])
+    @commands.cooldown(1, 15, commands.BucketType.user)
+    @help_meta(
+        usage="`.makeparent <@user>`",
+        desc="Asks another server member to become your parent.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".makeparent @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": True, "desc": "Member to request as parent."},
+        ],
+    )
+    async def makeparent(self, ctx: commands.Context, user: discord.Member = None):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if user is None:
+            return await ctx.send("-# usage: `.makeparent <@user>`")
+        if user.id == ctx.author.id:
+            return await ctx.send("-# you can't be your own parent")
+        if user.bot:
+            return await ctx.send("-# a bot cannot be your parent")
+
+        if await self.is_opted_out(ctx.author.id):
+            return await ctx.send("-# you have opted out of social proposals. use `.optout` to re-enable")
+        if await self.is_opted_out(user.id):
+            return await ctx.send(f"-# {user.display_name} has opted out of social proposals")
+
+        # Author's parent cap
+        parents = await self.get_parents(ctx.author.id)
+        if len(parents) >= 2:
+            return await ctx.send("-# you already have 2 parents")
+        if user.id in parents:
+            return await ctx.send(f"-# {user.display_name} is already your parent")
+
+        # Spouse check
+        m = await self.get_marriage(ctx.author.id)
+        if m and m[0] == user.id:
+            return await ctx.send("-# you cannot make your spouse your parent")
+
+        # Cycle check
+        if await self.is_ancestor_or_descendant(user.id, ctx.author.id):
+            return await ctx.send(f"-# you cannot make {user.display_name} your parent due to family cycle")
+
+        if self._is_locked(ctx.author.id):
+            return await ctx.send("-# you already have an active proposal pending")
+        if self._is_locked(user.id):
+            return await ctx.send(f"-# {user.display_name} is currently considering another proposal")
+
+        self._acquire_locks(ctx.author.id, user.id, ttl=65.0)
+
+        view = MakeParentProposalView(ctx.author, user, self)
+        msg = await ctx.send(
+            f"{user.mention}, **{ctx.author.display_name}** wants you to be their parent 🌿",
+            view=view,
+        )
+        view.message = msg
+
+    @commands.command(name="disown")
+    @commands.cooldown(1, 20, commands.BucketType.user)
+    @help_meta(
+        usage="`.disown <@user>`",
+        desc="Disowns an adopted child with safety confirmation.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".disown @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": True, "desc": "Child to disown."},
+        ],
+    )
+    async def disown(self, ctx: commands.Context, user: discord.Member = None):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if user is None:
+            return await ctx.send("-# usage: `.disown <@user>`")
+
+        children = await self.get_children(ctx.author.id)
+        if user.id not in children:
+            return await ctx.send(f"-# {user.display_name} is not your child")
+
+        view = DisownConfirmView(ctx.author, user.id, self)
+        msg = await ctx.send(
+            f"-# are you sure you want to disown **{user.display_name}**?",
+            view=view,
+        )
+        view.message = msg
+
+    @commands.command(name="emancipate", aliases=["runaway", "leavefamily"])
+    @commands.cooldown(1, 20, commands.BucketType.user)
+    @help_meta(
+        usage="`.emancipate`",
+        desc="Emancipate and remove yourself from your parent(s) lineage.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".emancipate", ".runaway"],
+        params=[],
+    )
+    async def emancipate(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        parents = await self.get_parents(ctx.author.id)
+        if not parents:
+            return await ctx.send("-# you do not have any parents")
+
+        view = EmancipateConfirmView(ctx.author, parents, self)
+        msg = await ctx.send(
+            "-# are you sure you want to emancipate from your parents?",
+            view=view,
+        )
+        view.message = msg
+
+    @commands.command(name="parents", aliases=["parent"])
+    @commands.cooldown(2, 5, commands.BucketType.user)
+    @help_meta(
+        usage="`.parents [@user]`",
+        desc="Displays the parent(s) of a member.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".parents", ".parents @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": False, "desc": "Member to check. Defaults to you."},
+        ],
+    )
+    async def parents(self, ctx: commands.Context, user: discord.Member = None):
+        target = user or ctx.author
+        parents = await self.get_parents(target.id)
+        if not parents:
+            return await ctx.send(f"-# **{target.display_name}** has no parents")
+
+        p_mentions = [f"<@{p}>" for p in parents]
+        await ctx.send(f"-# **{target.display_name}**'s parents: {' & '.join(p_mentions)} ✦")
+
+    @commands.command(name="children", aliases=["child", "kids"])
+    @commands.cooldown(2, 5, commands.BucketType.user)
+    @help_meta(
+        usage="`.children [@user]`",
+        desc="Displays the children of a member.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".children", ".children @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": False, "desc": "Member to check. Defaults to you."},
+        ],
+    )
+    async def children(self, ctx: commands.Context, user: discord.Member = None):
+        target = user or ctx.author
+        children = await self.get_children(target.id)
+        if not children:
+            return await ctx.send(f"-# **{target.display_name}** has no children")
+
+        c_mentions = [f"<@{c}>" for c in children]
+        await ctx.send(f"-# **{target.display_name}**'s children ({len(children)}): {', '.join(c_mentions)} ✦")
+
+    @commands.command(name="siblings", aliases=["sibling", "bros"])
+    @commands.cooldown(2, 5, commands.BucketType.user)
+    @help_meta(
+        usage="`.siblings [@user]`",
+        desc="Displays the siblings of a member.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".siblings", ".siblings @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": False, "desc": "Member to check. Defaults to you."},
+        ],
+    )
+    async def siblings(self, ctx: commands.Context, user: discord.Member = None):
+        target = user or ctx.author
+        siblings = await self.get_siblings(target.id)
+        if not siblings:
+            return await ctx.send(f"-# **{target.display_name}** has no siblings")
+
+        s_mentions = [f"<@{s}>" for s in siblings]
+        await ctx.send(f"-# **{target.display_name}**'s siblings ({len(siblings)}): {', '.join(s_mentions)} ✦")
+
+    @commands.command(name="family", aliases=["fam"])
+    @commands.cooldown(2, 5, commands.BucketType.user)
+    @help_meta(
+        usage="`.family [@user]`",
+        desc="Displays a complete family summary overview for a member.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".family", ".family @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": False, "desc": "Member to check. Defaults to you."},
+        ],
+    )
+    async def family(self, ctx: commands.Context, user: discord.Member = None):
+        target = user or ctx.author
+        m = await self.get_marriage(target.id)
+        parents = await self.get_parents(target.id)
+        children = await self.get_children(target.id)
+        siblings = await self.get_siblings(target.id)
+        fam_size = await self.get_family_size(target.id)
+        fam_name = await self.get_family_name(target.id)
+
+        lines = []
+        if fam_name:
+            lines.append(f"**House of {fam_name}** ✦\n")
+
+        # Spouse
+        if m:
+            sp_name, _ = await self._get_user_display(m[0], ctx.guild)
+            try:
+                days = (datetime.now(timezone.utc) - datetime.fromisoformat(m[1])).days
+                d_str = f" • `{days}d`"
+            except Exception:
+                d_str = ""
+            lines.append(f"💍 **Spouse:** <@{m[0]}>{d_str}")
+        else:
+            lines.append("💍 **Spouse:** None")
+
+        # Parents
+        if parents:
+            p_str = ", ".join(f"<@{p}>" for p in parents)
+            lines.append(f"🌿 **Parents:** {p_str}")
+        else:
+            lines.append("🌿 **Parents:** None")
+
+        # Children
+        if children:
+            c_str = ", ".join(f"<@{c}>" for c in children[:8])
+            if len(children) > 8:
+                c_str += f" *(+{len(children)-8} more)*"
+            lines.append(f"👶 **Children ({len(children)}):** {c_str}")
+        else:
+            lines.append("👶 **Children:** None")
+
+        # Siblings
+        if siblings:
+            s_str = ", ".join(f"<@{s}>" for s in siblings[:8])
+            if len(siblings) > 8:
+                s_str += f" *(+{len(siblings)-8} more)*"
+            lines.append(f"👥 **Siblings ({len(siblings)}):** {s_str}")
+
+        lines.append(f"\n*Total Family Size: `{fam_size}` member{'s' if fam_size != 1 else ''}*")
+
+        embed = discord.Embed(
+            title=f"{target.display_name}'s family",
+            description="\n".join(lines),
+            color=get_embed_color(ctx.guild.id if ctx.guild else 0),
+        )
+        embed.set_thumbnail(url=target.display_avatar.url)
+        await ctx.send(embed=embed)
+
+    @commands.command(name="tree", aliases=["familytree", "lineage"])
+    @commands.cooldown(1, 10, commands.BucketType.user)
+    @help_meta(
+        usage="`.tree [@user]`",
+        desc="Generates a full hierarchical Unicode family lineage tree.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".tree", ".tree @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": False, "desc": "Member to view tree for. Defaults to you."},
+        ],
+    )
+    async def tree(self, ctx: commands.Context, user: discord.Member = None):
+        target = user or ctx.author
+        pages = await self._build_tree_pages(target.id, ctx.guild)
+        color = get_embed_color(ctx.guild.id if ctx.guild else 0)
+
+        if len(pages) == 1:
+            embed = discord.Embed(
+                title=f"{target.display_name}'s family tree ✦",
+                description=f"```\n{pages[0]}\n```",
+                color=color,
+            )
+            return await ctx.send(embed=embed)
+
+        view = TreePaginationView(ctx.author, pages, f"{target.display_name}'s family tree ✦", color)
+        await ctx.send(embed=view.get_embed(), view=view)
+
+    @commands.command(name="relationship", aliases=["rel", "relation"])
+    @commands.cooldown(2, 5, commands.BucketType.user)
+    @help_meta(
+        usage="`.relationship <@user1> [user2]`",
+        desc="Calculates and explains the exact family kinship relation between two members.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".relationship @someone", ".relationship @user1 @user2"],
+        params=[
+            {"name": "user1", "type": "user", "required": True, "desc": "First member."},
+            {"name": "user2", "type": "user", "required": False, "desc": "Second member. Defaults to you."},
+        ],
+    )
+    async def relationship(self, ctx: commands.Context, user1: discord.Member = None, user2: discord.Member = None):
+        if user1 is None:
+            return await ctx.send("-# usage: `.relationship <@user1> [user2]`")
+
+        if user2 is None:
+            u1, u2 = ctx.author, user1
+        else:
+            u1, u2 = user1, user2
+
+        if u1.id == u2.id:
+            return await ctx.send("-# they are the same person")
+
+        blood_rel = await self.resolve_relationship(u1.id, u2.id, mode="blood")
+        combined_rel = await self.resolve_relationship(u1.id, u2.id, mode="combined")
+
+        if blood_rel != "Unrelated":
+            desc = f"**{u1.display_name}** is **{u2.display_name}**'s **{blood_rel}** (Bloodline) ✦"
+        elif combined_rel != "Unrelated":
+            desc = f"**{u1.display_name}** is **{u2.display_name}**'s **{combined_rel}** (Combined Family) ✦"
+        else:
+            desc = f"**{u1.display_name}** and **{u2.display_name}** are not related."
+
+        await ctx.send(f"-# {desc}")
+
+    @commands.command(name="familysize")
+    @commands.cooldown(2, 5, commands.BucketType.user)
+    @help_meta(
+        usage="`.familysize [@user]`",
+        desc="Calculates total number of connected relatives in a member's family network.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".familysize", ".familysize @someone"],
+        params=[
+            {"name": "user", "type": "user", "required": False, "desc": "Member to check. Defaults to you."},
+        ],
+    )
+    async def familysize(self, ctx: commands.Context, user: discord.Member = None):
+        target = user or ctx.author
+        size = await self.get_family_size(target.id)
+        await ctx.send(f"-# **{target.display_name}**'s family network contains **{size}** connected member{'s' if size != 1 else ''} ✦")
+
+    @commands.command(name="familytop", aliases=["famtop", "topfamilies"])
+    @commands.cooldown(1, 10, commands.BucketType.channel)
+    @help_meta(
+        usage="`.familytop`",
+        desc="Leaderboard of the largest family dynasties in this server.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".familytop"],
+        params=[],
+    )
+    async def familytop(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.send("-# this command only works in servers.")
+        if not self.db:
+            return await ctx.send("-# no family data available")
+
+        # Collect unique users in this guild with relations
+        member_ids = {m.id for m in ctx.guild.members if not m.bot}
+        if not member_ids:
+            return await ctx.send("-# no members found")
+
+        # Compute sizes for members with at least 1 relationship
+        family_sizes: list[tuple[int, int]] = []
+        seen_roots = set()
+
+        for mid in member_ids:
+            if mid in seen_roots:
+                continue
+            parents = await self.get_parents(mid)
+            children = await self.get_children(mid)
+            m = await self.get_marriage(mid)
+            if parents or children or m:
+                net = await self.get_family_network(mid, max_depth=6)
+                seen_roots.update(net)
+                family_sizes.append((mid, len(net)))
+
+        if not family_sizes:
+            return await ctx.send("-# no active families in this server yet")
+
+        family_sizes.sort(key=lambda x: x[1], reverse=True)
+
+        lines = []
+        for i, (uid, size) in enumerate(family_sizes[:10], 1):
+            fam_name = await self.get_family_name(uid)
+            name_str = f" (House of {fam_name})" if fam_name else ""
+            lines.append(f"`{i}.` <@{uid}>{name_str} — `{size}` members")
+
+        embed = discord.Embed(
+            title="top server families ✦",
+            description="\n".join(lines),
+            color=get_embed_color(ctx.guild.id),
+        )
+        await ctx.send(embed=embed)
+
+    @commands.command(name="orphans")
+    @commands.cooldown(1, 15, commands.BucketType.user)
+    @help_meta(
+        usage="`.orphans`",
+        desc="Detects and cleans up adoptions where parents are deleted Discord accounts.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".orphans"],
+        params=[],
+    )
+    async def orphans(self, ctx: commands.Context):
+        parents = await self.get_parents(ctx.author.id)
+        if not parents:
+            return await ctx.send("-# you do not have any parents")
+
+        cleaned = []
+        for p in parents:
+            u = self.bot.get_user(p)
+            if u is None:
+                try:
+                    u = await self.bot.fetch_user(p)
+                except Exception:
+                    u = None
+            if u is None:
+                await self.delete_adoption(p, ctx.author.id)
+                cleaned.append(p)
+
+        if cleaned:
+            await ctx.send(f"-# cleaned up `{len(cleaned)}` orphaned adoption connection(s) from deleted accounts ✦")
+        else:
+            await ctx.send("-# all of your registered parents are active Discord accounts ✦")
+
+    @commands.command(name="optout")
+    @commands.cooldown(1, 10, commands.BucketType.user)
+    @help_meta(
+        usage="`.optout`",
+        desc="Toggles opting out of receiving marriage and adoption proposals.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".optout"],
+        params=[],
+    )
+    async def optout(self, ctx: commands.Context):
+        current = await self.is_opted_out(ctx.author.id)
+        new_state = not current
+        await self.set_optout(ctx.author.id, new_state)
+        status = "disabled (opted out)" if new_state else "enabled (opted in)"
+        await ctx.send(f"-# social proposals are now **{status}** for your account ✦")
+
+    @commands.command(name="familyname", aliases=["setfamilyname", "housename"])
+    @commands.cooldown(1, 15, commands.BucketType.user)
+    @help_meta(
+        usage="`.familyname <name>`",
+        desc="Sets a custom dynasty name / house name for your family lineage.",
+        section="Fun",
+        perm_tier="public",
+        examples=[".familyname Phoenix", ".familyname Celestial"],
+        params=[
+            {"name": "name", "type": "str", "required": True, "desc": "Dynasty name (max 32 chars)."},
+        ],
+    )
+    async def familyname(self, ctx: commands.Context, *, name: str = None):
+        if not name:
+            cur = await self.get_family_name(ctx.author.id)
+            if cur:
+                return await ctx.send(f"-# your current family house name is **House of {cur}**")
+            return await ctx.send("-# usage: `.familyname <name>`")
+
+        clean_name = name.strip()[:32]
+        await self.set_family_name(ctx.author.id, clean_name)
+        await ctx.send(f"-# your family dynasty is now established as **House of {clean_name}** ✦")
 
     # ── 8ball ───────────────────────────────────────────────────────
     @commands.command(name="8ball", aliases=["eightball"])
