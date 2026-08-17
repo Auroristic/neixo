@@ -545,21 +545,20 @@ class Music(commands.Cog):
         return []
 
     async def _search_with_fallback(self, query: str):
+        # YouTube playback is IP-blocked on the lavalink host; SoundCloud plays
+        # reliably, so it goes first. YouTube stays as last-resort fallback.
         if query.startswith(("http://", "https://", "scsearch:", "ytsearch:", "ytmsearch:", "spsearch:")):
             results = await self._yt_search_with_retry(query)
             if results:
                 return results
 
+        results = await self._yt_search_with_retry(query, source="scsearch")
+        if results:
+            return results
         results = await self._yt_search_with_retry(query, source="ytmsearch")
         if results:
             return results
-        results = await self._yt_search_with_retry(query + " audio", source="ytsearch")
-        if results:
-            return results
-        results = await self._yt_search_with_retry(query, source="ytsearch")
-        if results:
-            return results
-        return await self._yt_search_with_retry(query, source="scsearch")
+        return await self._yt_search_with_retry(query, source="ytsearch")
 
     _VIDEO_KEYWORDS_RE = re.compile(
         r"\b(official\s*(music\s*)?video|music\s*video|official\s*mv|"
@@ -783,9 +782,9 @@ class Music(commands.Cog):
 
             async def _resolve_one(name: str):
                 async with sem:
-                    results = await self._yt_search_with_retry(name, source="ytmsearch")
+                    results = await self._yt_search_with_retry(name, source="scsearch")
                     if not results:
-                        results = await self._yt_search_with_retry(name + " audio", source="ytsearch")
+                        results = await self._yt_search_with_retry(name, source="ytmsearch")
                     if not results:
                         results = await self._yt_search_with_retry(name, source="ytsearch")
                 if not results:
@@ -850,9 +849,10 @@ class Music(commands.Cog):
             await self._queue_tracks(ctx, player, tracks, source_label="SoundCloud")
             return
 
-        tracks = await self._yt_search_with_retry(query, source="ytmsearch")
+        # SoundCloud first: YouTube playback is IP-blocked on the lavalink host.
+        tracks = await self._yt_search_with_retry(query, source="scsearch")
         if not tracks:
-            tracks = await self._yt_search_with_retry(query + " audio", source="ytsearch")
+            tracks = await self._yt_search_with_retry(query, source="ytmsearch")
         if not tracks:
             tracks = await self._yt_search_with_retry(query, source="ytsearch")
         if not tracks:
