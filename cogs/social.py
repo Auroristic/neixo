@@ -2,6 +2,7 @@ import asyncio
 import html
 import io
 import logging
+import math
 import os
 import random
 import re
@@ -98,118 +99,189 @@ def _render_marriage_card(
 ) -> io.BytesIO:
     from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 
-    W, H = 860, 360
+    W, H = 880, 380
     source_bytes = av1_bytes or av2_bytes
-    bg = _make_glass_backdrop(source_bytes, W, H, dark_tint=0.60, blur_radius=22)
+    bg = _make_glass_backdrop(source_bytes, W, H, dark_tint=0.62, blur_radius=24)
 
+    # ── 1. Cosmic Constellation & Sacred Geometry Layer ──────────────
+    cosmic = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    c_draw = ImageDraw.Draw(cosmic)
+
+    # Deterministic celestial sparkle positions
+    random.seed(42)
+    for _ in range(45):
+        sx = random.randint(30, W - 30)
+        sy = random.randint(25, H - 25)
+        size = random.choice([1, 1, 2, 2, 3])
+        alpha = random.randint(25, 75)
+        c_draw.ellipse([sx, sy, sx + size, sy + size], fill=(255, 255, 255, alpha))
+
+    # Sacred orbital rings in background center
+    cx, cy = W // 2, 160
+    for r, a in [(130, 14), (170, 10), (210, 6)]:
+        c_draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(255, 255, 255, a), width=1)
+    c_draw.line([(cx - 220, cy), (cx + 220, cy)], fill=(255, 255, 255, 8), width=1)
+    c_draw.line([(cx, cy - 140), (cx, cy + 140)], fill=(255, 255, 255, 8), width=1)
+
+    bg = Image.alpha_composite(bg, cosmic)
+
+    # ── 2. Glass Frame & Ornamental Corner Filigree ─────────────────
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
-    pad_x, pad_y = 28, 22
+    pad_x, pad_y = 26, 20
+
     cd.rounded_rectangle(
         [pad_x, pad_y, W - pad_x, H - pad_y],
         radius=26,
-        fill=(0, 0, 0, 115),
+        fill=(0, 0, 0, 125),
         outline=(255, 255, 255, 45),
         width=1,
     )
-    cd.line([(pad_x + 25, pad_y + 1), (W - pad_x - 25, pad_y + 1)], fill=(255, 255, 255, 90), width=1)
+    cd.rounded_rectangle(
+        [pad_x + 6, pad_y + 6, W - pad_x - 6, H - pad_y - 6],
+        radius=20,
+        outline=(255, 255, 255, 18),
+        width=1,
+    )
+    cd.line([(pad_x + 35, pad_y + 1), (W - pad_x - 35, pad_y + 1)], fill=(255, 255, 255, 110), width=1)
+
+    def draw_corner_ornament(x, y, dx, dy):
+        cd.line([(x, y), (x + dx * 16, y)], fill=(255, 255, 255, 90), width=1)
+        cd.line([(x, y), (x, y + dy * 16)], fill=(255, 255, 255, 90), width=1)
+        px, py = x + dx * 8, y + dy * 8
+        cd.polygon([(px, py - 2), (px + 2, py), (px, py + 2), (px - 2, py)], fill=(255, 255, 255, 140))
+
+    draw_corner_ornament(pad_x + 12, pad_y + 12, 1, 1)
+    draw_corner_ornament(W - pad_x - 12, pad_y + 12, -1, 1)
+    draw_corner_ornament(pad_x + 12, H - pad_y - 12, 1, -1)
+    draw_corner_ornament(W - pad_x - 12, H - pad_y - 12, -1, -1)
+
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
-    f_title = _load_font(13, bold=True)
-    f_huge = _load_font(28, bold=True)
-    f_sub = _load_font(16, bold=False)
-    f_name = _load_font(20, bold=True)
+    f_title = _load_font(12, bold=True)
+    f_huge = _load_font(30, bold=True)
+    f_sub = _load_font(15, bold=False)
+    f_name = _load_font(21, bold=True)
     f_tag = _load_font(14, bold=False)
-    f_badge = _load_font(14, bold=True)
+    f_badge = _load_font(13, bold=True)
+    f_symbols = _load_font(16, bold=False)
 
-    # Top Header Badge
-    header_text = "M A R R I A G E   C E R T I F I C A T E"
+    # ── 3. Top Header Badge ──────────────────────────────────────────
+    header_text = "✦  E T E R N A L   V O W  ✦"
     hw = f_title.getlength(header_text)
-    pill_w1 = hw + 32
-    pill_h1 = 28
-    pill_x1 = (W - pill_w1) // 2
-    pill_y1 = pad_y + 12
+    pill_w = hw + 36
+    pill_h = 28
+    pill_x = (W - pill_w) // 2
+    pill_y = pad_y + 14
     draw.rounded_rectangle(
-        [pill_x1, pill_y1, pill_x1 + pill_w1, pill_y1 + pill_h1],
+        [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
         radius=14,
-        fill=(240, 245, 255, 245),
-        outline=(255, 255, 255, 100),
+        fill=(245, 248, 255, 245),
+        outline=(255, 255, 255, 120),
         width=1,
     )
-    f_title.draw(draw, ((W - hw) // 2, pill_y1 + 7), header_text, fill=(12, 14, 18, 255))
+    f_title.draw(draw, ((W - hw) // 2, pill_y + 7), header_text, fill=(12, 14, 18, 255))
 
-    av_size = 115
-    # Left avatar
-    av1_x, av1_y = pad_x + 45, pad_y + 48
+    left_line_end = pill_x - 16
+    draw.line([(pad_x + 55, pill_y + 14), (left_line_end, pill_y + 14)], fill=(255, 255, 255, 45), width=1)
+    draw.ellipse([left_line_end - 4, pill_y + 12, left_line_end, pill_y + 16], fill=(255, 255, 255, 120))
+
+    right_line_start = pill_x + pill_w + 16
+    draw.line([(right_line_start, pill_y + 14), (W - pad_x - 55, pill_y + 14)], fill=(255, 255, 255, 45), width=1)
+    draw.ellipse([right_line_start, pill_y + 12, right_line_start + 4, pill_y + 16], fill=(255, 255, 255, 120))
+
+    # ── 4. Avatars with Sacred Halos & Ticks ─────────────────────────
+    av_size = 120
+    av1_x, av1_y = pad_x + 46, pad_y + 54
     if av1_bytes:
         try:
             av1_img = _circle_avatar(av1_bytes, av_size)
             bg.paste(av1_img, (av1_x, av1_y), av1_img)
-            draw.ellipse([av1_x, av1_y, av1_x + av_size, av1_y + av_size], outline=(255, 255, 255, 80), width=2)
-            draw.ellipse([av1_x - 4, av1_y - 4, av1_x + av_size + 4, av1_y + av_size + 4], outline=(255, 255, 255, 25), width=1)
+            draw.ellipse([av1_x, av1_y, av1_x + av_size, av1_y + av_size], outline=(255, 255, 255, 95), width=2)
+            draw.ellipse([av1_x - 6, av1_y - 6, av1_x + av_size + 6, av1_y + av_size + 6], outline=(255, 255, 255, 30), width=1)
+            draw.ellipse([av1_x - 12, av1_y - 12, av1_x + av_size + 12, av1_y + av_size + 12], outline=(255, 255, 255, 15), width=1)
         except Exception:
             pass
 
-    # Right avatar
-    av2_x, av2_y = W - pad_x - 45 - av_size, pad_y + 48
+    av2_x, av2_y = W - pad_x - 46 - av_size, pad_y + 54
     if av2_bytes:
         try:
             av2_img = _circle_avatar(av2_bytes, av_size)
             bg.paste(av2_img, (av2_x, av2_y), av2_img)
-            draw.ellipse([av2_x, av2_y, av2_x + av_size, av2_y + av_size], outline=(255, 255, 255, 80), width=2)
-            draw.ellipse([av2_x - 4, av2_y - 4, av2_x + av_size + 4, av2_y + av_size + 4], outline=(255, 255, 255, 25), width=1)
+            draw.ellipse([av2_x, av2_y, av2_x + av_size, av2_y + av_size], outline=(255, 255, 255, 95), width=2)
+            draw.ellipse([av2_x - 6, av2_y - 6, av2_x + av_size + 6, av2_y + av_size + 6], outline=(255, 255, 255, 30), width=1)
+            draw.ellipse([av2_x - 12, av2_y - 12, av2_x + av_size + 12, av2_y + av_size + 12], outline=(255, 255, 255, 15), width=1)
         except Exception:
             pass
 
     # User 1 name & tag
     w1 = f_name.getlength(name1[:14])
-    f_name.draw(draw, (av1_x + (av_size - w1) // 2, av1_y + av_size + 14), name1[:14], fill=(255, 255, 255, 240))
+    f_name.draw(draw, (av1_x + (av_size - w1) // 2, av1_y + av_size + 14), name1[:14], fill=(255, 255, 255, 245))
     t1_w = f_tag.getlength(tag1[:16])
-    f_tag.draw(draw, (av1_x + (av_size - t1_w) // 2, av1_y + av_size + 38), tag1[:16], fill=(170, 175, 190, 200))
+    f_tag.draw(draw, (av1_x + (av_size - t1_w) // 2, av1_y + av_size + 38), tag1[:16], fill=(165, 170, 185, 200))
 
     # User 2 name & tag
     w2 = f_name.getlength(name2[:14])
-    f_name.draw(draw, (av2_x + (av_size - w2) // 2, av2_y + av_size + 14), name2[:14], fill=(255, 255, 255, 240))
+    f_name.draw(draw, (av2_x + (av_size - w2) // 2, av2_y + av_size + 14), name2[:14], fill=(255, 255, 255, 245))
     t2_w = f_tag.getlength(tag2[:16])
-    f_tag.draw(draw, (av2_x + (av_size - t2_w) // 2, av2_y + av_size + 38), tag2[:16], fill=(170, 175, 190, 200))
+    f_tag.draw(draw, (av2_x + (av_size - t2_w) // 2, av2_y + av_size + 38), tag2[:16], fill=(165, 170, 185, 200))
 
-    # Center connector line with rings
-    cx = W // 2
-    cy = pad_y + 85
+    # ── 5. Center Symbolic Interlocking Rings & Starburst ────────────
+    mid_y = pad_y + 92
 
-    draw.line([(av1_x + av_size + 20, cy), (cx - 50, cy)], fill=(255, 255, 255, 40), width=1)
-    draw.line([(cx + 50, cy), (av2_x - 20, cy)], fill=(255, 255, 255, 40), width=1)
+    l_start = av1_x + av_size + 24
+    l_end = cx - 55
+    draw.line([(l_start, mid_y), (l_end, mid_y)], fill=(255, 255, 255, 55), width=1)
+    draw.polygon([(l_start - 3, mid_y), (l_start, mid_y - 3), (l_start + 3, mid_y), (l_start, mid_y + 3)], fill=(255, 255, 255, 160))
+    draw.polygon([(l_end - 3, mid_y), (l_end, mid_y - 3), (l_end + 3, mid_y), (l_end, mid_y + 3)], fill=(255, 255, 255, 160))
+
+    r_start = cx + 55
+    r_end = av2_x - 24
+    draw.line([(r_start, mid_y), (r_end, mid_y)], fill=(255, 255, 255, 55), width=1)
+    draw.polygon([(r_start - 3, mid_y), (r_start, mid_y - 3), (r_start + 3, mid_y), (r_start, mid_y + 3)], fill=(255, 255, 255, 160))
+    draw.polygon([(r_end - 3, mid_y), (r_end, mid_y - 3), (r_end + 3, mid_y), (r_end, mid_y + 3)], fill=(255, 255, 255, 160))
+
+    for angle in range(0, 360, 45):
+        rad = math.radians(angle)
+        x1 = cx + math.cos(rad) * 22
+        y1 = mid_y + math.sin(rad) * 22
+        x2 = cx + math.cos(rad) * 32
+        y2 = mid_y + math.sin(rad) * 32
+        draw.line([(x1, y1), (x2, y2)], fill=(255, 255, 255, 30), width=1)
 
     ring_sym = "💍"
-    f_ring = _load_font(28, bold=False)
+    f_ring = _load_font(30, bold=False)
     rw = f_ring.getlength(ring_sym)
-    f_ring.draw(draw, (cx - rw // 2, cy - 18), ring_sym, fill=(255, 255, 255, 250))
+    f_ring.draw(draw, (cx - rw // 2, mid_y - 19), ring_sym, fill=(255, 255, 255, 255))
+
+    f_symbols.draw(draw, (cx - rw // 2 - 24, mid_y - 10), "✧", fill=(255, 255, 255, 180))
+    f_symbols.draw(draw, (cx + rw // 2 + 12, mid_y - 10), "✧", fill=(255, 255, 255, 180))
 
     # Duration text
     dw = f_huge.getlength(duration_str)
-    f_huge.draw(draw, ((W - dw) // 2, cy + 26), duration_str, fill=(255, 255, 255, 255))
+    f_huge.draw(draw, ((W - dw) // 2, mid_y + 30), duration_str, fill=(255, 255, 255, 255))
 
-    # Married since date
-    date_text = f"Married on {date_str}" if not date_str.startswith("Married") else date_str
+    # Married since date with star points
+    date_text = f"✦  Married on {date_str}  ✦" if not date_str.startswith("✦") else date_str
     date_w = f_sub.getlength(date_text)
-    f_sub.draw(draw, ((W - date_w) // 2, cy + 64), date_text, fill=(185, 190, 205, 210))
+    f_sub.draw(draw, ((W - date_w) // 2, mid_y + 70), date_text, fill=(185, 190, 205, 210))
 
-    # Bottom proposal stats pill
-    stats_text = f"Proposals: {sent_proposals} sent  •  {recv_proposals} received"
+    # ── 6. Bottom Proposal Stats Pill ────────────────────────────────
+    stats_text = f"Proposals: {sent_proposals} sent   •   {recv_proposals} received"
     sw = f_badge.getlength(stats_text)
-    pill_w = sw + 32
-    pill_h = 32
-    pill_x = (W - pill_w) // 2
-    pill_y = H - pad_y - 48
+    pill_w2 = sw + 36
+    pill_h2 = 32
+    pill_x2 = (W - pill_w2) // 2
+    pill_y2 = H - pad_y - 50
     draw.rounded_rectangle(
-        [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
+        [pill_x2, pill_y2, pill_x2 + pill_w2, pill_y2 + pill_h2],
         radius=16,
-        fill=(240, 245, 255, 245),
+        fill=(245, 248, 255, 245),
         outline=(255, 255, 255, 100),
         width=1,
     )
-    f_badge.draw(draw, (pill_x + 16, pill_y + 8), stats_text, fill=(12, 14, 18, 255))
+    f_badge.draw(draw, (pill_x2 + 18, pill_y2 + 8), stats_text, fill=(12, 14, 18, 255))
 
     out = io.BytesIO()
     bg.convert("RGB").save(out, format="PNG")
@@ -226,80 +298,110 @@ def _render_single_card(
 ) -> io.BytesIO:
     from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 
-    W, H = 680, 270
-    bg = _make_glass_backdrop(av_bytes, W, H, dark_tint=0.60, blur_radius=22)
+    W, H = 700, 280
+    bg = _make_glass_backdrop(av_bytes, W, H, dark_tint=0.62, blur_radius=22)
+
+    # Cosmic Dust
+    cosmic = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    c_draw = ImageDraw.Draw(cosmic)
+    random.seed(33)
+    for _ in range(30):
+        sx = random.randint(20, W - 20)
+        sy = random.randint(20, H - 20)
+        size = random.choice([1, 2])
+        alpha = random.randint(20, 60)
+        c_draw.ellipse([sx, sy, sx + size, sy + size], fill=(255, 255, 255, alpha))
+    bg = Image.alpha_composite(bg, cosmic)
 
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
-    pad_x, pad_y = 26, 20
+    pad_x, pad_y = 24, 18
     cd.rounded_rectangle(
         [pad_x, pad_y, W - pad_x, H - pad_y],
         radius=24,
-        fill=(0, 0, 0, 115),
+        fill=(0, 0, 0, 125),
         outline=(255, 255, 255, 45),
         width=1,
     )
-    cd.line([(pad_x + 20, pad_y + 1), (W - pad_x - 20, pad_y + 1)], fill=(255, 255, 255, 90), width=1)
+    cd.rounded_rectangle(
+        [pad_x + 5, pad_y + 5, W - pad_x - 5, H - pad_y - 5],
+        radius=19,
+        outline=(255, 255, 255, 18),
+        width=1,
+    )
+    cd.line([(pad_x + 25, pad_y + 1), (W - pad_x - 25, pad_y + 1)], fill=(255, 255, 255, 95), width=1)
+
+    def draw_corner_ornament(x, y, dx, dy):
+        cd.line([(x, y), (x + dx * 14, y)], fill=(255, 255, 255, 80), width=1)
+        cd.line([(x, y), (x, y + dy * 14)], fill=(255, 255, 255, 80), width=1)
+        px, py = x + dx * 7, y + dy * 7
+        cd.polygon([(px, py - 2), (px + 2, py), (px, py + 2), (px - 2, py)], fill=(255, 255, 255, 120))
+
+    draw_corner_ornament(pad_x + 10, pad_y + 10, 1, 1)
+    draw_corner_ornament(W - pad_x - 10, pad_y + 10, -1, 1)
+    draw_corner_ornament(pad_x + 10, H - pad_y - 10, 1, -1)
+    draw_corner_ornament(W - pad_x - 10, H - pad_y - 10, -1, -1)
+
     bg = Image.alpha_composite(bg, card)
     draw = ImageDraw.Draw(bg)
 
     f_title = _load_font(12, bold=True)
-    f_huge = _load_font(24, bold=True)
+    f_huge = _load_font(25, bold=True)
     f_sub = _load_font(15, bold=False)
-    f_name = _load_font(20, bold=True)
+    f_name = _load_font(21, bold=True)
     f_tag = _load_font(14, bold=False)
     f_badge = _load_font(13, bold=True)
 
-    header_text = "M A R R I A G E   P R O F I L E"
+    header_text = "✦  M A R R I A G E   P R O F I L E  ✦"
     hw = f_title.getlength(header_text)
-    pill_w1 = hw + 28
+    pill_w1 = hw + 32
     pill_h1 = 26
     pill_x1 = (W - pill_w1) // 2
     pill_y1 = pad_y + 12
     draw.rounded_rectangle(
         [pill_x1, pill_y1, pill_x1 + pill_w1, pill_y1 + pill_h1],
         radius=13,
-        fill=(240, 245, 255, 245),
+        fill=(245, 248, 255, 245),
         outline=(255, 255, 255, 100),
         width=1,
     )
     f_title.draw(draw, ((W - hw) // 2, pill_y1 + 6), header_text, fill=(12, 14, 18, 255))
 
-    av_size = 100
-    av_x, av_y = pad_x + 40, pad_y + 48
+    av_size = 105
+    av_x, av_y = pad_x + 40, pad_y + 50
     if av_bytes:
         try:
             av_img = _circle_avatar(av_bytes, av_size)
             bg.paste(av_img, (av_x, av_y), av_img)
-            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 75), width=2)
-            draw.ellipse([av_x - 3, av_y - 3, av_x + av_size + 3, av_y + av_size + 3], outline=(255, 255, 255, 20), width=1)
+            draw.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(255, 255, 255, 90), width=2)
+            draw.ellipse([av_x - 5, av_y - 5, av_x + av_size + 5, av_y + av_size + 5], outline=(255, 255, 255, 25), width=1)
         except Exception:
             pass
 
     info_x = av_x + av_size + 35
     w_n = f_name.getlength(name[:16])
-    f_name.draw(draw, (info_x, pad_y + 54), name[:16], fill=(255, 255, 255, 245))
-    f_tag.draw(draw, (info_x + w_n + 10, pad_y + 59), tag[:16], fill=(160, 165, 180, 190))
+    f_name.draw(draw, (info_x, pad_y + 56), name[:16], fill=(255, 255, 255, 245))
+    f_tag.draw(draw, (info_x + w_n + 10, pad_y + 61), tag[:16], fill=(160, 165, 180, 190))
 
     status_text = "Single  •  Not Married"
-    f_huge.draw(draw, (info_x, pad_y + 84), status_text, fill=(245, 245, 255, 250))
+    f_huge.draw(draw, (info_x, pad_y + 88), status_text, fill=(245, 245, 255, 250))
 
-    f_sub.draw(draw, (info_x, pad_y + 116), "Use `.marry @someone` to propose!", fill=(175, 180, 195, 200))
+    f_sub.draw(draw, (info_x, pad_y + 120), "✦ Use `.marry @someone` to propose! ✦", fill=(175, 180, 195, 200))
 
     # Stats pill
-    stats_text = f"Proposals: {sent_proposals} sent  •  {recv_proposals} received"
+    stats_text = f"Proposals: {sent_proposals} sent   •   {recv_proposals} received"
     sw = f_badge.getlength(stats_text)
-    pill_w = sw + 28
+    pill_w = sw + 30
     pill_h = 30
-    pill_y = H - pad_y - 42
+    pill_y = H - pad_y - 44
     draw.rounded_rectangle(
         [info_x, pill_y, info_x + pill_w, pill_y + pill_h],
         radius=15,
-        fill=(240, 245, 255, 245),
+        fill=(245, 248, 255, 245),
         outline=(255, 255, 255, 100),
         width=1,
     )
-    f_badge.draw(draw, (info_x + 14, pill_y + 7), stats_text, fill=(12, 14, 18, 255))
+    f_badge.draw(draw, (info_x + 15, pill_y + 7), stats_text, fill=(12, 14, 18, 255))
 
     out = io.BytesIO()
     bg.convert("RGB").save(out, format="PNG")
