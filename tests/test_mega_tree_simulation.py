@@ -258,6 +258,7 @@ async def test_text_tree_pages_generation(mega_social):
     assert "User_1000" in full_text
     assert "Siblings ✦" in full_text
     assert "Step-Siblings ✦" in full_text
-    assert "Children & Descendants ✦" in full_text
+    assert "Children ✦" in full_text
     assert "User_1010" in full_text
     assert "User_2000" in full_text
+    assert "User_3000" in full_text
