@@ -45,6 +45,123 @@ EIGHTBALL_RESPONSES = [
     "absolutely not",
 ]
 
+# ── Kinship Joke Banks (Pool A) ─────────────────────────────────────
+# Fires ONLY when the rejection reason is an actual blood/marriage relation.
+KINSHIP_JOKES = {
+    "MARRY_PARENT": [
+        "-# u wna fuck ur parent?? seeking help is free",
+        "-# no incest mr. thats literally your parent",
+        "-# sweet home alabama but no. thats your parent",
+        "-# freud is having a field day with you right now",
+        "-# marrying your parent is NOT the flex you think it is",
+    ],
+    "MARRY_CHILD": [
+        "-# bro trying to marry their own child seek god",
+        "-# thats your child... calling the fbi rn",
+        "-# no incest mr. you raised them what is wrong with you",
+        "-# thats literally your kid. get therapy",
+    ],
+    "MARRY_SIBLING": [
+        "-# thats ur goddamn SIBLING",
+        "-# no incest mr. get out of the family groupchat",
+        "-# what are you doing step-bro? no.",
+        "-# leave your sibling alone bro seek help",
+        "-# sweet home alabama called, they want you back",
+    ],
+    "MARRY_GRANDPARENT": [
+        "-# marrying your own grandparent? bro wants ancient lore",
+        "-# they are literally in your ancestral bloodline, no.",
+        "-# thats your GRANDPARENT. what is wrong with you",
+    ],
+    "MARRY_GRANDCHILD": [
+        "-# trying to marry your grandchild is INSANE behavior",
+        "-# thats your grandchild bro. absolutely not.",
+        "-# no incest mr. they literally call you grandpa/grandma",
+    ],
+    "MARRY_AUNT_UNCLE": [
+        "-# thats your aunt/uncle bro what are you doing",
+        "-# no incest mr. thats literally your parents sibling",
+        "-# marrying your aunt/uncle is NOT okay",
+    ],
+    "MARRY_NIECE_NEPHEW": [
+        "-# thats your niece/nephew. absolutely disgusting",
+        "-# no incest mr. thats your siblings kid",
+        "-# bro trying to marry their niece/nephew seek professional help",
+    ],
+    "MARRY_ANCESTOR": [
+        "-# marrying your own ancestor?? time travel isnt real bro",
+        "-# they are literally in your ancestral bloodline. no.",
+    ],
+    "MARRY_DESCENDANT": [
+        "-# trying to marry your own descendant. seek help immediately",
+        "-# thats your descendant bro. absolutely not.",
+    ],
+    "MARRY_COUSIN": [
+        "-# thats your cousin bro. we dont do that here",
+        "-# no incest mr. yall share grandparents",
+    ],
+    "ADOPT_PARENT": [
+        "-# you cannot adopt your own parent bro who raised who??",
+        "-# trying to adopt your parent?? time travel isnt real",
+        "-# adoption denied: you cannot adopt your ancestors",
+    ],
+    "ADOPT_SPOUSE": [
+        "-# you cant adopt your wife/husband bro what kink is this",
+        "-# they are your spouse, not your toddler",
+        "-# bro trying to adopt their partner. seek help",
+    ],
+    "ADOPT_SIBLING": [
+        "-# thats your sibling, not your kid",
+        "-# you cant adopt your own sibling bro",
+        "-# adoption denied: yall share parents already",
+    ],
+}
+
+# ── Logic-Block Messages (Pool B) ───────────────────────────────────
+# Neutral tone. Fires for non-kinship rejections. NEVER mixed with Pool A.
+LOGIC_BLOCKS = {
+    "ALREADY_MARRIED": [
+        "-# {target} is already married to someone else",
+    ],
+    "ALREADY_YOUR_SPOUSE": [
+        "-# you are already married to {target}. what more do you want",
+    ],
+    "ALREADY_YOUR_CHILD": [
+        "-# {target} is already your child",
+    ],
+    "ALREADY_YOUR_PARENT": [
+        "-# {target} is already your parent",
+    ],
+    "PARENT_CAP_REACHED": [
+        "-# {target} already has the maximum of 2 parents",
+    ],
+    "SELF_MARRY": [
+        "-# you cant marry yourself narcissist",
+        "-# lonely ahh trying to marry yourself",
+    ],
+    "SELF_ADOPT": [
+        "-# you cant adopt yourself bro",
+    ],
+    "BOT_TARGET_MARRY": [
+        "-# you cant marry a bot. they dont love you back",
+    ],
+    "BOT_TARGET_ADOPT": [
+        "-# you cant adopt a bot",
+    ],
+    "OPTED_OUT": [
+        "-# {target} has opted out of social proposals",
+    ],
+    "OPTED_OUT_SELF": [
+        "-# you have opted out of social proposals. use `.optout` to re-enable",
+    ],
+    "CYCLE_DETECTED": [
+        "-# you cannot adopt {target} due to family cycle",
+    ],
+    "USER_ALREADY_MARRIED": [
+        "-# you're already married to <@{spouse_id}>. use `.divorce` first",
+    ],
+}
+
 # ── curated Would You Rather questions ────────────────────────────
 WYR_QUESTIONS = [
     ("have the ability to fly", "have the ability to be invisible"),
@@ -113,6 +230,7 @@ def _render_marriage_card(
     sent_proposals: int = 0,
     recv_proposals: int = 0,
     header_title: str = "✦  E T E R N A L   V O W  ✦",
+    children_count: int = 0,
 ) -> io.BytesIO:
     from cogs.serverstats import _load_font, _circle_avatar, _make_glass_backdrop
 
@@ -285,7 +403,11 @@ def _render_marriage_card(
     f_sub.draw(draw, ((W - date_w) // 2, mid_y + 70), date_text, fill=(185, 190, 205, 210))
 
     # ── 6. Bottom Proposal Stats Pill ────────────────────────────────
-    stats_text = f"Proposals: {sent_proposals} sent   •   {recv_proposals} received"
+    if children_count > 0:
+        c_label = "1 Child" if children_count == 1 else f"{children_count} Children"
+        stats_text = f"✦ {c_label}   •   Proposals: {sent_proposals} sent   •   {recv_proposals} received"
+    else:
+        stats_text = f"Proposals: {sent_proposals} sent   •   {recv_proposals} received"
     sw = f_badge.getlength(stats_text)
     pill_w2 = sw + 36
     pill_h2 = 32
@@ -300,8 +422,14 @@ def _render_marriage_card(
     )
     f_badge.draw(draw, (pill_x2 + 18, pill_y2 + 8), stats_text, fill=(12, 14, 18, 255))
 
+    # Apply card shape mask so outer background and corners are 100% transparent
+    card_mask = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(card_mask).rounded_rectangle([pad_x, pad_y, W - pad_x, H - pad_y], radius=26, fill=255)
+    bg_final = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    bg_final.paste(bg, (0, 0), card_mask)
+
     out = io.BytesIO()
-    bg.convert("RGB").save(out, format="PNG")
+    bg_final.save(out, format="PNG")
     out.seek(0)
     return out
 
@@ -420,8 +548,14 @@ def _render_single_card(
     )
     f_badge.draw(draw, (info_x + 15, pill_y + 7), stats_text, fill=(12, 14, 18, 255))
 
+    # Apply card shape mask so outer background and corners are 100% transparent
+    card_mask = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(card_mask).rounded_rectangle([pad_x, pad_y, W - pad_x, H - pad_y], radius=24, fill=255)
+    bg_final = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    bg_final.paste(bg, (0, 0), card_mask)
+
     out = io.BytesIO()
-    bg.convert("RGB").save(out, format="PNG")
+    bg_final.save(out, format="PNG")
     out.seek(0)
     return out
 
@@ -814,8 +948,14 @@ def _render_tree_card(
     )
     f_title.draw(draw, (spill_x + 16, spill_y + 5), stats_text, fill=(12, 14, 18, 255))
 
+    # Apply card shape mask so outer background and corners are 100% transparent
+    card_mask = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(card_mask).rounded_rectangle([pad_x, pad_y, W - pad_x, H - pad_y], radius=26, fill=255)
+    bg_final = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    bg_final.paste(bg, (0, 0), card_mask)
+
     out = io.BytesIO()
-    bg.save(out, format="PNG")
+    bg_final.save(out, format="PNG")
     out.seek(0)
     return out
 
@@ -844,12 +984,14 @@ class MarryProposalView(discord.ui.View):
 
         m1 = await self.cog.get_marriage(self.author.id)
         if m1:
+            self.cog._release_locks(self.author.id, self.target.id)
             return await interaction.response.edit_message(
                 content=f"-# {self.author.mention} is already married to <@{m1[0]}>",
                 view=self,
             )
         m2 = await self.cog.get_marriage(self.target.id)
         if m2:
+            self.cog._release_locks(self.author.id, self.target.id)
             return await interaction.response.edit_message(
                 content=f"-# {self.target.mention} is already married to <@{m2[0]}>",
                 view=self,
@@ -881,6 +1023,7 @@ class MarryProposalView(discord.ui.View):
                 sent,
                 recv,
                 "✦  N E W L Y W E D S  ✦",
+                0,  # children_count
             )
             file = discord.File(card_buf, filename="wedding.png")
             await interaction.message.edit(content=None, attachments=[file], view=self)
@@ -890,6 +1033,7 @@ class MarryProposalView(discord.ui.View):
                 content=f"-# {self.author.mention} and {self.target.mention} are now married 💍",
                 view=self,
             )
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
     @discord.ui.button(label="decline", style=discord.ButtonStyle.secondary, emoji="💔")
@@ -902,6 +1046,7 @@ class MarryProposalView(discord.ui.View):
             content=f"-# {self.target.mention} declined {self.author.mention}'s proposal",
             view=self,
         )
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
     async def on_timeout(self):
@@ -915,6 +1060,7 @@ class MarryProposalView(discord.ui.View):
                 )
             except discord.HTTPException:
                 pass
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
 
@@ -942,11 +1088,13 @@ class AdoptProposalView(discord.ui.View):
 
         parents = await self.cog.get_parents(self.target.id)
         if len(parents) >= 2:
+            self.cog._release_locks(self.author.id, self.target.id)
             return await interaction.response.edit_message(
                 content=f"-# {self.target.mention} already has the maximum of 2 parents",
                 view=self,
             )
         if await self.cog.is_ancestor_or_descendant(self.author.id, self.target.id):
+            self.cog._release_locks(self.author.id, self.target.id)
             return await interaction.response.edit_message(
                 content="-# cannot complete adoption due to family cycle",
                 view=self,
@@ -957,6 +1105,7 @@ class AdoptProposalView(discord.ui.View):
             content=f"-# 🌿 {self.target.mention} is now adopted by {self.author.mention} ✦",
             view=self,
         )
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
     @discord.ui.button(label="decline", style=discord.ButtonStyle.secondary, emoji="✖")
@@ -968,6 +1117,7 @@ class AdoptProposalView(discord.ui.View):
             content=f"-# {self.target.mention} declined {self.author.mention}'s adoption request",
             view=self,
         )
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
     async def on_timeout(self):
@@ -981,6 +1131,7 @@ class AdoptProposalView(discord.ui.View):
                 )
             except discord.HTTPException:
                 pass
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
 
@@ -1008,11 +1159,13 @@ class MakeParentProposalView(discord.ui.View):
 
         parents = await self.cog.get_parents(self.author.id)
         if len(parents) >= 2:
+            self.cog._release_locks(self.author.id, self.target.id)
             return await interaction.response.edit_message(
                 content=f"-# {self.author.mention} already has the maximum of 2 parents",
                 view=self,
             )
         if await self.cog.is_ancestor_or_descendant(self.target.id, self.author.id):
+            self.cog._release_locks(self.author.id, self.target.id)
             return await interaction.response.edit_message(
                 content="-# cannot complete adoption due to family cycle",
                 view=self,
@@ -1024,6 +1177,7 @@ class MakeParentProposalView(discord.ui.View):
             content=f"-# 🌿 {self.target.mention} is now the parent of {self.author.mention} ✦",
             view=self,
         )
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
     @discord.ui.button(label="decline", style=discord.ButtonStyle.secondary, emoji="✖")
@@ -1035,6 +1189,7 @@ class MakeParentProposalView(discord.ui.View):
             content=f"-# {self.target.mention} declined to be {self.author.mention}'s parent",
             view=self,
         )
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
     async def on_timeout(self):
@@ -1048,6 +1203,7 @@ class MakeParentProposalView(discord.ui.View):
                 )
             except discord.HTTPException:
                 pass
+        self.cog._release_locks(self.author.id, self.target.id)
         self.stop()
 
 
@@ -1147,6 +1303,57 @@ class EmancipateConfirmView(discord.ui.View):
         if self.message:
             try:
                 await self.message.edit(content="-# emancipation confirmation timed out", view=self)
+            except discord.HTTPException:
+                pass
+        self.stop()
+
+
+# ── Divorce Confirmation View ──────────────────────────────────────
+class DivorceConfirmView(discord.ui.View):
+    def __init__(self, author: discord.Member, partner_id: int, cog: "Social"):
+        super().__init__(timeout=30)
+        self.author = author
+        self.partner_id = partner_id
+        self.cog = cog
+        self.value = None
+        self.message: discord.Message | None = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author.id:
+            await interaction.response.send_message("-# not your confirmation", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="divorce", style=discord.ButtonStyle.danger, emoji="💔")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = True
+        # Soft-delete: archive to marriage_history, then remove from active
+        await self.cog.archive_marriage(self.author.id)
+        await interaction.response.edit_message(
+            content=f"-# you have divorced <@{self.partner_id}> 💔",
+            view=self,
+        )
+        self.stop()
+
+    @discord.ui.button(label="cancel", style=discord.ButtonStyle.secondary, emoji="✖")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        self.value = False
+        await interaction.response.edit_message(
+            content="-# divorce cancelled",
+            view=self,
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(content="-# divorce confirmation timed out", view=self)
             except discord.HTTPException:
                 pass
         self.stop()
@@ -1435,6 +1642,15 @@ class Social(commands.Cog, name="Social"):
                 opted_out_at TEXT NOT NULL
             )
         """)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS marriage_history (
+                user1_id INTEGER NOT NULL,
+                user2_id INTEGER NOT NULL,
+                married_at TEXT NOT NULL,
+                divorced_at TEXT NOT NULL,
+                guild_id INTEGER NOT NULL
+            )
+        """)
         await self.db.commit()
 
     async def cog_unload(self):
@@ -1550,6 +1766,20 @@ class Social(commands.Cog, name="Social"):
         )
         await self.db.commit()
         self._invalidate_kinship_cache()
+
+    async def archive_marriage(self, user_id: int):
+        """Soft-delete: move active marriage to history, then remove from active table."""
+        if not self.db:
+            return
+        m = await self.get_marriage(user_id)
+        if m:
+            partner_id, married_at_iso, guild_id = m
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await self.db.execute(
+                "INSERT INTO marriage_history (user1_id, user2_id, married_at, divorced_at, guild_id) VALUES (?, ?, ?, ?, ?)",
+                (user_id, partner_id, married_at_iso, now_iso, guild_id),
+            )
+        await self.delete_marriage(user_id)
 
     # ── Adoption & Lineage DB Methods ──────────────────────────────
     async def create_adoption(self, parent_id: int, child_id: int, guild_id: int):
@@ -1992,30 +2222,52 @@ class Social(commands.Cog, name="Social"):
         if user is None:
             return await ctx.send("-# usage: `.marry <@user>`")
         if user.id == ctx.author.id:
-            return await ctx.send("-# you can't marry yourself")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["SELF_MARRY"]))
         if user.bot:
-            return await ctx.send("-# you can't marry a bot")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["BOT_TARGET_MARRY"]))
+
+        # TTL lock check
+        if self._is_locked(ctx.author.id):
+            return await ctx.send("-# you already have a pending proposal")
+        if self._is_locked(user.id):
+            return await ctx.send("-# that user already has a pending proposal")
 
         # Opt-out checks
         if await self.is_opted_out(ctx.author.id):
-            return await ctx.send("-# you have opted out of social proposals. use `.optout` to re-enable")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["OPTED_OUT_SELF"]))
         if await self.is_opted_out(user.id):
-            return await ctx.send(f"-# {user.display_name} has opted out of social proposals")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["OPTED_OUT"]).format(target=user.display_name))
 
+        # Already married checks
         m1 = await self.get_marriage(ctx.author.id)
         if m1:
-            return await ctx.send(f"-# you're already married to <@{m1[0]}>. use `.divorce` first")
+            if m1[0] == user.id:
+                return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_SPOUSE"]).format(target=user.display_name))
+            return await ctx.send(random.choice(LOGIC_BLOCKS["USER_ALREADY_MARRIED"]).format(spouse_id=m1[0]))
 
         m2 = await self.get_marriage(user.id)
         if m2:
-            return await ctx.send(f"-# {user.display_name} is already married to <@{m2[0]}>")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_MARRIED"]).format(target=user.display_name))
 
-        # Kinship blocker (direct bloodline check)
+        # Kinship blocker (blood-mode only -- never fires on in-law chains)
         rel = await self.resolve_relationship(ctx.author.id, user.id, mode="blood")
-        if rel in {"Parent", "Child", "Sibling", "Grandparent", "Grandchild", "Aunt/Uncle", "Niece/Nephew", "Ancestor", "Descendant"}:
-            return await ctx.send(f"-# you cannot marry {user.display_name} ({rel.lower()} relation)")
+        kinship_map = {
+            "Parent": "MARRY_PARENT",
+            "Child": "MARRY_CHILD",
+            "Sibling": "MARRY_SIBLING",
+            "Grandparent": "MARRY_GRANDPARENT",
+            "Grandchild": "MARRY_GRANDCHILD",
+            "Aunt/Uncle": "MARRY_AUNT_UNCLE",
+            "Niece/Nephew": "MARRY_NIECE_NEPHEW",
+            "Ancestor": "MARRY_ANCESTOR",
+            "Descendant": "MARRY_DESCENDANT",
+            "Cousin": "MARRY_COUSIN",
+        }
+        if rel in kinship_map:
+            return await ctx.send(random.choice(KINSHIP_JOKES[kinship_map[rel]]))
 
         await self.record_proposal(ctx.author.id, user.id)
+        self._acquire_locks(ctx.author.id, user.id)
 
         view = MarryProposalView(ctx.author, user, self)
         msg = await ctx.send(
@@ -2101,6 +2353,11 @@ class Social(commands.Cog, name="Social"):
         av1_bytes = await self._fetch_avatar(target)
         av2_bytes = await self._fetch_avatar(partner_obj) if partner_obj else None
 
+        # Compute shared children count (union of both spouses' children)
+        my_children = set(await self.get_children(target.id))
+        partner_children = set(await self.get_children(partner_id))
+        total_children = len(my_children | partner_children)
+
         card_buf = await asyncio.to_thread(
             _render_marriage_card,
             av1_bytes,
@@ -2114,6 +2371,7 @@ class Social(commands.Cog, name="Social"):
             sent,
             recv,
             tier_title,
+            total_children,
         )
 
         file = discord.File(card_buf, filename="marriage.png")
@@ -2166,11 +2424,14 @@ class Social(commands.Cog, name="Social"):
         if not self.db:
             return await ctx.send("-# no marriage records found")
 
+        # Query ALL marriages globally, then filter to server members
         async with self.db.execute(
-            "SELECT user1_id, user2_id, married_at FROM marriages WHERE guild_id = ? ORDER BY married_at ASC",
-            (ctx.guild.id,),
+            "SELECT user1_id, user2_id, married_at FROM marriages ORDER BY married_at ASC",
         ) as cur:
-            rows = await cur.fetchall()
+            all_rows = await cur.fetchall()
+
+        guild_member_ids = {m.id for m in ctx.guild.members}
+        rows = [(u1, u2, iso) for u1, u2, iso in all_rows if u1 in guild_member_ids or u2 in guild_member_ids]
 
         if not rows:
             return await ctx.send("-# no marriages in this server yet")
@@ -2211,31 +2472,49 @@ class Social(commands.Cog, name="Social"):
         if user is None:
             return await ctx.send("-# usage: `.adopt <@user>`")
         if user.id == ctx.author.id:
-            return await ctx.send("-# you can't adopt yourself")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["SELF_ADOPT"]))
         if user.bot:
-            return await ctx.send("-# you can't adopt a bot")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["BOT_TARGET_ADOPT"]))
+
+        # TTL lock check
+        if self._is_locked(ctx.author.id):
+            return await ctx.send("-# you already have a pending proposal")
+        if self._is_locked(user.id):
+            return await ctx.send("-# that user already has a pending proposal")
 
         # Opt-out checks
         if await self.is_opted_out(ctx.author.id):
-            return await ctx.send("-# you have opted out of social proposals. use `.optout` to re-enable")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["OPTED_OUT_SELF"]))
         if await self.is_opted_out(user.id):
-            return await ctx.send(f"-# {user.display_name} has opted out of social proposals")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["OPTED_OUT"]).format(target=user.display_name))
 
         # Check existing parents cap (max 2)
         parents = await self.get_parents(user.id)
         if len(parents) >= 2:
-            return await ctx.send(f"-# {user.display_name} already has 2 parents")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["PARENT_CAP_REACHED"]).format(target=user.display_name))
         if ctx.author.id in parents:
-            return await ctx.send(f"-# {user.display_name} is already your child")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_CHILD"]).format(target=user.display_name))
 
-        # Spouse check
+        # Spouse check -- kinship joke, not logic block
         m = await self.get_marriage(ctx.author.id)
         if m and m[0] == user.id:
-            return await ctx.send(f"-# you cannot adopt your married spouse")
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SPOUSE"]))
 
-        # Cycle check
+        # Sibling check
+        siblings = await self.get_siblings(ctx.author.id)
+        if user.id in siblings:
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SIBLING"]))
+
+        # Parent/ancestor check
+        user_parents = await self.get_parents(ctx.author.id)
+        if user.id in user_parents or await self.is_ancestor(user.id, ctx.author.id):
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_PARENT"]))
+
+        # Cycle check (catches descendant-adopts-ancestor and other loops)
         if await self.is_ancestor_or_descendant(ctx.author.id, user.id):
-            return await ctx.send(f"-# you cannot adopt {user.display_name} due to family cycle")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["CYCLE_DETECTED"]).format(target=user.display_name))
+
+        self._acquire_locks(ctx.author.id, user.id)
 
         view = AdoptProposalView(ctx.author, user, self)
         msg = await ctx.send(
@@ -2266,26 +2545,39 @@ class Social(commands.Cog, name="Social"):
         if user.bot:
             return await ctx.send("-# a bot cannot be your parent")
 
-        if await self.is_opted_out(ctx.author.id):
-            return await ctx.send("-# you have opted out of social proposals. use `.optout` to re-enable")
-        if await self.is_opted_out(user.id):
-            return await ctx.send(f"-# {user.display_name} has opted out of social proposals")
+        # TTL lock check
+        if self._is_locked(ctx.author.id):
+            return await ctx.send("-# you already have a pending proposal")
+        if self._is_locked(user.id):
+            return await ctx.send("-# that user already has a pending proposal")
 
-        # Author's parent cap
+        if await self.is_opted_out(ctx.author.id):
+            return await ctx.send(random.choice(LOGIC_BLOCKS["OPTED_OUT_SELF"]))
+        if await self.is_opted_out(user.id):
+            return await ctx.send(random.choice(LOGIC_BLOCKS["OPTED_OUT"]).format(target=user.display_name))
+
+        # DIRECTION FLIP: check AUTHOR's parent cap (author becomes the child)
         parents = await self.get_parents(ctx.author.id)
         if len(parents) >= 2:
             return await ctx.send("-# you already have 2 parents")
         if user.id in parents:
-            return await ctx.send(f"-# {user.display_name} is already your parent")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_PARENT"]).format(target=user.display_name))
 
         # Spouse check
         m = await self.get_marriage(ctx.author.id)
         if m and m[0] == user.id:
-            return await ctx.send("-# you cannot make your spouse your parent")
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SPOUSE"]))
 
-        # Cycle check
+        # Sibling check
+        siblings = await self.get_siblings(ctx.author.id)
+        if user.id in siblings:
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SIBLING"]))
+
+        # Ancestor/descendant check
         if await self.is_ancestor_or_descendant(user.id, ctx.author.id):
-            return await ctx.send(f"-# you cannot make {user.display_name} your parent due to family cycle")
+            return await ctx.send(random.choice(LOGIC_BLOCKS["CYCLE_DETECTED"]).format(target=user.display_name))
+
+        self._acquire_locks(ctx.author.id, user.id)
 
         view = MakeParentProposalView(ctx.author, user, self)
         msg = await ctx.send(
@@ -2696,7 +2988,7 @@ class Social(commands.Cog, name="Social"):
     @commands.cooldown(1, 15, commands.BucketType.user)
     @help_meta(
         usage="`.orphans`",
-        desc="Detects and cleans up adoptions where parents are deleted Discord accounts.",
+        desc="Detects and cleans up adoptions where parents are deleted Discord accounts (not just users who left the server).",
         section="Fun",
         perm_tier="public",
         examples=[".orphans"],
