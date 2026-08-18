@@ -2724,6 +2724,10 @@ class Social(commands.Cog, name="Social"):
                 parents.append(p_m[0])
 
         children = await self.get_children(target.id)
+        if m:
+            for sc in await self.get_children(m[0]):
+                if sc not in children and sc != target.id:
+                    children.append(sc)
         siblings = await self.get_siblings(target.id)
         fam_size = await self.get_family_size(target.id)
         fam_name = await self.get_family_name(target.id)
@@ -2830,9 +2834,15 @@ class Social(commands.Cog, name="Social"):
         for cid in child_ids[:3]:
             c_node = await fetch_node(cid, "Child")
             c_m = await self.get_marriage(cid)
+            c_spouse_id = None
             if c_m:
-                c_node.spouse = await fetch_node(c_m[0], "In-law")
+                c_spouse_id = c_m[0]
+                c_node.spouse = await fetch_node(c_spouse_id, "In-law")
             grandkids = await self.get_children(cid)
+            if c_spouse_id:
+                for gkc in await self.get_children(c_spouse_id):
+                    if gkc not in grandkids and gkc != target.id and gkc not in child_ids:
+                        grandkids.append(gkc)
             if grandkids:
                 c_node.children = await asyncio.gather(*[fetch_node(gkid, "Grandchild") for gkid in grandkids[:2]])
             focus_kids.append(c_node)
@@ -2843,11 +2853,27 @@ class Social(commands.Cog, name="Social"):
         for sid in sibling_ids[:3]:
             s_node = await fetch_node(sid, "Sibling", is_direct=True, is_focus=False)
             s_m = await self.get_marriage(sid)
+            s_spouse_id = None
             if s_m and s_m[0] != target.id:
-                s_node.spouse = await fetch_node(s_m[0], "In-law")
-            s_kids = await self.get_children(sid)
-            if s_kids:
-                s_node.children = await asyncio.gather(*[fetch_node(kid, "Niece/Nephew") for kid in s_kids[:2]])
+                s_spouse_id = s_m[0]
+                s_node.spouse = await fetch_node(s_spouse_id, "In-law")
+
+            s_child_ids = await self.get_children(sid)
+            if s_spouse_id:
+                for sc in await self.get_children(s_spouse_id):
+                    if sc not in s_child_ids and sc != target.id and sc not in sibling_ids:
+                        s_child_ids.append(sc)
+
+            if s_child_ids:
+                s_kids_nodes = []
+                for kid_id in s_child_ids[:2]:
+                    k_node = await fetch_node(kid_id, "Niece/Nephew")
+                    k_m = await self.get_marriage(kid_id)
+                    if k_m:
+                        k_node.spouse = await fetch_node(k_m[0], "In-law")
+                    s_kids_nodes.append(k_node)
+                s_node.children = s_kids_nodes
+
             sibling_clusters.append(s_node)
 
         all_sibling_clusters = [focus_node] + sibling_clusters
