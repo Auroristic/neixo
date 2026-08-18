@@ -412,3 +412,101 @@ async def test_marry_child_in_law_joke_text():
     assert not any("spouse's child" in j for j in jokes)
 
 
+@pytest.mark.asyncio
+async def test_adopt_blocks_parent_in_law_and_step_parent_in_law(social_cog):
+    # C. (1274) is married to yama (1133)
+    # yama (1133) is child of TreLoco (7671)
+    # TreLoco (7671) is married to zul (1139)
+    parents_map = {1133: [7671]}
+    children_map = {7671: [1133]}
+    marriages_map = {
+        1274: (1133, "2026-01-01", 1),
+        1133: (1274, "2026-01-01", 1),
+        7671: (1139, "2026-01-01", 1),
+        1139: (7671, "2026-01-01", 1),
+    }
+
+    social_cog.get_parents = AsyncMock(side_effect=lambda uid: parents_map.get(uid, []))
+    social_cog.get_children = AsyncMock(side_effect=lambda uid: children_map.get(uid, []))
+    social_cog.get_marriage = AsyncMock(side_effect=lambda uid: marriages_map.get(uid))
+
+    # Kinship resolution: zul is C.'s Parent-in-law
+    assert await social_cog.resolve_relationship(1274, 1139, mode="combined") == "Parent-in-law"
+
+    # C. tries to .adopt zul
+    ctx = MagicMock()
+    ctx.guild = MagicMock()
+    ctx.author = SimpleNamespace(id=1274, display_name="C.", mention="<@1274>")
+    ctx.send = AsyncMock()
+
+    target = SimpleNamespace(id=1139, display_name="zul", mention="<@1139>", bot=False)
+
+    await social_cog.adopt.callback(social_cog, ctx, target)
+
+    ctx.send.assert_called_once()
+    msg = ctx.send.call_args[0][0]
+    assert any(j in msg for j in KINSHIP_JOKES["ADOPT_PARENT_IN_LAW"])
+
+
+@pytest.mark.asyncio
+async def test_adopt_blocks_step_parent(social_cog):
+    # Child (5000), Dad (5001) married to Step-Mom (5002)
+    parents_map = {5000: [5001]}
+    children_map = {5001: [5000]}
+    marriages_map = {
+        5001: (5002, "2026-01-01", 1),
+        5002: (5001, "2026-01-01", 1),
+    }
+
+    social_cog.get_parents = AsyncMock(side_effect=lambda uid: parents_map.get(uid, []))
+    social_cog.get_children = AsyncMock(side_effect=lambda uid: children_map.get(uid, []))
+    social_cog.get_marriage = AsyncMock(side_effect=lambda uid: marriages_map.get(uid))
+
+    ctx = MagicMock()
+    ctx.guild = MagicMock()
+    ctx.author = SimpleNamespace(id=5000, display_name="Child", mention="<@5000>")
+    ctx.send = AsyncMock()
+
+    target = SimpleNamespace(id=5002, display_name="StepMom", mention="<@5002>", bot=False)
+
+    await social_cog.adopt.callback(social_cog, ctx, target)
+
+    ctx.send.assert_called_once()
+    msg = ctx.send.call_args[0][0]
+    assert any(j in msg for j in KINSHIP_JOKES["ADOPT_STEP_PARENT"])
+
+
+@pytest.mark.asyncio
+async def test_makeparent_blocks_parent_in_law(social_cog):
+    # C. (1274) is married to yama (1133)
+    # yama (1133) is child of TreLoco (7671)
+    # TreLoco (7671) is married to zul (1139)
+    # zul calls .makeparent C. (asking child-in-law C. to become zul's parent!)
+    parents_map = {1133: [7671]}
+    children_map = {7671: [1133]}
+    marriages_map = {
+        1274: (1133, "2026-01-01", 1),
+        1133: (1274, "2026-01-01", 1),
+        7671: (1139, "2026-01-01", 1),
+        1139: (7671, "2026-01-01", 1),
+    }
+
+    social_cog.get_parents = AsyncMock(side_effect=lambda uid: parents_map.get(uid, []))
+    social_cog.get_children = AsyncMock(side_effect=lambda uid: children_map.get(uid, []))
+    social_cog.get_marriage = AsyncMock(side_effect=lambda uid: marriages_map.get(uid))
+
+    ctx = MagicMock()
+    ctx.guild = MagicMock()
+    ctx.author = SimpleNamespace(id=1139, display_name="zul", mention="<@1139>")
+    ctx.send = AsyncMock()
+
+    target = SimpleNamespace(id=1274, display_name="C.", mention="<@1274>", bot=False)
+
+    await social_cog.makeparent.callback(social_cog, ctx, target)
+
+    ctx.send.assert_called_once()
+    msg = ctx.send.call_args[0][0]
+    assert any(j in msg for j in KINSHIP_JOKES["ADOPT_CHILD_IN_LAW"])
+
+
+
