@@ -506,7 +506,7 @@ async def test_makeparent_blocks_parent_in_law(social_cog):
 
     ctx.send.assert_called_once()
     msg = ctx.send.call_args[0][0]
-    assert any(j in msg for j in KINSHIP_JOKES["ADOPT_CHILD_IN_LAW"])
+    assert any(j in msg for j in KINSHIP_JOKES["ADOPT_PARENT_IN_LAW"])
 
 
 
