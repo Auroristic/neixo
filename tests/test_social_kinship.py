@@ -290,3 +290,125 @@ async def test_tree_step_family_and_step_siblings(social_cog, monkeypatch):
     assert parent_roles[7671] == "Parent"
     assert parent_roles[1133] == "Step-Parent"
 
+
+@pytest.mark.asyncio
+async def test_resolve_relationship_grandparent_grandchild_directions(social_cog):
+    # 800 (Grandparent) -> 801 (Parent) -> 802 (Grandchild)
+    parents_map = {
+        802: [801],
+        801: [800],
+    }
+    children_map = {
+        800: [801],
+        801: [802],
+    }
+    social_cog.get_parents = AsyncMock(side_effect=lambda uid: parents_map.get(uid, []))
+    social_cog.get_children = AsyncMock(side_effect=lambda uid: children_map.get(uid, []))
+    social_cog.get_marriage = AsyncMock(return_value=None)
+
+    # Elder asks about Kid: Kid is Elder's Grandchild
+    assert await social_cog.resolve_relationship(800, 802, mode="blood") == "Grandchild"
+    # Kid asks about Elder: Elder is Kid's Grandparent
+    assert await social_cog.resolve_relationship(802, 800, mode="blood") == "Grandparent"
+
+
+@pytest.mark.asyncio
+async def test_resolve_relationship_aunt_uncle_niece_nephew_directions(social_cog):
+    # 900 (Grandparent) -> 901 (Aunt) and 902 (Parent) -> 903 (Niece/Nephew)
+    parents_map = {
+        901: [900],
+        902: [900],
+        903: [902],
+    }
+    children_map = {
+        900: [901, 902],
+        902: [903],
+    }
+    social_cog.get_parents = AsyncMock(side_effect=lambda uid: parents_map.get(uid, []))
+    social_cog.get_children = AsyncMock(side_effect=lambda uid: children_map.get(uid, []))
+    social_cog.get_marriage = AsyncMock(return_value=None)
+
+    # Aunt (901) asks about Nephew (903): 903 is Aunt's Niece/Nephew
+    assert await social_cog.resolve_relationship(901, 903, mode="blood") == "Niece/Nephew"
+    # Nephew (903) asks about Aunt (901): 901 is Nephew's Aunt/Uncle
+    assert await social_cog.resolve_relationship(903, 901, mode="blood") == "Aunt/Uncle"
+
+
+@pytest.mark.asyncio
+async def test_relationship_command_output_direction(social_cog):
+    # Author (1000) asks about their child (1001)
+    parents_map = {1001: [1000]}
+    children_map = {1000: [1001]}
+    social_cog.get_parents = AsyncMock(side_effect=lambda uid: parents_map.get(uid, []))
+    social_cog.get_children = AsyncMock(side_effect=lambda uid: children_map.get(uid, []))
+    social_cog.get_marriage = AsyncMock(return_value=None)
+
+    ctx = MagicMock()
+    ctx.guild = MagicMock()
+    ctx.author = SimpleNamespace(id=1000, display_name="ParentAlice", mention="<@1000>")
+    ctx.send = AsyncMock()
+
+    child = SimpleNamespace(id=1001, display_name="ChildBob", mention="<@1001>")
+
+    await social_cog.relationship.callback(social_cog, ctx, child)
+
+    ctx.send.assert_called_once()
+    msg = ctx.send.call_args[0][0]
+    # Message should state "ChildBob is ParentAlice's Child", NOT "ParentAlice is ChildBob's Child"
+    assert "**ChildBob** is **ParentAlice**'s **Child**" in msg
+
+
+@pytest.mark.asyncio
+async def test_tree_interlinked_sibling_not_dropped(social_cog, monkeypatch):
+    # Setup where sibling is also linked in a descendant branch
+    # Parent (2000) -> Focus (2001), Sibling (2002)
+    # Focus (2001) -> Child (2003)
+    # Child (2003) is married to Sibling (2002) (interlinked graph)
+    parents_map = {
+        2001: [2000],
+        2002: [2000],
+        2003: [2001],
+    }
+    children_map = {
+        2000: [2001, 2002],
+        2001: [2003],
+    }
+    marriages_map = {
+        2003: (2002, "2026-01-01", 1),
+        2002: (2003, "2026-01-01", 1),
+    }
+    social_cog.get_parents = AsyncMock(side_effect=lambda uid: parents_map.get(uid, []))
+    social_cog.get_children = AsyncMock(side_effect=lambda uid: children_map.get(uid, []))
+    social_cog.get_marriage = AsyncMock(side_effect=lambda uid: marriages_map.get(uid))
+    social_cog.get_family_name = AsyncMock(return_value=None)
+    social_cog._get_user_display = AsyncMock(side_effect=lambda uid, guild: (f"U_{uid}", f"U_{uid}#0001"))
+    social_cog._fetch_avatar = AsyncMock(return_value=None)
+
+    rendered_args = {}
+    def mock_render(focus, parents, gps, sib_clusters, fam_name):
+        rendered_args["sib_clusters"] = sib_clusters
+        import io
+        return io.BytesIO(b"fake")
+
+    import cogs.social as social_mod
+    monkeypatch.setattr(social_mod, "_render_tree_card", mock_render)
+
+    ctx = MagicMock()
+    ctx.guild = MagicMock()
+    ctx.author = SimpleNamespace(id=2001, display_name="Focus", mention="<@2001>")
+    ctx.send = AsyncMock()
+
+    await social_cog.tree.callback(social_cog, ctx, ctx.author)
+
+    # Sibling (2002) must still appear as a top-level sibling cluster!
+    sib_uids = [sc.uid for sc in rendered_args["sib_clusters"]]
+    assert 2002 in sib_uids
+
+
+@pytest.mark.asyncio
+async def test_marry_child_in_law_joke_text():
+    jokes = KINSHIP_JOKES["MARRY_CHILD_IN_LAW"]
+    assert any("kid's husband/wife" in j or "spouse's child" not in j for j in jokes)
+    assert not any("spouse's child" in j for j in jokes)
+
+
