@@ -123,7 +123,7 @@ async def test_marry_flow_step_parent_fires_kinship_joke_even_when_married(socia
 
     target = SimpleNamespace(id=402, bot=False, display_name="Zul", mention="<@402>")
 
-    await social_cog.marry(ctx, target)
+    await social_cog.marry.callback(social_cog, ctx, target)
 
     # Must send a joke from MARRY_STEP_PARENT
     ctx.send.assert_called_once()
@@ -152,7 +152,7 @@ async def test_marry_flow_unrelated_married_target(social_cog):
 
     target = SimpleNamespace(id=502, bot=False, display_name="Stranger", mention="<@502>")
 
-    await social_cog.marry(ctx, target)
+    await social_cog.marry.callback(social_cog, ctx, target)
 
     ctx.send.assert_called_once()
     sent_msg = ctx.send.call_args[0][0]
@@ -178,7 +178,7 @@ async def test_marry_flow_author_already_married(social_cog):
 
     target = SimpleNamespace(id=602, bot=False, display_name="Stranger", mention="<@602>")
 
-    await social_cog.marry(ctx, target)
+    await social_cog.marry.callback(social_cog, ctx, target)
 
     ctx.send.assert_called_once()
     sent_msg = ctx.send.call_args[0][0]
@@ -205,7 +205,7 @@ async def test_marry_flow_own_spouse(social_cog):
 
     target = SimpleNamespace(id=701, bot=False, display_name="Spouse", mention="<@701>")
 
-    await social_cog.marry(ctx, target)
+    await social_cog.marry.callback(social_cog, ctx, target)
 
     ctx.send.assert_called_once()
     sent_msg = ctx.send.call_args[0][0]
