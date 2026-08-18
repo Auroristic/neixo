@@ -131,6 +131,14 @@ KINSHIP_JOKES = {
         "-# trying to adopt your parent?? time travel isnt real",
         "-# adoption denied: you cannot adopt your ancestors",
     ],
+    "ADOPT_GRANDPARENT": [
+        "-# you cannot adopt your grandparent bro who raised who??",
+        "-# adoption denied: you cannot adopt your grandparents",
+    ],
+    "ADOPT_ANCESTOR": [
+        "-# you cannot adopt your ancestor bro time travel isnt real",
+        "-# adoption denied: you cannot adopt your ancestral line",
+    ],
     "ADOPT_SPOUSE": [
         "-# you cant adopt your wife/husband bro what kink is this",
         "-# they are your spouse, not your toddler",
@@ -140,6 +148,36 @@ KINSHIP_JOKES = {
         "-# thats your sibling, not your kid",
         "-# you cant adopt your own sibling bro",
         "-# adoption denied: yall share parents already",
+    ],
+    "ADOPT_STEP_SIBLING": [
+        "-# thats your step-sibling, not your child",
+        "-# you cant adopt your step-sibling bro",
+        "-# adoption denied: we don't do brady bunch adoptions here",
+    ],
+    "ADOPT_STEP_PARENT": [
+        "-# you cannot adopt your step-parent bro they raised you",
+        "-# thats your step-parent. adoption denied",
+    ],
+    "ADOPT_PARENT_IN_LAW": [
+        "-# you cannot adopt your parent-in-law bro they are your spouse's parent",
+        "-# trying to adopt your mother/father-in-law?? seek help",
+        "-# adoption denied: thats literally your in-law parent",
+    ],
+    "ADOPT_CHILD_IN_LAW": [
+        "-# thats your kid's spouse. they are already in the family",
+        "-# you cannot adopt your child-in-law",
+    ],
+    "ADOPT_SIBLING_IN_LAW": [
+        "-# thats your sibling-in-law. save it for the family reunion",
+        "-# you cannot adopt your spouse's sibling or sibling's spouse",
+    ],
+    "ADOPT_AUNT_UNCLE": [
+        "-# you cannot adopt your aunt/uncle bro they are your elders",
+        "-# adoption denied: thats your aunt/uncle",
+    ],
+    "ADOPT_COUSIN": [
+        "-# thats your cousin bro not your child",
+        "-# you cannot adopt your cousin",
     ],
 }
 
@@ -1956,14 +1994,43 @@ class Social(commands.Cog, name="Social"):
         u2_spouse = m2[0] if m2 else None
 
         # Parent-in-law / Child-in-law
-        if u1_spouse and u2 in await self.get_parents(u1_spouse):
-            res = "Parent-in-law"
-            self._kinship_cache[cache_key] = (res, now + 120)
-            return res
-        if u2_spouse and u2_spouse in u1_children:
-            res = "Child-in-law"
-            self._kinship_cache[cache_key] = (res, now + 120)
-            return res
+        if u1_spouse:
+            u1_sp_parents = set(await self.get_parents(u1_spouse))
+            if u2 in u1_sp_parents:
+                res = "Parent-in-law"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+            # Spouse's step-parents (parent's spouse)
+            for p in u1_sp_parents:
+                pm = await self.get_marriage(p)
+                if pm and pm[0] == u2:
+                    res = "Parent-in-law"
+                    self._kinship_cache[cache_key] = (res, now + 120)
+                    return res
+
+        if u2_spouse:
+            u2_sp_parents = set(await self.get_parents(u2_spouse))
+            if u1 in u2_sp_parents:
+                res = "Child-in-law"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+            # Spouse of child
+            if u2_spouse in u1_children:
+                res = "Child-in-law"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+            # Step-child's spouse (u1 is married to someone whose child is married to u2)
+            if u1_spouse and u2_spouse in await self.get_children(u1_spouse):
+                res = "Child-in-law"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+            # Child's parent's spouse (child-in-law when u1 is step-parent of u2_spouse)
+            for p in u2_sp_parents:
+                pm = await self.get_marriage(p)
+                if pm and pm[0] == u1:
+                    res = "Child-in-law"
+                    self._kinship_cache[cache_key] = (res, now + 120)
+                    return res
 
         # Sibling-in-law
         if u1_spouse:
@@ -2534,20 +2601,36 @@ class Social(commands.Cog, name="Social"):
         if ctx.author.id in parents:
             return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_CHILD"]).format(target=user.display_name))
 
-        # Spouse check -- kinship joke, not logic block
-        m = await self.get_marriage(ctx.author.id)
-        if m and m[0] == user.id:
+        # Kinship check
+        rel = await self.resolve_relationship(ctx.author.id, user.id, mode="combined")
+        if rel == "Married (Spouse)":
             return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SPOUSE"]))
-
-        # Sibling check
-        siblings = await self.get_siblings(ctx.author.id)
-        if user.id in siblings:
-            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SIBLING"]))
-
-        # Parent/ancestor check
-        user_parents = await self.get_parents(ctx.author.id)
-        if user.id in user_parents or await self.is_ancestor(user.id, ctx.author.id):
+        elif rel == "Parent":
             return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_PARENT"]))
+        elif rel == "Grandparent":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_GRANDPARENT"]))
+        elif rel == "Ancestor":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_ANCESTOR"]))
+        elif rel == "Step-Parent":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_STEP_PARENT"]))
+        elif rel == "Parent-in-law":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_PARENT_IN_LAW"]))
+        elif rel == "Child-in-law":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_CHILD_IN_LAW"]))
+        elif rel == "Sibling":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SIBLING"]))
+        elif rel == "Step-Sibling":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_STEP_SIBLING"]))
+        elif rel == "Sibling-in-law":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SIBLING_IN_LAW"]))
+        elif rel == "Aunt/Uncle":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_AUNT_UNCLE"]))
+        elif rel == "Cousin":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_COUSIN"]))
+        elif rel == "Child":
+            return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_CHILD"]).format(target=user.display_name))
+        elif rel in ("Grandchild", "Descendant"):
+            return await ctx.send("-# you cannot adopt your own descendant/grandchild bro")
 
         # Cycle check (catches descendant-adopts-ancestor and other loops)
         if await self.is_ancestor_or_descendant(ctx.author.id, user.id):
@@ -2602,15 +2685,34 @@ class Social(commands.Cog, name="Social"):
         if user.id in parents:
             return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_PARENT"]).format(target=user.display_name))
 
-        # Spouse check
-        m = await self.get_marriage(ctx.author.id)
-        if m and m[0] == user.id:
+        # Kinship check (user adopting author)
+        rel = await self.resolve_relationship(user.id, ctx.author.id, mode="combined")
+        if rel == "Married (Spouse)":
             return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SPOUSE"]))
-
-        # Sibling check
-        siblings = await self.get_siblings(ctx.author.id)
-        if user.id in siblings:
+        elif rel == "Parent":
+            return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_PARENT"]).format(target=user.display_name))
+        elif rel == "Grandparent":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_GRANDPARENT"]))
+        elif rel == "Ancestor":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_ANCESTOR"]))
+        elif rel == "Step-Parent":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_STEP_PARENT"]))
+        elif rel == "Parent-in-law":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_PARENT_IN_LAW"]))
+        elif rel == "Child-in-law":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_CHILD_IN_LAW"]))
+        elif rel == "Sibling":
             return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SIBLING"]))
+        elif rel == "Step-Sibling":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_STEP_SIBLING"]))
+        elif rel == "Sibling-in-law":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_SIBLING_IN_LAW"]))
+        elif rel == "Aunt/Uncle":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_AUNT_UNCLE"]))
+        elif rel == "Cousin":
+            return await ctx.send(random.choice(KINSHIP_JOKES["ADOPT_COUSIN"]))
+        elif rel in ("Grandchild", "Descendant"):
+            return await ctx.send("-# you cannot make your own descendant your parent bro")
 
         # Ancestor/descendant check
         if await self.is_ancestor_or_descendant(user.id, ctx.author.id):
