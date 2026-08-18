@@ -100,6 +100,32 @@ KINSHIP_JOKES = {
         "-# thats your cousin bro. we dont do that here",
         "-# no incest mr. yall share grandparents",
     ],
+    "MARRY_STEP_PARENT": [
+        "-# thats your step-parent bro. the divorce papers arent even dry",
+        "-# no incest mr. they're still married to your actual parent",
+        "-# step-parent marriage arc? absolutely not",
+    ],
+    "MARRY_STEP_CHILD": [
+        "-# thats your step-kid. you raised them what is wrong with you",
+        "-# no incest mr. they call you step-mom/step-dad for a reason",
+    ],
+    "MARRY_STEP_SIBLING": [
+        "-# step-sibling romance is a fanfic trope not real life",
+        "-# no incest mr. yall grew up under the same roof",
+        "-# thats your step-sibling. we don't do brady bunch here",
+    ],
+    "MARRY_PARENT_IN_LAW": [
+        "-# thats your spouse's parent. absolutely not.",
+        "-# in-law incest is still incest mr.",
+    ],
+    "MARRY_CHILD_IN_LAW": [
+        "-# thats your spouse's child. no.",
+        "-# in-law incest is still incest mr.",
+    ],
+    "MARRY_SIBLING_IN_LAW": [
+        "-# thats your spouse's sibling. save it for the family reunion drama",
+        "-# in-law incest is still incest mr.",
+    ],
     "ADOPT_PARENT": [
         "-# you cannot adopt your own parent bro who raised who??",
         "-# trying to adopt your parent?? time travel isnt real",
@@ -1909,13 +1935,18 @@ class Social(commands.Cog, name="Social"):
             self._kinship_cache[cache_key] = (res, now + 120)
             return res
 
+        # 6. Ancestor / Descendant (both blood and combined modes)
+        if await self.is_ancestor(u2, u1):
+            res = "Ancestor"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+        if await self.is_descendant(u2, u1):
+            res = "Descendant"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+
         if mode == "blood":
-            if await self.is_ancestor(u1, u2):
-                res = "Ancestor"
-            elif await self.is_descendant(u1, u2):
-                res = "Descendant"
-            else:
-                res = "Unrelated"
+            res = "Unrelated"
             self._kinship_cache[cache_key] = (res, now + 120)
             return res
 
@@ -1945,6 +1976,14 @@ class Social(commands.Cog, name="Social"):
             u2_sp_parents = set(await self.get_parents(u2_spouse))
             if u2_sp_parents and (u2_sp_parents & u1_parents):
                 res = "Sibling-in-law"
+                self._kinship_cache[cache_key] = (res, now + 120)
+                return res
+
+        # Step-Sibling
+        for p in u1_parents:
+            pm = await self.get_marriage(p)
+            if pm and pm[0] in u2_parents:
+                res = "Step-Sibling"
                 self._kinship_cache[cache_key] = (res, now + 120)
                 return res
 
@@ -2207,20 +2246,15 @@ class Social(commands.Cog, name="Social"):
         if await self.is_opted_out(user.id):
             return await ctx.send(random.choice(LOGIC_BLOCKS["OPTED_OUT"]).format(target=user.display_name))
 
-        # Already married checks
+        # Already married check for own spouse
         m1 = await self.get_marriage(ctx.author.id)
-        if m1:
-            if m1[0] == user.id:
-                return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_SPOUSE"]).format(target=user.display_name))
-            return await ctx.send(random.choice(LOGIC_BLOCKS["USER_ALREADY_MARRIED"]).format(spouse_id=m1[0]))
+        if m1 and m1[0] == user.id:
+            return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_YOUR_SPOUSE"]).format(target=user.display_name))
 
-        m2 = await self.get_marriage(user.id)
-        if m2:
-            return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_MARRIED"]).format(target=user.display_name))
-
-        # Kinship blocker (blood-mode only -- never fires on in-law chains)
-        rel = await self.resolve_relationship(ctx.author.id, user.id, mode="blood")
+        # Kinship blocker (combined mode -- checks blood, step, and in-law relations)
+        rel = await self.resolve_relationship(ctx.author.id, user.id, mode="combined")
         kinship_map = {
+            # Blood relations
             "Parent": "MARRY_PARENT",
             "Child": "MARRY_CHILD",
             "Sibling": "MARRY_SIBLING",
@@ -2231,9 +2265,24 @@ class Social(commands.Cog, name="Social"):
             "Ancestor": "MARRY_ANCESTOR",
             "Descendant": "MARRY_DESCENDANT",
             "Cousin": "MARRY_COUSIN",
+            # Step & in-law relations
+            "Step-Parent": "MARRY_STEP_PARENT",
+            "Step-Child": "MARRY_STEP_CHILD",
+            "Step-Sibling": "MARRY_STEP_SIBLING",
+            "Parent-in-law": "MARRY_PARENT_IN_LAW",
+            "Child-in-law": "MARRY_CHILD_IN_LAW",
+            "Sibling-in-law": "MARRY_SIBLING_IN_LAW",
         }
         if rel in kinship_map:
             return await ctx.send(random.choice(KINSHIP_JOKES[kinship_map[rel]]))
+
+        # No kinship match -- fall back to married-status checks
+        if m1:
+            return await ctx.send(random.choice(LOGIC_BLOCKS["USER_ALREADY_MARRIED"]).format(spouse_id=m1[0]))
+
+        m2 = await self.get_marriage(user.id)
+        if m2:
+            return await ctx.send(random.choice(LOGIC_BLOCKS["ALREADY_MARRIED"]).format(target=user.display_name))
 
         await self.record_proposal(ctx.author.id, user.id)
         self._acquire_locks(ctx.author.id, user.id)
