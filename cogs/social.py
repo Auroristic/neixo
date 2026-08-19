@@ -710,7 +710,7 @@ def _render_tree_card(
     cluster_widths = [get_subtree_width(sc) for sc in sibling_clusters]
     total_sibling_span = sum(cluster_widths) + max(0, len(sibling_clusters) - 1) * 40
     gp_span = len(grandparents) * 110
-    parent_span = 240 if len(parents) > 1 else 110
+    parent_span = max(110, len(parents) * 110)
 
     max_content_w = max(total_sibling_span, gp_span, parent_span, 760)
     W = max(920, max_content_w + 160)
@@ -856,7 +856,7 @@ def _render_tree_card(
         step_parents = [p for p in parents if not getattr(p, "is_direct", True)]
 
         if len(parents) == 1:
-            render_node(cx, tier_p_y, parents[0], size=68, role_label="Parent")
+            render_node(cx, tier_p_y, parents[0], size=68, role_label=parents[0].role or "Parent")
             parent_drop_x = cx
         elif len(parents) == 2:
             p1, p2 = parents[0], parents[1]
@@ -865,8 +865,8 @@ def _render_tree_card(
                 step_p = step_parents[0] if step_parents else (p2 if p1 == dir_p else p1)
                 p1_x = cx - 80
                 p2_x = cx + 80
-                render_node(p1_x, tier_p_y, dir_p, size=68, role_label="Parent")
-                render_node(p2_x, tier_p_y, step_p, size=64, role_label="Step-Parent")
+                render_node(p1_x, tier_p_y, dir_p, size=68, role_label=dir_p.role or "Parent")
+                render_node(p2_x, tier_p_y, step_p, size=64, role_label=step_p.role or "Step-Parent")
                 draw.line([(p1_x + 34, tier_p_y), (cx - 14, tier_p_y)], fill=(255, 255, 255, 75), width=2)
                 draw.line([(cx + 14, tier_p_y), (p2_x - 32, tier_p_y)], fill=(255, 255, 255, 75), width=2)
                 _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
@@ -874,12 +874,19 @@ def _render_tree_card(
             else:
                 p1_x = cx - 90
                 p2_x = cx + 90
-                render_node(p1_x, tier_p_y, p1, size=68, role_label="Parent")
-                render_node(p2_x, tier_p_y, p2, size=68, role_label="Parent")
+                render_node(p1_x, tier_p_y, p1, size=68, role_label=p1.role or "Parent")
+                render_node(p2_x, tier_p_y, p2, size=68, role_label=p2.role or "Parent")
                 draw.line([(p1_x + 34, tier_p_y), (cx - 16, tier_p_y)], fill=(255, 255, 255, 75), width=2)
                 draw.line([(cx + 16, tier_p_y), (p2_x - 34, tier_p_y)], fill=(255, 255, 255, 75), width=2)
                 _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
                 parent_drop_x = cx
+        else:
+            p_count = len(parents)
+            span_p = (p_count - 1) * 110
+            start_p_x = cx - span_p // 2
+            for i, p in enumerate(parents):
+                render_node(start_p_x + i * 110, tier_p_y, p, size=64, role_label=p.role or "Parent")
+            parent_drop_x = cx
 
         if has_grandparents and tier_gp_y:
             draw.line([(cx, tier_gp_y + 44), (cx, tier_p_y - 42)], fill=(255, 255, 255, 45), width=1)
