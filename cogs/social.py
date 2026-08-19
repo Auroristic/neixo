@@ -1865,6 +1865,20 @@ class Social(commands.Cog, name="Social"):
                     siblings.add(c)
         return sorted(siblings)
 
+    async def get_all_siblings(self, user_id: int) -> set[int]:
+        """Blood siblings + step-siblings. Single source of truth for kinship."""
+        blood = set(await self.get_siblings(user_id))
+        parents = await self.get_parents(user_id)
+        step = set()
+        for p in parents:
+            pm = await self.get_marriage(p)
+            if pm:
+                sp_id = pm[0]
+                for sp_c in await self.get_children(sp_id):
+                    if sp_c != user_id:
+                        step.add(sp_c)
+        return blood | step
+
     async def is_ancestor(self, potential_ancestor: int, target: int, visited: set[int] = None) -> bool:
         if visited is None:
             visited = set()
@@ -2046,13 +2060,31 @@ class Social(commands.Cog, name="Social"):
                 self._kinship_cache[cache_key] = (res, now + 120)
                 return res
 
-        # Step-Sibling
+        # Niece/Nephew, Aunt/Uncle, Cousin via step-sibling chains
+        u1_all_sibs = await self.get_all_siblings(u1)
+        u2_all_sibs = await self.get_all_siblings(u2)
+
+        if u2_parents and (u2_parents & u1_all_sibs):
+            res = "Niece/Nephew"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+        if u1_parents and (u1_parents & u2_all_sibs):
+            res = "Aunt/Uncle"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
+
         for p in u1_parents:
-            pm = await self.get_marriage(p)
-            if pm and pm[0] in u2_parents:
-                res = "Step-Sibling"
+            p_all_sibs = await self.get_all_siblings(p)
+            if u2_parents & p_all_sibs:
+                res = "Cousin"
                 self._kinship_cache[cache_key] = (res, now + 120)
                 return res
+
+        # Step-Sibling
+        if u2 in u1_all_sibs:
+            res = "Step-Sibling"
+            self._kinship_cache[cache_key] = (res, now + 120)
+            return res
 
         # Step-child / Step-parent
         if u1_spouse and u2 in await self.get_children(u1_spouse):
@@ -2209,14 +2241,8 @@ class Social(commands.Cog, name="Social"):
 
         # 3. Siblings & Step-Siblings
         siblings = await self.get_siblings(user_id)
-        step_siblings = []
-        for p in user_parents:
-            pm = await self.get_marriage(p)
-            if pm:
-                sp_id = pm[0]
-                for sp_c in await self.get_children(sp_id):
-                    if sp_c != user_id and sp_c not in siblings and sp_c not in step_siblings:
-                        step_siblings.append(sp_c)
+        all_sibs = await self.get_all_siblings(user_id)
+        step_siblings = sorted(all_sibs - set(siblings))
 
         if siblings or step_siblings:
             lines.append("│")
@@ -3015,11 +3041,8 @@ class Social(commands.Cog, name="Social"):
 
         # 3. Direct Siblings & Step-Siblings (and all their descendants recursively)
         sibling_ids = await self.get_siblings(target.id)
-        step_sibling_ids = []
-        for sp_id in step_parent_ids:
-            for sp_c in await self.get_children(sp_id):
-                if sp_c != target.id and sp_c not in sibling_ids and sp_c not in step_sibling_ids:
-                    step_sibling_ids.append(sp_c)
+        all_sibling_ids = await self.get_all_siblings(target.id)
+        step_sibling_ids = sorted(all_sibling_ids - set(sibling_ids))
 
         sibling_clusters = []
         visited_top_siblings = {target.id}
