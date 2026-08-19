@@ -2207,22 +2207,40 @@ class Social(commands.Cog, name="Social"):
         else:
             spouse_name = ""
 
-        # 1. Parents & Grandparents
+        # 1. Parents, In-law Parents & Grandparents
         user_parents = await self.get_parents(user_id)
-        if user_parents:
+        all_ancestor_entries = []  # (id, label) tuples
+        for p in user_parents:
+            all_ancestor_entries.append((p, "Parent"))
+
+        # Spouse's parents as in-laws
+        in_law_parent_ids_text = []
+        if spouse_id:
+            spouse_parents = await self.get_parents(spouse_id)
+            for sp_pid in spouse_parents:
+                if sp_pid not in user_parents and sp_pid != user_id:
+                    all_ancestor_entries.append((sp_pid, "Parent-in-law"))
+                    in_law_parent_ids_text.append(sp_pid)
+                sp_pm = await self.get_marriage(sp_pid)
+                if sp_pm and sp_pm[0] not in spouse_parents and sp_pm[0] not in user_parents and sp_pm[0] != user_id and sp_pm[0] != spouse_id:
+                    all_ancestor_entries.append((sp_pm[0], "Parent-in-law"))
+                    in_law_parent_ids_text.append(sp_pm[0])
+
+        if all_ancestor_entries:
             lines.append("Ancestors ✦")
-            for i, p in enumerate(user_parents):
-                is_last_p = (i == len(user_parents) - 1)
+            all_parent_ids_text = [e[0] for e in all_ancestor_entries]
+            for i, (p, p_label) in enumerate(all_ancestor_entries):
+                is_last_p = (i == len(all_ancestor_entries) - 1)
                 p_prefix = "└── " if is_last_p else "├── "
                 p_name, _ = await self._get_user_display(p, guild)
                 pm = await self.get_marriage(p)
                 p_spouse = pm[0] if pm else None
-                if p_spouse and p_spouse not in user_parents:
+                if p_spouse and p_spouse not in all_parent_ids_text:
                     psp_name, _ = await self._get_user_display(p_spouse, guild)
                     p_sp_str = f" 💍 {psp_name}"
                 else:
                     p_sp_str = ""
-                lines.append(f"{p_prefix}{p_name}{p_sp_str} (Parent)")
+                lines.append(f"{p_prefix}{p_name}{p_sp_str} ({p_label})")
 
                 # Grandparents
                 p_parents = await self.get_parents(p)
@@ -2239,12 +2257,20 @@ class Social(commands.Cog, name="Social"):
         dynasty_str = f" [House of {fam_name}]" if fam_name else ""
         lines.append(f"● {user_name}{spouse_name}{dynasty_str}")
 
-        # 3. Siblings & Step-Siblings
+        # 3. Siblings, Step-Siblings & In-law Siblings
         siblings = await self.get_siblings(user_id)
         all_sibs = await self.get_all_siblings(user_id)
         step_siblings = sorted(all_sibs - set(siblings))
 
-        if siblings or step_siblings:
+        # Spouse's siblings as in-laws
+        in_law_siblings = []
+        if spouse_id:
+            spouse_all_sibs = await self.get_all_siblings(spouse_id)
+            for in_sib in sorted(spouse_all_sibs):
+                if in_sib != user_id and in_sib not in siblings and in_sib not in step_siblings and in_sib not in in_law_siblings:
+                    in_law_siblings.append(in_sib)
+
+        if siblings or step_siblings or in_law_siblings:
             lines.append("│")
             if siblings:
                 lines.append("├── Siblings ✦")
@@ -2268,6 +2294,17 @@ class Social(commands.Cog, name="Social"):
                         ss_sp_name, _ = await self._get_user_display(ss_sp, guild)
                         ss_sp_str = f" 💍 {ss_sp_name}"
                     lines.append(f"│   ├── {ss_name}{ss_sp_str}")
+            if in_law_siblings:
+                lines.append("├── In-laws ✦")
+                for il in in_law_siblings:
+                    il_name, _ = await self._get_user_display(il, guild)
+                    ilm = await self.get_marriage(il)
+                    il_sp = ilm[0] if ilm else None
+                    il_sp_str = ""
+                    if il_sp and il_sp != user_id:
+                        il_sp_name, _ = await self._get_user_display(il_sp, guild)
+                        il_sp_str = f" 💍 {il_sp_name}"
+                    lines.append(f"│   ├── {il_name}{il_sp_str}")
 
         # 4. Children & Grandchildren
         user_children = await self.get_children(user_id)
@@ -3018,10 +3055,11 @@ class Social(commands.Cog, name="Social"):
 
             return node
 
-        # 1. Parents & Step-Parents
+        # 1. Parents, Step-Parents & In-law Parents
         direct_parent_ids = await self.get_parents(target.id)
         parent_tasks = []
         step_parent_ids = []
+        in_law_parent_ids = []
         visited_parents = set()
 
         for pid in direct_parent_ids:
@@ -3034,18 +3072,38 @@ class Social(commands.Cog, name="Social"):
                 step_parent_ids.append(p_m[0])
                 visited_parents.add(p_m[0])
 
+        # Spouse's parents as in-laws
+        target_m = await self.get_marriage(target.id)
+        tree_spouse_id = target_m[0] if target_m else None
+        if tree_spouse_id:
+            spouse_parent_ids = await self.get_parents(tree_spouse_id)
+            for sp_pid in spouse_parent_ids:
+                if sp_pid not in visited_parents and sp_pid != target.id:
+                    parent_tasks.append(fetch_node(sp_pid, "Parent-in-law", is_direct=False))
+                    in_law_parent_ids.append(sp_pid)
+                    visited_parents.add(sp_pid)
+                # Spouse's parent's spouse (step-in-law)
+                sp_pm = await self.get_marriage(sp_pid)
+                if sp_pm and sp_pm[0] not in spouse_parent_ids and sp_pm[0] not in visited_parents and sp_pm[0] != target.id and sp_pm[0] != tree_spouse_id:
+                    parent_tasks.append(fetch_node(sp_pm[0], "Parent-in-law", is_direct=False))
+                    in_law_parent_ids.append(sp_pm[0])
+                    visited_parents.add(sp_pm[0])
+
         parent_nodes = await asyncio.gather(*parent_tasks) if parent_tasks else []
 
         # 2. Focus Node Cluster (and all its descendants recursively)
         focus_node = await fetch_subtree(target.id, "Focus", is_direct=True, is_focus=True, depth=0)
 
-        # 3. Direct Siblings & Step-Siblings (and all their descendants recursively)
+        # 3. Direct Siblings, Step-Siblings & In-law Siblings
         sibling_ids = await self.get_siblings(target.id)
         all_sibling_ids = await self.get_all_siblings(target.id)
         step_sibling_ids = sorted(all_sibling_ids - set(sibling_ids))
 
         sibling_clusters = []
         visited_top_siblings = {target.id}
+        if tree_spouse_id:
+            visited_top_siblings.add(tree_spouse_id)
+
         for sid in sibling_ids:
             if sid not in visited_top_siblings:
                 visited_top_siblings.add(sid)
@@ -3058,15 +3116,25 @@ class Social(commands.Cog, name="Social"):
                 s_node = await fetch_subtree(ssid, "Step-Sibling", is_direct=False, is_focus=False, depth=0)
                 sibling_clusters.append(s_node)
 
+        # Spouse's siblings as in-laws
+        if tree_spouse_id:
+            spouse_all_sibs = await self.get_all_siblings(tree_spouse_id)
+            for in_sib in sorted(spouse_all_sibs):
+                if in_sib not in visited_top_siblings:
+                    visited_top_siblings.add(in_sib)
+                    s_node = await fetch_subtree(in_sib, "In-law", is_direct=False, is_focus=False, depth=0)
+                    sibling_clusters.append(s_node)
+
         all_sibling_clusters = [focus_node] + sibling_clusters
 
-        # 4. Grandparents
+        # 4. Grandparents (from own parents, step-parents, and in-law parents)
         grandparent_ids = []
         visited_gp = set()
-        for pid in direct_parent_ids + step_parent_ids:
+        all_parent_ids = direct_parent_ids + step_parent_ids + in_law_parent_ids
+        for pid in all_parent_ids:
             gp_list = await self.get_parents(pid)
             for gp in gp_list:
-                if gp not in visited_gp and gp != target.id and gp not in direct_parent_ids:
+                if gp not in visited_gp and gp != target.id and gp not in direct_parent_ids and gp not in in_law_parent_ids:
                     grandparent_ids.append(gp)
                     visited_gp.add(gp)
 
