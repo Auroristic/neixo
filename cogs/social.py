@@ -637,6 +637,7 @@ class TreeNode:
         av_bytes: bytes | None = None,
         spouse: "TreeNode | None" = None,
         children: list["TreeNode"] | None = None,
+        spouse_uid: int | None = None,
     ):
         self.uid = uid
         self.name = name
@@ -647,6 +648,7 @@ class TreeNode:
         self.av_bytes = av_bytes
         self.spouse = spouse
         self.children = children or []
+        self.spouse_uid = spouse_uid
 
 
 def _safe_circle_avatar(img_bytes: bytes | None, size: int) -> Image.Image:
@@ -852,41 +854,51 @@ def _render_tree_card(
         tier_p_y = curr_tier_y + 45
         curr_tier_y += tier_height
 
-        direct_parents = [p for p in parents if getattr(p, "is_direct", True)]
-        step_parents = [p for p in parents if not getattr(p, "is_direct", True)]
-
-        if len(parents) == 1:
-            render_node(cx, tier_p_y, parents[0], size=68, role_label=parents[0].role or "Parent")
-            parent_drop_x = cx
-        elif len(parents) == 2:
-            p1, p2 = parents[0], parents[1]
-            if len(direct_parents) == 1:
-                dir_p = direct_parents[0]
-                step_p = step_parents[0] if step_parents else (p2 if p1 == dir_p else p1)
-                p1_x = cx - 80
-                p2_x = cx + 80
-                render_node(p1_x, tier_p_y, dir_p, size=68, role_label=dir_p.role or "Parent")
-                render_node(p2_x, tier_p_y, step_p, size=64, role_label=step_p.role or "Step-Parent")
-                draw.line([(p1_x + 34, tier_p_y), (cx - 14, tier_p_y)], fill=(255, 255, 255, 75), width=2)
-                draw.line([(cx + 14, tier_p_y), (p2_x - 32, tier_p_y)], fill=(255, 255, 255, 75), width=2)
-                _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
-                parent_drop_x = cx
+        # Group parents into pairs (couples) and singles
+        parent_groups = []
+        visited_p = set()
+        for p in parents:
+            if p.uid in visited_p:
+                continue
+            visited_p.add(p.uid)
+            partner = next(
+                (
+                    other for other in parents
+                    if other.uid not in visited_p and (
+                        getattr(other, "spouse_uid", None) == p.uid
+                        or getattr(p, "spouse_uid", None) == other.uid
+                    )
+                ),
+                None
+            )
+            if partner:
+                visited_p.add(partner.uid)
+                parent_groups.append(("couple", p, partner))
             else:
-                p1_x = cx - 90
-                p2_x = cx + 90
-                render_node(p1_x, tier_p_y, p1, size=68, role_label=p1.role or "Parent")
-                render_node(p2_x, tier_p_y, p2, size=68, role_label=p2.role or "Parent")
-                draw.line([(p1_x + 34, tier_p_y), (cx - 16, tier_p_y)], fill=(255, 255, 255, 75), width=2)
-                draw.line([(cx + 16, tier_p_y), (p2_x - 34, tier_p_y)], fill=(255, 255, 255, 75), width=2)
-                _draw_interlocking_rings(draw, cx, tier_p_y, r=7)
-                parent_drop_x = cx
-        else:
-            p_count = len(parents)
-            span_p = (p_count - 1) * 110
-            start_p_x = cx - span_p // 2
-            for i, p in enumerate(parents):
-                render_node(start_p_x + i * 110, tier_p_y, p, size=64, role_label=p.role or "Parent")
-            parent_drop_x = cx
+                parent_groups.append(("single", p))
+
+        group_widths = [180 if g[0] == "couple" else 110 for g in parent_groups]
+        total_p_span = sum(group_widths) + max(0, len(parent_groups) - 1) * 40
+        curr_p_x = cx - total_p_span // 2
+
+        for i, g in enumerate(parent_groups):
+            gw = group_widths[i]
+            g_center = curr_p_x + gw // 2
+            if g[0] == "single":
+                p = g[1]
+                render_node(g_center, tier_p_y, p, size=68, is_focus=p.is_focus, role_label=p.role or "Parent")
+            else:
+                p1, p2 = g[1], g[2]
+                p1_x = g_center - 45
+                p2_x = g_center + 45
+                render_node(p1_x, tier_p_y, p1, size=68, is_focus=p1.is_focus, role_label=p1.role or "Parent")
+                render_node(p2_x, tier_p_y, p2, size=64, is_focus=p2.is_focus, role_label=p2.role or "Step-Parent")
+                draw.line([(p1_x + 34, tier_p_y), (g_center - 14, tier_p_y)], fill=(255, 255, 255, 75), width=2)
+                draw.line([(g_center + 14, tier_p_y), (p2_x - 32, tier_p_y)], fill=(255, 255, 255, 75), width=2)
+                _draw_interlocking_rings(draw, g_center, tier_p_y, r=7)
+            curr_p_x += gw + 40
+
+        parent_drop_x = cx
 
         if has_grandparents and tier_gp_y:
             draw.line([(cx, tier_gp_y + 44), (cx, tier_p_y - 42)], fill=(255, 255, 255, 45), width=1)
@@ -3007,26 +3019,63 @@ class Social(commands.Cog, name="Social"):
     async def tree(self, ctx: commands.Context, user: discord.Member = None):
         target = user or ctx.author
         fam_name = await self.get_family_name(target.id)
-        visited = set()
 
-        async def fetch_node(uid: int, role: str, is_direct: bool = True, is_focus: bool = False) -> TreeNode:
+        target_m = await self.get_marriage(target.id)
+        tree_spouse_id = target_m[0] if target_m else None
+
+        async def fetch_node(uid: int, fallback_role: str = "Member", is_direct: bool = True) -> TreeNode:
             name, tag = await self._get_user_display(uid, ctx.guild)
-            member_obj = ctx.guild.get_member(uid) or self.bot.get_user(uid) if ctx.guild else self.bot.get_user(uid)
+            member_obj = ctx.guild.get_member(uid) or (self.bot.get_user(uid) if ctx.guild else None)
             if member_obj is None:
                 try:
                     member_obj = await self.bot.fetch_user(uid)
                 except Exception:
                     pass
             av_bytes = await self._fetch_avatar(member_obj)
-            return TreeNode(uid, name, tag, role, is_direct=is_direct, is_focus=is_focus, av_bytes=av_bytes)
 
-        async def fetch_subtree(uid: int, role: str, is_direct: bool = True, is_focus: bool = False, depth: int = 0, max_depth: int = 8, branch_visited: set[int] = None) -> TreeNode:
+            m = await self.get_marriage(uid)
+            sp_uid = m[0] if m else None
+
+            is_focus = (uid == target.id)
+            if is_focus:
+                role = "Focus"
+            elif uid == tree_spouse_id:
+                role = "Spouse"
+            else:
+                rel = await self.resolve_relationship(target.id, uid, mode="combined")
+                if rel in ("Self", "Unrelated", "Extended Family"):
+                    role = fallback_role
+                elif rel == "Married (Spouse)":
+                    role = "Spouse"
+                elif rel in ("Sibling-in-law", "Child-in-law"):
+                    role = "In-law"
+                elif rel == "Parent-in-law":
+                    role = "Parent-in-law"
+                else:
+                    role = rel
+
+            return TreeNode(
+                uid, name, tag, role,
+                is_direct=is_direct,
+                is_focus=is_focus,
+                av_bytes=av_bytes,
+                spouse_uid=sp_uid
+            )
+
+        async def fetch_subtree(
+            uid: int,
+            fallback_role: str = "Member",
+            is_direct: bool = True,
+            depth: int = 0,
+            max_depth: int = 8,
+            branch_visited: set[int] = None
+        ) -> TreeNode:
             if branch_visited is None:
                 branch_visited = set()
             branch_visited = branch_visited.copy()
             branch_visited.add(uid)
 
-            node = await fetch_node(uid, role, is_direct=is_direct, is_focus=is_focus)
+            node = await fetch_node(uid, fallback_role=fallback_role, is_direct=is_direct)
 
             if depth >= max_depth:
                 return node
@@ -3036,7 +3085,11 @@ class Social(commands.Cog, name="Social"):
             spouse_id = m[0] if m else None
             if spouse_id and spouse_id not in branch_visited:
                 branch_visited.add(spouse_id)
-                node.spouse = await fetch_node(spouse_id, "Spouse" if is_focus else "In-law", is_direct=False, is_focus=False)
+                node.spouse = await fetch_node(
+                    spouse_id,
+                    fallback_role="Spouse" if node.is_focus else "In-law",
+                    is_direct=False
+                )
 
             # Union children of user AND their spouse
             child_ids = await self.get_children(uid)
@@ -3049,110 +3102,146 @@ class Social(commands.Cog, name="Social"):
             if unvisited_children:
                 child_tasks = []
                 for cid in unvisited_children:
-                    if is_focus and depth == 0:
-                        c_role = "Child"
-                    elif is_focus and depth == 1:
-                        c_role = "Grandchild"
-                    elif not is_focus and depth == 0:
-                        c_role = "Niece/Nephew"
-                    else:
-                        c_role = "Descendant"
-                    child_tasks.append(fetch_subtree(cid, c_role, is_direct=True, is_focus=False, depth=depth + 1, max_depth=max_depth, branch_visited=branch_visited))
+                    child_tasks.append(
+                        fetch_subtree(
+                            cid,
+                            fallback_role="Child",
+                            is_direct=True,
+                            depth=depth + 1,
+                            max_depth=max_depth,
+                            branch_visited=branch_visited
+                        )
+                    )
                 node.children = list(await asyncio.gather(*child_tasks))
 
             return node
 
-        # 1. Parents, Step-Parents & In-law Parents
-        direct_parent_ids = await self.get_parents(target.id)
-        parent_tasks = []
-        step_parent_ids = []
-        in_law_parent_ids = []
-        visited_parents = set()
+        # 1. Discover all parent nodes (direct, step, in-law)
+        direct_parents = await self.get_parents(target.id)
+        parent_set = set(direct_parents)
+        for pid in direct_parents:
+            pm = await self.get_marriage(pid)
+            if pm:
+                parent_set.add(pm[0])
 
-        for pid in direct_parent_ids:
-            if pid not in visited_parents:
-                parent_tasks.append(fetch_node(pid, "Parent", is_direct=True))
-                visited_parents.add(pid)
-            p_m = await self.get_marriage(pid)
-            if p_m and p_m[0] not in direct_parent_ids and p_m[0] not in visited_parents:
-                parent_tasks.append(fetch_node(p_m[0], "Step-Parent", is_direct=False))
-                step_parent_ids.append(p_m[0])
-                visited_parents.add(p_m[0])
-
-        # Spouse's parents as in-laws
-        target_m = await self.get_marriage(target.id)
-        tree_spouse_id = target_m[0] if target_m else None
         if tree_spouse_id:
-            spouse_parent_ids = await self.get_parents(tree_spouse_id)
-            for sp_pid in spouse_parent_ids:
-                if sp_pid not in visited_parents and sp_pid != target.id:
-                    parent_tasks.append(fetch_node(sp_pid, "Parent-in-law", is_direct=False))
-                    in_law_parent_ids.append(sp_pid)
-                    visited_parents.add(sp_pid)
-                # Spouse's parent's spouse (step-in-law)
+            sp_parents = await self.get_parents(tree_spouse_id)
+            parent_set.update(sp_parents)
+            for sp_pid in sp_parents:
                 sp_pm = await self.get_marriage(sp_pid)
-                if sp_pm and sp_pm[0] not in spouse_parent_ids and sp_pm[0] not in visited_parents and sp_pm[0] != target.id and sp_pm[0] != tree_spouse_id:
-                    parent_tasks.append(fetch_node(sp_pm[0], "Parent-in-law", is_direct=False))
-                    in_law_parent_ids.append(sp_pm[0])
-                    visited_parents.add(sp_pm[0])
+                if sp_pm:
+                    parent_set.add(sp_pm[0])
 
-        parent_nodes = await asyncio.gather(*parent_tasks) if parent_tasks else []
-
-        # 2. Focus Node Cluster (and all its descendants recursively)
-        focus_node = await fetch_subtree(target.id, "Focus", is_direct=True, is_focus=True, depth=0)
-
-        # 3. Direct Siblings, Step-Siblings & In-law Siblings
-        sibling_ids = await self.get_siblings(target.id)
-        all_sibling_ids = await self.get_all_siblings(target.id)
-        step_sibling_ids = sorted(all_sibling_ids - set(sibling_ids))
-
-        sibling_clusters = []
-        visited_top_siblings = {target.id}
-        if tree_spouse_id:
-            visited_top_siblings.add(tree_spouse_id)
-
-        for sid in sibling_ids:
-            if sid not in visited_top_siblings:
-                visited_top_siblings.add(sid)
-                s_node = await fetch_subtree(sid, "Sibling", is_direct=True, is_focus=False, depth=0)
-                sibling_clusters.append(s_node)
-
-        for ssid in step_sibling_ids:
-            if ssid not in visited_top_siblings:
-                visited_top_siblings.add(ssid)
-                s_node = await fetch_subtree(ssid, "Step-Sibling", is_direct=False, is_focus=False, depth=0)
-                sibling_clusters.append(s_node)
-
-        # Spouse's siblings as in-laws
-        if tree_spouse_id:
-            spouse_all_sibs = await self.get_all_siblings(tree_spouse_id)
-            for in_sib in sorted(spouse_all_sibs):
-                if in_sib not in visited_top_siblings:
-                    visited_top_siblings.add(in_sib)
-                    s_node = await fetch_subtree(in_sib, "In-law", is_direct=False, is_focus=False, depth=0)
-                    sibling_clusters.append(s_node)
-
-        all_sibling_clusters = [focus_node] + sibling_clusters
-
-        # 4. Grandparents (from own parents, step-parents, and in-law parents)
-        grandparent_ids = []
-        visited_gp = set()
-        all_parent_ids = direct_parent_ids + step_parent_ids + in_law_parent_ids
-        for pid in all_parent_ids:
+        # 2. Discover grandparents
+        grandparent_set = set()
+        for pid in parent_set:
             gp_list = await self.get_parents(pid)
+            grandparent_set.update(gp_list)
             for gp in gp_list:
-                if gp not in visited_gp and gp != target.id and gp not in direct_parent_ids and gp not in in_law_parent_ids:
-                    grandparent_ids.append(gp)
-                    visited_gp.add(gp)
+                gp_m = await self.get_marriage(gp)
+                if gp_m:
+                    grandparent_set.add(gp_m[0])
 
-        grandparent_nodes = await asyncio.gather(*[fetch_node(gpid, "Grandparent") for gpid in grandparent_ids]) if grandparent_ids else []
+        grandparent_set.discard(target.id)
+        if tree_spouse_id:
+            grandparent_set.discard(tree_spouse_id)
+
+        # 3. Discover co-roots (if target is at root generation)
+        co_root_parents = set()
+        if not parent_set and not grandparent_set:
+            target_children = await self.get_children(target.id)
+            if tree_spouse_id:
+                for sc in await self.get_children(tree_spouse_id):
+                    if sc not in target_children:
+                        target_children.append(sc)
+            for c in target_children:
+                cm = await self.get_marriage(c)
+                if cm:
+                    c_in_law_parents = await self.get_parents(cm[0])
+                    co_root_parents.update(c_in_law_parents)
+                    for cp in c_in_law_parents:
+                        cpm = await self.get_marriage(cp)
+                        if cpm:
+                            co_root_parents.add(cpm[0])
+
+        # 4. Assemble Top Tier (roots) and Middle Tier (sibling clusters)
+        root_nodes = []
+        middle_cluster_ids = []
+
+        if grandparent_set:
+            # Target is Generation 2 (Grandchild, e.g. Tsuki, Sanskari)
+            root_ancestor_ids = sorted(grandparent_set)
+            root_nodes = await asyncio.gather(*[fetch_node(gpid, fallback_role="Grandparent") for gpid in root_ancestor_ids])
+
+            seen_middle = set()
+            for gpid in root_ancestor_ids:
+                c_list = await self.get_children(gpid)
+                for c in c_list:
+                    for sib in await self.get_all_siblings(c):
+                        if sib not in seen_middle and sib not in grandparent_set:
+                            seen_middle.add(sib)
+                            middle_cluster_ids.append(sib)
+
+        elif parent_set:
+            # Target is Generation 1 (Sibling/In-law, e.g. Tempest, Yama, Humrings, Sicko)
+            root_ancestor_ids = sorted(parent_set)
+            root_nodes = await asyncio.gather(*[fetch_node(pid, fallback_role="Parent") for pid in root_ancestor_ids])
+
+            seen_middle = set()
+            for pid in root_ancestor_ids:
+                c_list = await self.get_children(pid)
+                for c in c_list:
+                    for sib in await self.get_all_siblings(c):
+                        if sib not in seen_middle and sib not in parent_set:
+                            seen_middle.add(sib)
+                            middle_cluster_ids.append(sib)
+
+        elif co_root_parents:
+            # Target is Root with children connected to another dynasty (e.g. Mikey)
+            all_roots = sorted({target.id} | co_root_parents)
+            root_nodes = await asyncio.gather(*[fetch_node(r, fallback_role="Parent" if r == target.id else "In-law") for r in all_roots])
+
+            seen_middle = set()
+            for r in all_roots:
+                c_list = await self.get_children(r)
+                for c in c_list:
+                    for sib in await self.get_all_siblings(c):
+                        if sib not in seen_middle and sib not in all_roots:
+                            seen_middle.add(sib)
+                            middle_cluster_ids.append(sib)
+
+        else:
+            # Single root / independent user
+            middle_cluster_ids = [target.id]
+
+        # De-duplicate couples in middle_cluster_ids so each couple is 1 cluster
+        sibling_cluster_ids = []
+        cluster_seen = set()
+        for mid in middle_cluster_ids:
+            if mid in cluster_seen:
+                continue
+            cluster_seen.add(mid)
+            m = await self.get_marriage(mid)
+            if m:
+                cluster_seen.add(m[0])
+            sibling_cluster_ids.append(mid)
+
+        if not sibling_cluster_ids:
+            sibling_cluster_ids = [target.id]
+
+        sibling_clusters = await asyncio.gather(
+            *[fetch_subtree(cid, fallback_role="Sibling") for cid in sibling_cluster_ids]
+        )
+
+        focus_avatar = await self._fetch_avatar(target)
+        focus_stub = TreeNode(target.id, target.display_name, "", "Focus", is_focus=True, av_bytes=focus_avatar)
 
         card_buf = await asyncio.to_thread(
             _render_tree_card,
-            focus_node,
-            list(parent_nodes),
-            list(grandparent_nodes),
-            all_sibling_clusters,
+            focus_stub,
+            list(root_nodes),
+            [],
+            list(sibling_clusters),
             fam_name,
         )
         file = discord.File(card_buf, filename="tree.png")
