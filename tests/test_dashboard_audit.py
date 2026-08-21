@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from dashboard import config
 from dashboard.app import create_app
 from dashboard.auth import session_value
-from utils import log_audit
+from utils import log_audit, save_json
 
 CREATOR = 123456789
 
@@ -15,6 +15,7 @@ def test_audit_page_shows_entries(tmp_path, monkeypatch):
     afile = str(tmp_path / "a.json")
     monkeypatch.setattr("utils.AUDIT_FILE", afile)  # log_audit writes here
     monkeypatch.setattr("dashboard.app.AUDIT_FILE", afile)  # route reads here
+    save_json(afile, [])  # seed: unknown paths default to {} not []
     log_audit("dashboard.test", 0, CREATOR, "probe-entry")
     c = TestClient(create_app(bot=MagicMock()))
     c.cookies.set(config.SESSION_COOKIE, session_value(CREATOR))
