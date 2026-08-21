@@ -15,8 +15,9 @@ class _RingHandler(logging.Handler):
 
 
 def attach_log_ring(capacity: int = 500) -> None:
-    global _attached
-    _ring.maxlen = capacity
+    global _ring, _attached
+    if _ring.maxlen != capacity:
+        _ring = deque(_ring, maxlen=capacity)
     if not _attached:
         h = _RingHandler()
         h.setFormatter(
