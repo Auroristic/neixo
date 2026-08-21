@@ -137,3 +137,15 @@ All persistent data lives in `data/bot.db` (SQLite). Legacy JSON files in `data/
 - Slash commands also available (`/play`, `/skip`, `/help`, etc.)
 - Cogs loaded dynamically from `cogs/` and `cogs/events/`
 - Keep `.env` and `data/` out of version control
+
+## 🖥️ Web Dashboard
+
+Single-admin control panel embedded in the bot process (`dashboard/`, FastAPI + uvicorn on `127.0.0.1:8765`).
+
+- **Login:** Discord OAuth2 — only `CREATOR_ID` gets in, everyone else hits a 403 wall
+- **See:** live stats (uptime/latency/RAM/guilds), cog health, per-guild settings, warnings, confessions, leaderboards, giveaways, reminders, audit log
+- **Do:** reload/unload cogs, stream live logs, restart the bot, delete warns/confessions, edit XP
+
+Env vars (see `.env.example`): `DASHBOARD_SECRET`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`. Public access goes through Caddy (auto-HTTPS) → `127.0.0.1:8765`.
+
+Tests: `pytest tests/test_dashboard_*.py` · every write action is audited to the in-app audit log.
