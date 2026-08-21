@@ -14,7 +14,7 @@ def overview_stats(bot) -> dict:
     uptime_s = max(0.0, (now - bot.start_time).total_seconds())
     loaded = set(bot.extensions.keys())
     cogs = [
-        {"name": name, "loaded": f"cogs.{name}" in loaded}
+        {"name": name, "loaded": f"cogs.{name.lower()}" in loaded}
         for name in sorted(bot.cogs.keys())
     ]
     return {
