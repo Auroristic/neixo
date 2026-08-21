@@ -1,7 +1,16 @@
 # dashboard/app.py
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from cogs.warns import WARNS_FILE
+from utils import (
+    AUDIT_FILE,
+    CONFESSIONS_FILE,
+    load_json,
+    log_audit,
+    save_json,
+)
 
 from . import config
 from .auth import NotAuthenticatedError
@@ -151,6 +160,79 @@ def create_app(bot=None) -> FastAPI:
                 "prefix_whitelist": gc.get("whitelist", []),
             },
         )
+
+    # ── Moderation ───────────────────────────────────────────
+    @router.get("/moderation")
+    async def moderation(request: Request, uid: int = Depends(auth.require_admin)):
+        warns = load_json(WARNS_FILE) or {}
+        confs = load_json(CONFESSIONS_FILE) or {}
+        warn_rows = []
+        for gid, users in warns.items():
+            for wid, entries in (users or {}).items():
+                for i, e in enumerate(entries or []):
+                    warn_rows.append(
+                        {
+                            "guild_id": gid,
+                            "user_id": wid,
+                            "idx": i,
+                            "reason": (e or {}).get("reason", "?"),
+                            "when": str((e or {}).get("timestamp", "?")),
+                        }
+                    )
+        conf_rows = [
+            {
+                "key": k,
+                "text": (v or {}).get("text", ""),
+                "when": str((v or {}).get("timestamp", "")),
+                "replies": len((v or {}).get("replies", [])),
+            }
+            for k, v in confs.items()
+        ]
+        names = {g.id: g.name for g in app.state.bot.guilds}
+        return app.state.templates.TemplateResponse(
+            request,
+            "moderation.html",
+            {
+                "warn_rows": warn_rows,
+                "conf_rows": conf_rows,
+                "names": names,
+                "csrf": auth.csrf_token(uid),
+            },
+        )
+
+    @router.post("/moderation/warns/delete")
+    async def del_warn(
+        uid: int = Depends(auth.require_admin),
+        guild_id: str = Form(""),
+        user_id: str = Form(""),
+        idx: int = Form(-1),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        warns = load_json(WARNS_FILE) or {}
+        entries = warns.get(guild_id, {}).get(user_id, [])
+        if 0 <= idx < len(entries):
+            removed = entries.pop(idx)
+            warns.setdefault(guild_id, {})[user_id] = entries
+            save_json(WARNS_FILE, warns)
+            log_audit("dashboard.warn_delete", guild_id, uid, f"{user_id}: {removed}")
+        return RedirectResponse("/moderation", status_code=303)
+
+    @router.post("/moderation/confessions/delete")
+    async def del_conf(
+        uid: int = Depends(auth.require_admin),
+        key: str = Form(""),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        confs = load_json(CONFESSIONS_FILE) or {}
+        if key in confs:
+            confs.pop(key)
+            save_json(CONFESSIONS_FILE, confs)
+            log_audit("dashboard.confession_delete", 0, uid, key)
+        return RedirectResponse("/moderation", status_code=303)
 
     app.include_router(router)
     return app

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Moderation{% endblock %}
+{% block content %}
+<h1>Moderation</h1>
+<p class="sub">deletions are permanent and audited</p>
+
+<h1 style="font-size:18px">Warnings <span class="pill">{{ warn_rows|length }}</span></h1>
+<table>
+  <tr><th>Guild</th><th>User</th><th>Reason</th><th>When</th><th></th></tr>
+  {% for w in warn_rows %}
+  <tr>
+    <td>{{ names.get(w.guild_id|int, w.guild_id) }}</td>
+    <td><code>{{ w.user_id }}</code></td>
+    <td>{{ w.reason }}</td>
+    <td>{{ w.when[:10] }}</td>
+    <td>
+      <form class="inline-form" method="post" action="/moderation/warns/delete">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="guild_id" value="{{ w.guild_id }}">
+        <input type="hidden" name="user_id" value="{{ w.user_id }}">
+        <input type="hidden" name="idx" value="{{ w.idx }}">
+        <button class="btn danger">delete</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="5">no warnings</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Confessions <span class="pill">{{ conf_rows|length }}</span></h1>
+<table>
+  <tr><th>Text</th><th>Replies</th><th>When</th><th></th></tr>
+  {% for cf in conf_rows %}
+  <tr>
+    <td>{{ cf.text[:80] }}</td>
+    <td>{{ cf.replies }}</td>
+    <td>{{ cf.when[:10] }}</td>
+    <td>
+      <form class="inline-form" method="post" action="/moderation/confessions/delete">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="key" value="{{ cf.key }}">
+        <button class="btn danger">delete</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="4">no confessions</td></tr>{% endfor %}
+</table>
+{% endblock %}
