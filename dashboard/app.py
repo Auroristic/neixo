@@ -108,10 +108,14 @@ def create_app(bot=None) -> FastAPI:
         resp.delete_cookie(config.SESSION_COOKIE)
         return resp
 
-    # ── Temporary root until the overview page lands ─────────
+    # ── Pages ────────────────────────────────────────────────
+    from .stats import overview_stats
+
     @router.get("/")
-    async def root():
-        raise NotAuthenticatedError()
+    async def overview(request: Request, uid: int = Depends(auth.require_admin)):
+        return app.state.templates.TemplateResponse(
+            request, "overview.html", {"stats": overview_stats(app.state.bot)}
+        )
 
     app.include_router(router)
     return app
