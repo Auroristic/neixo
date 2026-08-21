@@ -265,5 +265,69 @@ def create_app(bot=None) -> FastAPI:
             log_audit("dashboard.xp_set", guild_id, uid, f"{user_id}: xp={xp} lvl={level}")
         return RedirectResponse("/data", status_code=303)
 
+    # ── Admin ────────────────────────────────────────────────
+    import asyncio
+    import re as _re
+    import subprocess
+
+    from . import config as cfg
+    from .logs import attach_log_ring, recent_logs
+
+    attach_log_ring()
+    EXT_RE = _re.compile(r"^cogs\.[a-z_]+$")
+
+    @router.get("/admin")
+    async def admin_page(request: Request, uid: int = Depends(auth.require_admin)):
+        exts = sorted(app.state.bot.extensions.keys()) if app.state.bot else []
+        return app.state.templates.TemplateResponse(
+            request,
+            "admin.html",
+            {"exts": exts, "csrf": auth.csrf_token(uid)},
+        )
+
+    @router.post("/admin/cogs")
+    async def admin_cogs(
+        uid: int = Depends(auth.require_admin),
+        ext: str = Form(""),
+        action: str = Form(""),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        if not EXT_RE.match(ext) or action not in {"load", "unload", "reload"}:
+            raise HTTPException(status_code=400, detail="bad input")
+        fn = {
+            "load": app.state.bot.load_extension,
+            "unload": app.state.bot.unload_extension,
+            "reload": app.state.bot.reload_extension,
+        }[action]
+        try:
+            await fn(ext)
+            result = f"OK {action} {ext}"
+        except Exception as e:
+            result = f"FAIL {e}"
+        log_audit("dashboard.cog_" + action, 0, uid, f"{ext}: {result}")
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/admin?msg={quote(result)}", status_code=303)
+
+    @router.post("/admin/restart")
+    async def admin_restart(
+        uid: int = Depends(auth.require_admin), csrf: str = Form("")
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        log_audit("dashboard.restart", 0, uid, cfg.RESTART_CMD)
+
+        def _kick():
+            subprocess.Popen(cfg.RESTART_CMD.split(), start_new_session=True)
+
+        asyncio.get_running_loop().call_later(1.0, _kick)
+        return RedirectResponse("/admin?msg=restarting", status_code=303)
+
+    @router.get("/admin/logs/recent")
+    async def logs_recent(n: int = 200, uid: int = Depends(auth.require_admin)):
+        return JSONResponse({"lines": recent_logs(min(n, 500))})
+
     app.include_router(router)
     return app
