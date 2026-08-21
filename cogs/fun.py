@@ -10,6 +10,7 @@ from discord.ext import commands
 
 from utils import (
     CONFIG_FILE,
+    CREATOR_ID,
     DATA_DIR,
     get_embed_color,
     help_meta,
@@ -143,7 +144,9 @@ _STUTTER_RE = _re.compile(r"\b([a-zA-Z])([a-zA-Z]{2,})\b")
 _BANG_RE    = _re.compile(r"!+")
 _Q_RE       = _re.compile(r"\?+")
 _PROTECT_RE = _re.compile(r"<a?:\w+:\d+>|<@[!&]?\d+>|<#\d+>|https?://\S+")
-_TOKEN_RE   = _re.compile(r"\x00(\d+)\x00")
+# use private use unicode sentinel to avoid collision with real \x00 in text
+_SENTINEL = "\uE000"
+_TOKEN_RE   = _re.compile(r"\uE000(\d+)\uE000")
 
 _BANGS  = ["!!", " >w<!!", "!!~", " >////<!", " uwu!!"]
 _QS     = [" owo?", " uwu?", " nya~?", " >w<?"]
@@ -177,7 +180,10 @@ def _uwufy(text: str) -> str:
     stash = []
     def _hold(m):
         stash.append(m.group(0))
-        return f"\x00{len(stash) - 1}\x00"
+        return f"{_SENTINEL}{len(stash) - 1}{_SENTINEL}"
+    # if text already contains sentinel, escape it to avoid collision
+    if _SENTINEL in text:
+        text = text.replace(_SENTINEL, "")
     text = _PROTECT_RE.sub(_hold, text)
 
     text = _WORD_RE.sub(_word_sub, text)
@@ -226,9 +232,42 @@ async def _get_or_make_webhook(
     except Exception as e:
         log.warning(f"avatar download error: {e}")
 
-    new_wh = await channel.create_webhook(
-        name=member.display_name, avatar=avatar_bytes
-    )
+    # Check webhook limit (15 per channel)
+    try:
+        existing = await channel.webhooks()
+        if len(existing) >= 15:
+            # try to reuse an existing webhook owned by the bot if possible
+            bot_wh = next((w for w in existing if w.user and w.user.id == channel.guild.me.id), None)
+            if bot_wh:
+                _webhooks[key] = bot_wh
+                _save_state()
+                return bot_wh
+            raise discord.HTTPException(None, "Maximum webhooks (15) reached in this channel")
+    except discord.Forbidden:
+        pass
+    except discord.HTTPException as e:
+        if "30007" in str(e) or "Maximum" in str(e):
+            log.warning(f"webhook limit hit in {channel.id}: {e}")
+            raise
+        # otherwise proceed to creation
+
+    try:
+        new_wh = await channel.create_webhook(
+            name=member.display_name, avatar=avatar_bytes
+        )
+    except discord.HTTPException as e:
+        if "30007" in str(e) or "maximum" in str(e).lower():
+            # fallback: try to reuse any bot webhook
+            try:
+                existing = await channel.webhooks()
+                bot_wh = next((w for w in existing if w.user and w.user.id == channel.guild.me.id), None)
+                if bot_wh:
+                    _webhooks[key] = bot_wh
+                    _save_state()
+                    return bot_wh
+            except Exception:
+                pass
+        raise
     _webhooks[key] = new_wh
     _save_state()  # persist the new webhook url
     return new_wh
@@ -244,21 +283,27 @@ class FunCog(commands.Cog, name="Fun"):
         _load_state(self.bot)
 
     async def cog_unload(self):
-        for wh in _webhooks.values():
+        # Do NOT delete persistent webhooks on unload; just clear in-memory cache
+        _webhooks.clear()
+        # keep _lock_scopes as persisted state, do not clear? original cleared but that loses runtime state; keep for persistence
+        # But we clear after save? The original cleared scopes which is wrong; we should not clear scopes on unload
+        # Just close session
+        if self.session:
             try:
-                await wh.delete()
+                await self.session.close()
             except Exception:
                 pass
-        _lock_scopes.clear()
-        _webhooks.clear()
-        if self.session:
-            await self.session.close()
+            self.session = None
 
     async def _gc_webhooks_for(self, user_id: int) -> None:
         """Delete cached webhooks the user no longer needs after a scope change."""
-        scope = _lock_scopes.get(user_id)
-        keep_all = bool(scope and scope.get("all"))
-        keep_channels = scope.get("channels", set()) if scope else set()
+        # Fix: keys are (gid, uid) tuples, not just user_id
+        # Collect all scopes for this user across guilds
+        relevant_scopes = [scope for (gid, uid), scope in _lock_scopes.items() if uid == user_id]
+        keep_all = any(s.get("all") for s in relevant_scopes)
+        keep_channels: set[int] = set()
+        for s in relevant_scopes:
+            keep_channels.update(s.get("channels", set()))
 
         keys = [k for k in list(_webhooks) if k[0] == user_id]
         for k in keys:
@@ -283,7 +328,7 @@ class FunCog(commands.Cog, name="Fun"):
             {"name": "target", "type": "user|channel|all|reset", "required": True, "desc": "The member, channel, 'all', or 'reset' to toggle/clear uwulock for."},
             {"name": "channel", "type": "channel", "required": False, "desc": "Specific channel to restrict lock to (when targeting a user)."},
         ],
-        note="Whitelisted / Server Owner only. Webhooks are automatically managed and garbage collected.",
+        note="Whitelisted / Server Owner only. `.uwulock all` is restricted to the server owner (or creator). Webhooks are automatically managed and garbage collected.",
     )
     async def uwulock(
         self,
@@ -322,8 +367,10 @@ class FunCog(commands.Cog, name="Fun"):
                 pass
             return
 
-        # 2. Server-wide toggle
+        # 2. Server-wide toggle — creator or the guild's owner ONLY
         if target_lower in ("all", "server", "guild"):
+            if ctx.author.id != CREATOR_ID and ctx.author.id != ctx.guild.owner_id:
+                return await ctx.send("-# only the server owner can toggle uwulock all")
             if ctx.guild.id in _server_locks:
                 _server_locks.discard(ctx.guild.id)
                 reaction = "<:redlotus:1263556248310386800>"
@@ -457,6 +504,9 @@ class FunCog(commands.Cog, name="Fun"):
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        # webhook guard: avoid infinite loop processing our own uwufied webhook messages
+        if getattr(message, "webhook_id", None) is not None:
+            return
         if message.author.bot or not message.guild:
             return
         if not _is_locked(message.guild.id, message.author.id, message.channel.id):
@@ -466,14 +516,20 @@ class FunCog(commands.Cog, name="Fun"):
         if ctx.valid:
             return
 
-        has_links = any(
-            x in message.content.lower()
-            for x in ("http://", "https://", "discord.gg/", "tenor", "giphy")
-        )
+        # Tighten link filter to actual URLs, not substrings like "tenor" inside harmless words
+        content_lower = message.content.lower()
+        has_links = bool(_re.search(r"https?://\S+|discord\.gg/\S+|discord\.com/invite/\S+", content_lower))
+        # GIF detection via content_type and filename
         has_gifs = any(
-            att.filename.lower().endswith((".gif", ".webp"))
+            (getattr(att, "content_type", "") or "").lower() in ("image/gif", "image/webp") or att.filename.lower().endswith((".gif", ".webp"))
             for att in message.attachments
         )
+        # also check content_type via header? message attachments already cover
+        # additionally, check for tenor/giphy links as urls, not bare words
+        if not has_links and not has_gifs:
+            # check if message contains tenor.com or giphy.com as url
+            if _re.search(r"(tenor\.com|giphy\.com)/\S+", content_lower):
+                has_links = True
         has_stickers = bool(message.stickers)
 
         if has_links or has_gifs or has_stickers:
@@ -509,6 +565,7 @@ class FunCog(commands.Cog, name="Fun"):
                 username=message.author.display_name,
                 avatar_url=str(message.author.display_avatar.url),
                 files=files if files else discord.utils.MISSING,
+                allowed_mentions=discord.AllowedMentions.none(),
             )
             await message.delete()
         except Exception as e:

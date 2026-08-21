@@ -11,10 +11,55 @@
 </div>
 
 <h1 style="margin-top:32px;font-size:18px">Settings</h1>
+
+<div style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Whitelist</div>
 <table>
-  <tr><th>Setting</th><th>Value</th></tr>
-  <tr><td>AI channels</td><td>{% for c in ai_channels %}<code>{{ c }}</code> {% else %}none{% endfor %}</td></tr>
-  <tr><td>Whitelist</td><td>{% for w in prefix_whitelist %}<code>{{ w }}</code> {% else %}nobody{% endfor %}</td></tr>
+  <tr><th>User</th><th>ID</th><th></th></tr>
+  {% for w in wl_view %}
+  <tr>
+    <td>{{ w.display }} <span style="color:var(--muted)">{{ w.handle }}</span></td>
+    <td><code>{{ w.id }}</code></td>
+    <td>
+      <form class="inline-form" method="post" action="/guilds/{{ g.id }}/whitelist/del">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="value" value="{{ w.id }}">
+        <button class="ghost">remove</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="3">nobody whitelisted</td></tr>{% endfor %}
+  <tr><td colspan="3">
+    <form class="inline-form" method="post" action="/guilds/{{ g.id }}/whitelist/add">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="value" placeholder="user ID to add" size="22">
+      <button class="btn">add</button>
+    </form>
+  </td></tr>
+</table>
+
+<div style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:18px 0 6px">AI channels</div>
+<table>
+  <tr><th>Channel</th><th>ID</th><th></th></tr>
+  {% for c in ai_channels %}
+  <tr>
+    <td>{% if c.name %}#{{ c.name }}{% else %}<span style="color:var(--muted)">unknown/deleted</span>{% endif %}</td>
+    <td><code>{{ c.id }}</code></td>
+    <td>
+      <form class="inline-form" method="post" action="/guilds/{{ g.id }}/ai_channels/del">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="value" value="{{ c.id }}">
+        <button class="ghost">remove</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="3">none configured</td></tr>{% endfor %}
+  <tr><td colspan="3">
+    <form class="inline-form" method="post" action="/guilds/{{ g.id }}/ai_channels/add">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="value" placeholder="channel ID to add" size="22">
+      <button class="btn">add</button>
+    </form>
+  </td></tr>
 </table>
 
 <h1 style="margin-top:32px;font-size:18px">Top XP</h1>

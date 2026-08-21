@@ -9,7 +9,9 @@ from cogs.giveaways import GIVEAWAYS_FILE
 from cogs.warns import WARNS_FILE
 from utils import (
     AUDIT_FILE,
+    CONFIG_FILE,
     CONFESSIONS_FILE,
+    invalidate_config,
     load_json,
     log_audit,
     save_json,
@@ -180,6 +182,15 @@ def create_app(bot=None) -> FastAPI:
             ).items()
         ]
 
+        def _chan(cid):
+            ch = app.state.bot.get_channel(int(cid))
+            return getattr(ch, "name", None)
+
+        wl_view = []
+        for wid in gc.get("whitelist", []):
+            name, handle = resolve_name(app.state.bot, guild_id, wid)
+            wl_view.append({"id": wid, "display": name, "handle": handle})
+
         return app.state.templates.TemplateResponse(
             request,
             "guild_detail.html",
@@ -187,8 +198,12 @@ def create_app(bot=None) -> FastAPI:
                 "g": g,
                 "channel_count": len(g.channels),
                 "role_count": len(g.roles),
-                "ai_channels": gc.get("ai_channels", []),
-                "prefix_whitelist": gc.get("whitelist", []),
+                "csrf": auth.csrf_token(uid),
+                "ai_channels": [
+                    {"id": c, "name": _chan(c)} for c in gc.get("ai_channels", [])
+                ],
+                "wl_view": wl_view,
+                "prefix_whitelist": [w["id"] for w in wl_view],
                 "warn_rows": warn_rows,
                 "conf_count": len(confs),
                 "conf_latest": [{"text": (c or {}).get("text", "")[:90],
@@ -566,6 +581,57 @@ def create_app(bot=None) -> FastAPI:
         return app.state.templates.TemplateResponse(
             request, "audit.html", {"entries": entries}
         )
+
+    # ── Per-guild list editors (whitelist / ai_channels) ─────
+    def _edit_guild_list(guild_id: int, key: str, value: str, remove: bool) -> str | None:
+        """Mirror admin.py's .whitelist toggle storage. Returns error or None."""
+        config = load_json(CONFIG_FILE)
+        gcfg = config.setdefault(str(guild_id), {})
+        items = [str(v) for v in (gcfg.get(key) or [])]
+        items = list(dict.fromkeys(items))  # normalize like the command does
+        if remove:
+            if value not in items:
+                return "not in list"
+            items.remove(value)
+        else:
+            if value in items:
+                return "already in list"
+            items.append(value)
+        gcfg[key] = items
+        save_json(CONFIG_FILE, config)
+        invalidate_config()
+        return None
+
+    @router.post("/guilds/{guild_id:int}/{key}/add")
+    @router.post("/guilds/{guild_id:int}/{key}/del")
+    async def guild_list_edit(
+        request: Request,
+        guild_id: int,
+        key: str,
+        action: str = None,
+        uid: int = Depends(auth.require_admin),
+        value: str = Form(""),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        if key not in {"whitelist", "ai_channels"}:
+            raise HTTPException(status_code=400, detail="bad key")
+        if not app.state.bot.get_guild(guild_id):
+            raise HTTPException(status_code=404, detail="unknown guild")
+        value = value.strip()
+        remove = request.url.path.endswith("/del")
+        if not value.isdigit():
+            return RedirectResponse(
+                f"/guilds/{guild_id}?msg=FAIL%20need%20a%20numeric%20ID", status_code=303
+            )
+        err = _edit_guild_list(guild_id, key, value, remove)
+        result = "OK" if err is None else f"FAIL {err}"
+        log_audit(f"dashboard.{key}_{ 'del' if remove else 'add' }", guild_id, uid,
+                  f"{result} :: {value}")
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/guilds/{guild_id}?msg={quote(result)}", status_code=303)
 
     app.include_router(router)
     return app
