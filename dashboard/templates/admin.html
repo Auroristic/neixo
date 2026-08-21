@@ -2,9 +2,77 @@
 {% block title %}Admin{% endblock %}
 {% block content %}
 <h1>Admin</h1>
-<p class="sub">cogs · logs · restart</p>
+<p class="sub">identity · rpc · cogs · logs · restart</p>
 
-<h1 style="font-size:18px">Cogs</h1>
+<h1 style="font-size:18px">Bot identity <span class="pill">{{ bot_name }}</span></h1>
+<div class="grid">
+  <div class="card">
+    <div class="stat"><div class="k">Avatar</div></div>
+    {% if avatar_url %}<img class="avatar-preview" src="{{ avatar_url }}" alt="avatar">{% endif %}
+    <form method="post" action="/admin/pfp" style="margin-top:8px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="url" placeholder="image URL (or: reset)" size="24">
+      <button class="btn">set pfp</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="stat"><div class="k">Banner</div></div>
+    {% if banner_url %}<img class="banner-preview" src="{{ banner_url }}" alt="banner">{% endif %}
+    <form method="post" action="/admin/banner" style="margin-top:8px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="url" placeholder="image URL (or: reset)" size="24">
+      <button class="btn">set banner</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="stat"><div class="k">Username</div><div class="v" style="font-size:18px">{{ bot_name }}</div></div>
+    <form method="post" action="/admin/botname" style="margin-top:10px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="name" placeholder="new username (2-32)" size="22">
+      <button class="btn">rename</button>
+    </form>
+  </div>
+</div>
+
+<h1 style="margin-top:32px;font-size:18px">RPC cycler <span class="pill">{{ rpc_entries|length }}/5 · every {{ rpc_interval }}s</span></h1>
+<table>
+  <tr><th>#</th><th>Status text</th><th>Emoji</th><th></th></tr>
+  {% for e in rpc_entries %}
+  <tr>
+    <td>{{ loop.index }}</td>
+    <td>{{ e.name }}</td>
+    <td>{{ e.emoji or "—" }}</td>
+    <td>
+      <form class="inline-form" method="post" action="/admin/rpc/del">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="index" value="{{ loop.index }}">
+        <button class="ghost">remove</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="4">no entries — bot uses its saved presence</td></tr>{% endfor %}
+</table>
+<div class="grid" style="margin-top:14px">
+  <div class="card">
+    <div class="stat"><div class="k">Add entry</div></div>
+    <form method="post" action="/admin/rpc/add" style="margin-top:8px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="text" placeholder="status text" size="26">
+      <input name="emoji" placeholder="emoji (opt.)" size="12">
+      <button class="btn">add</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="stat"><div class="k">Interval</div></div>
+    <form method="post" action="/admin/rpc/interval" style="margin-top:8px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="seconds" value="{{ rpc_interval }}" size="6"> seconds
+      <button class="btn">apply</button>
+    </form>
+  </div>
+</div>
+
+<h1 style="margin-top:32px;font-size:18px">Cogs</h1>
 <table>
   <tr><th>Extension</th><th style="width:260px">actions</th></tr>
   {% for e in exts %}

@@ -11,6 +11,15 @@
   <div class="card stat"><div class="k">Members</div><div class="v">{{ stats.member_total }}</div></div>
   <div class="card stat"><div class="k">Voice</div><div class="v">{{ stats.voice_count }}</div></div>
 </div>
+<h1 style="margin-top:32px;font-size:18px">Lavalink</h1>
+<table>
+  <tr><th>Node</th><th>Status</th><th>Players</th></tr>
+  {% for n in stats.lavalink %}
+  <tr><td>{{ n.name }}</td>
+      <td><span class="pill {{ 'ok' if n.available else 'off' }}">{{ 'connected' if n.available else 'down' }}</span></td>
+      <td>{{ n.players }}</td></tr>
+  {% else %}<tr><td colspan="3">no nodes registered</td></tr>{% endfor %}
+</table>
 <h1 style="margin-top:32px;font-size:18px">Cogs</h1>
 <table>
   <tr><th>Name</th><th>Status</th></tr>

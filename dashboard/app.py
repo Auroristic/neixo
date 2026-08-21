@@ -1,8 +1,11 @@
 # dashboard/app.py
+import logging
+
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from cogs.giveaways import GIVEAWAYS_FILE
 from cogs.warns import WARNS_FILE
 from utils import (
     AUDIT_FILE,
@@ -149,6 +152,34 @@ def create_app(bot=None) -> FastAPI:
         from utils import get_config
 
         gc = get_config().get(str(guild_id), {})
+
+        warns = load_json(WARNS_FILE) or {}
+        warn_rows = []
+        for wid, entries in (warns.get(str(guild_id)) or {}).items():
+            for i, e in enumerate(entries or []):
+                name, handle = resolve_name(app.state.bot, guild_id, wid)
+                warn_rows.append(
+                    {"user_id": wid, "display": name, "handle": handle, "idx": i,
+                     "reason": (e or {}).get("reason", "?"),
+                     "when": str((e or {}).get("timestamp", "?"))[:10]}
+                )
+
+        confs_all = load_json(CONFESSIONS_FILE) or {}
+        confs = [
+            v for v in confs_all.values()
+            if (v or {}).get("guild_id") == str(guild_id)
+        ]
+        confs.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
+
+        giveaways = [
+            {"prize": (gg or {}).get("prize", "?"),
+             "ended": bool((gg or {}).get("ended")),
+             "end_iso": str((gg or {}).get("end_iso", ""))[:16]}
+            for mid, gg in (
+                (load_json(GIVEAWAYS_FILE) or {}).get(str(guild_id)) or {}
+            ).items()
+        ]
+
         return app.state.templates.TemplateResponse(
             request,
             "guild_detail.html",
@@ -158,6 +189,20 @@ def create_app(bot=None) -> FastAPI:
                 "role_count": len(g.roles),
                 "ai_channels": gc.get("ai_channels", []),
                 "prefix_whitelist": gc.get("whitelist", []),
+                "warn_rows": warn_rows,
+                "conf_count": len(confs),
+                "conf_latest": [{"text": (c or {}).get("text", "")[:90],
+                                 "when": str((c or {}).get("timestamp", ""))[:16]}
+                                for c in confs[:5]],
+                "xp_top": _named(app.state.bot, xp_board(guild_id)),
+                "msg_top": _named(app.state.bot, messages_board(guild_id)),
+                "vc_top": [
+                    {**r, "pretty": fmt_hours(r["value"])}
+                    for r in _named(app.state.bot, vc_board(guild_id))
+                ],
+                "bump_top": _named(app.state.bot, bumps_board(guild_id)),
+                "react_top": _named(app.state.bot, reactions_board(guild_id)),
+                "giveaways": giveaways,
             },
         )
 
@@ -235,15 +280,31 @@ def create_app(bot=None) -> FastAPI:
         return RedirectResponse("/moderation", status_code=303)
 
     # ── Data ─────────────────────────────────────────────────
-    from .data_access import giveaways_view, leaderboard, reminders_view, set_xp
+    from .boards import bumps_board, fmt_hours, messages_board, reactions_board, vc_board, xp_board
+    from .data_access import giveaways_view, reminders_view, set_xp
+    from .names import resolve_name
+
+    def _named(bot, rows):
+        for r in rows:
+            gid = r.get("guild_id") or 0
+            r["display"], r["handle"] = resolve_name(bot, gid, r["user_id"])
+        return rows
 
     @router.get("/data")
     async def data_page(request: Request, uid: int = Depends(auth.require_admin)):
+        b = app.state.bot
         return app.state.templates.TemplateResponse(
             request,
             "data.html",
             {
-                "rows": leaderboard(),
+                "rows": _named(b, xp_board()),
+                "msg_rows": _named(b, messages_board()),
+                "vc_rows": [
+                    {**r, "pretty": fmt_hours(r["value"])}
+                    for r in _named(b, vc_board())
+                ],
+                "bump_rows": _named(b, bumps_board()),
+                "react_rows": _named(b, reactions_board()),
                 "giveaways": giveaways_view(),
                 "reminders": reminders_view(),
                 "csrf": auth.csrf_token(uid),
@@ -275,15 +336,6 @@ def create_app(bot=None) -> FastAPI:
 
     attach_log_ring()
     EXT_RE = _re.compile(r"^cogs\.[a-z_]+$")
-
-    @router.get("/admin")
-    async def admin_page(request: Request, uid: int = Depends(auth.require_admin)):
-        exts = sorted(app.state.bot.extensions.keys()) if app.state.bot else []
-        return app.state.templates.TemplateResponse(
-            request,
-            "admin.html",
-            {"exts": exts, "csrf": auth.csrf_token(uid)},
-        )
 
     @router.post("/admin/cogs")
     async def admin_cogs(
@@ -328,6 +380,183 @@ def create_app(bot=None) -> FastAPI:
     @router.get("/admin/logs/recent")
     async def logs_recent(n: int = 200, uid: int = Depends(auth.require_admin)):
         return JSONResponse({"lines": recent_logs(min(n, 500))})
+
+    # ── Bot identity (reuses bot's own .botpfp/.botbanner engines) ──
+    from . import media as media_mod
+
+    async def _admin_page_context():
+        from cogs.profile import rpc as rpc_manager
+
+        b = app.state.bot
+        banner_url = None
+        try:
+            full = await b.fetch_user(b.user.id)
+            if full.banner:
+                banner_url = full.banner.url
+        except Exception:
+            banner_url = getattr(b.user, "banner", None)
+        return {
+            "exts": sorted(b.extensions.keys()),
+            "csrf": None,  # set by caller
+            "bot_name": b.user.name,
+            "avatar_url": b.user.display_avatar.url,
+            "banner_url": banner_url,
+            "rpc_entries": rpc_manager.list_entries(),
+            "rpc_interval": rpc_manager.get_interval(),
+        }
+
+    def _patched_template(request: Request, uid: int, extra: dict):
+        extra["csrf"] = auth.csrf_token(uid)
+        return app.state.templates.TemplateResponse(request, "admin.html", extra)
+
+    @router.get("/admin")
+    async def admin_page(request: Request, uid: int = Depends(auth.require_admin)):
+        try:
+            ctx_data = await _admin_page_context()
+        except Exception:
+            logging.getLogger(__name__).exception("admin context failed")
+            b = app.state.bot
+            ctx_data = {
+                "exts": sorted(b.extensions.keys()) if b else [],
+                "bot_name": "?", "avatar_url": None, "banner_url": None,
+                "rpc_entries": [], "rpc_interval": 5,
+            }
+        return _patched_template(request, uid, ctx_data)
+
+    @router.post("/admin/pfp")
+    async def admin_pfp(
+        request: Request,
+        uid: int = Depends(auth.require_admin),
+        url: str = Form(""),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        reset = url.strip().lower() == "reset" or not url.strip()
+        try:
+            if reset:
+                await app.state.bot.user.edit(avatar=None)
+                result = "OK avatar cleared"
+            else:
+                data = await media_mod.fetch_image(url.strip())
+                if not data:
+                    result = "FAIL couldn't download a valid image"
+                else:
+                    await app.state.bot.user.edit(avatar=data)
+                    result = "OK avatar updated"
+        except Exception as e:
+            result = f"FAIL {e}"
+        log_audit("dashboard.bot_pfp", 0, uid, result)
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/admin?msg={quote(result)}", status_code=303)
+
+    @router.post("/admin/banner")
+    async def admin_banner(
+        request: Request,
+        uid: int = Depends(auth.require_admin),
+        url: str = Form(""),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        reset = url.strip().lower() == "reset" or not url.strip()
+        try:
+            if reset:
+                await app.state.bot.user.edit(banner=None)
+                result = "OK banner cleared"
+            else:
+                data = await media_mod.fetch_image(url.strip())
+                if not data:
+                    result = "FAIL couldn't download a valid image"
+                else:
+                    await app.state.bot.user.edit(banner=data)
+                    result = "OK banner updated"
+        except Exception as e:
+            result = f"FAIL {e}"
+        log_audit("dashboard.bot_banner", 0, uid, result)
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/admin?msg={quote(result)}", status_code=303)
+
+    @router.post("/admin/botname")
+    async def admin_botname(
+        request: Request,
+        uid: int = Depends(auth.require_admin),
+        name: str = Form(""),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        name = name.strip()
+        try:
+            if not (2 <= len(name) <= 32):
+                result = "FAIL name must be 2-32 chars"
+            else:
+                await app.state.bot.user.edit(username=name)
+                result = "OK username updated"
+        except Exception as e:
+            result = f"FAIL {e}"
+        log_audit("dashboard.bot_name", 0, uid, result)
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/admin?msg={quote(result)}", status_code=303)
+
+    # ── RPC cycler (drives the bot's own .rpc engine) ─────────
+    from cogs.profile import rpc as rpc_manager
+
+    @router.post("/admin/rpc/add")
+    async def admin_rpc_add(
+        request: Request,
+        uid: int = Depends(auth.require_admin),
+        text: str = Form(""),
+        emoji: str = Form(""),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        text = text.strip()
+        emoji = emoji.strip() or None
+        if not text:
+            return RedirectResponse("/admin?msg=FAIL%20text%20required", status_code=303)
+        n = rpc_manager.add_entry({"type": "custom", "name": text[:128], "emoji": emoji})
+        result = f"OK entry added (#{n})" if n is not None else "FAIL cap of 5 entries reached"
+        log_audit("dashboard.rpc_add", 0, uid, f"{result} :: {text[:60]}")
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/admin?msg={quote(result)}", status_code=303)
+
+    @router.post("/admin/rpc/del")
+    async def admin_rpc_del(
+        request: Request,
+        uid: int = Depends(auth.require_admin),
+        index: int = Form(0),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        removed = rpc_manager.remove_entry(index)
+        result = f"OK removed {removed.get('name', '?')}" if removed else "FAIL invalid index"
+        log_audit("dashboard.rpc_del", 0, uid, f"#{index}: {result}")
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/admin?msg={quote(result)}", status_code=303)
+
+    @router.post("/admin/rpc/interval")
+    async def admin_rpc_interval(
+        request: Request,
+        uid: int = Depends(auth.require_admin),
+        seconds: int = Form(5),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        applied = rpc_manager.set_interval(seconds)
+        result = f"OK interval = {applied}s"
+        log_audit("dashboard.rpc_interval", 0, uid, result)
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/admin?msg={quote(result)}", status_code=303)
 
     # ── Audit ────────────────────────────────────────────────
     @router.get("/audit")

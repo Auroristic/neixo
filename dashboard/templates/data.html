@@ -2,31 +2,67 @@
 {% block title %}Data{% endblock %}
 {% block content %}
 <h1>Data</h1>
-<p class="sub">leaderboard · giveaways · reminders</p>
+<p class="sub">leaderboards · giveaways · reminders</p>
 
-<h1 style="font-size:18px">Leaderboard</h1>
+<h1 style="font-size:18px">XP leaderboard</h1>
 <table>
-  <tr><th>#</th><th>User</th><th>Guild</th><th>XP</th><th>Level</th><th>Msgs</th><th>edit XP</th></tr>
+  <tr><th>#</th><th>User</th><th>XP</th><th>edit</th></tr>
   {% for r in rows %}
   <tr>
     <td>{{ loop.index }}</td>
-    <td><code>{{ r.user_id }}</code></td>
-    <td>{{ r.guild_id }}</td>
-    <td>{{ r.xp }}</td>
-    <td>{{ r.level }}</td>
-    <td>{{ r.messages }}</td>
+    <td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span> <code>{{ r.user_id }}</code></td>
+    <td>{{ r.value }}</td>
     <td>
       <form class="inline-form" method="post" action="/data/xp">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <input type="hidden" name="user_id" value="{{ r.user_id }}">
-        <input type="hidden" name="guild_id" value="{{ r.guild_id }}">
-        <input name="xp" value="{{ r.xp }}" size="7">
-        <input name="level" value="{{ r.level }}" size="3">
+        <input type="hidden" name="guild_id" value="{{ r.guild_id if r.guild_id is defined else '' }}">
+        <input name="xp" value="{{ r.value }}" size="7">
         <button class="btn">save</button>
       </form>
     </td>
   </tr>
-  {% else %}<tr><td colspan="7">no XP data yet</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="4">no XP data yet</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Messages</h1>
+<table>
+  <tr><th>#</th><th>User</th><th>Messages</th></tr>
+  {% for r in msg_rows %}
+  <tr><td>{{ loop.index }}</td>
+      <td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span></td>
+      <td>{{ r.value }}</td></tr>
+  {% else %}<tr><td colspan="3">no message stats</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Voice time</h1>
+<table>
+  <tr><th>#</th><th>User</th><th>Time</th></tr>
+  {% for r in vc_rows %}
+  <tr><td>{{ loop.index }}</td>
+      <td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span></td>
+      <td>{{ r.pretty }}</td></tr>
+  {% else %}<tr><td colspan="3">no voice stats</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Bumps</h1>
+<table>
+  <tr><th>#</th><th>User</th><th>Bumps</th></tr>
+  {% for r in bump_rows %}
+  <tr><td>{{ loop.index }}</td>
+      <td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span></td>
+      <td>{{ r.value }}</td></tr>
+  {% else %}<tr><td colspan="3">no bump stats</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Reaction usage</h1>
+<table>
+  <tr><th>#</th><th>User</th><th>Reactions</th></tr>
+  {% for r in react_rows %}
+  <tr><td>{{ loop.index }}</td>
+      <td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span></td>
+      <td>{{ r.value }}</td></tr>
+  {% else %}<tr><td colspan="3">no reaction stats</td></tr>{% endfor %}
 </table>
 
 <h1 style="margin-top:32px;font-size:18px">Giveaways <span class="pill">read-only</span></h1>
