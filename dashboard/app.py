@@ -117,5 +117,40 @@ def create_app(bot=None) -> FastAPI:
             request, "overview.html", {"stats": overview_stats(app.state.bot)}
         )
 
+    @router.get("/guilds")
+    async def guilds(request: Request, uid: int = Depends(auth.require_admin)):
+        rows = [
+            {
+                "id": g.id,
+                "name": g.name,
+                "members": g.member_count or 0,
+                "icon": g.icon.url if g.icon else None,
+            }
+            for g in sorted(app.state.bot.guilds, key=lambda x: -(x.member_count or 0))
+        ]
+        return app.state.templates.TemplateResponse(request, "guilds.html", {"rows": rows})
+
+    @router.get("/guilds/{guild_id:int}")
+    async def guild_detail(
+        request: Request, guild_id: int, uid: int = Depends(auth.require_admin)
+    ):
+        g = app.state.bot.get_guild(guild_id)
+        if g is None:
+            raise HTTPException(status_code=404, detail="unknown guild")
+        from utils import get_config
+
+        gc = get_config().get(str(guild_id), {})
+        return app.state.templates.TemplateResponse(
+            request,
+            "guild_detail.html",
+            {
+                "g": g,
+                "channel_count": len(g.channels),
+                "role_count": len(g.roles),
+                "ai_channels": gc.get("ai_channels", []),
+                "prefix_whitelist": gc.get("whitelist", []),
+            },
+        )
+
     app.include_router(router)
     return app
