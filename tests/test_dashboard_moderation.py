@@ -30,7 +30,7 @@ def _client(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.app.CONFESSIONS_FILE", cfile)
     save_json(wfile, WARNS)
     save_json(cfile, CONFS)
-    c = TestClient(create_app(bot=MagicMock()))
+    c = TestClient(create_app(bot=MagicMock()), follow_redirects=False)
     c.cookies.set(config.SESSION_COOKIE, session_value(CREATOR))
     return c, wfile, cfile
 
