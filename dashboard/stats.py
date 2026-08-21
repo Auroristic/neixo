@@ -23,7 +23,7 @@ def overview_stats(bot) -> dict:
         "rss_mb": rss_mb(),
         "guild_count": len(bot.guilds),
         "member_total": sum(g.member_count or 0 for g in bot.guilds),
-        "voice_count": sum(len(g.voice_clients or []) for g in bot.guilds),
+        "voice_count": sum(1 for g in bot.guilds if getattr(g, "voice_client", None)),
         "cogs": cogs,
         "command_usage": load_json("data/command_usage.json") or {},
     }
