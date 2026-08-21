@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ g.name }}{% endblock %}
+{% block content %}
+<h1>{{ g.name }}</h1>
+<p class="sub">guild {{ g.id }} · <a href="/guilds">← all servers</a></p>
+<div class="grid">
+  <div class="card stat"><div class="k">Members</div><div class="v">{{ g.member_count or 0 }}</div></div>
+  <div class="card stat"><div class="k">Channels</div><div class="v">{{ channel_count }}</div></div>
+  <div class="card stat"><div class="k">Roles</div><div class="v">{{ role_count }}</div></div>
+  <div class="card stat"><div class="k">Bot joined</div><div class="v" style="font-size:16px">{{ g.me.joined_at.strftime('%Y-%m-%d') if g.me.joined_at else '?' }}</div></div>
+</div>
+<h1 style="margin-top:32px;font-size:18px">AI channels</h1>
+<table>
+  <tr><th>Channel ID</th></tr>
+  {% for c in ai_channels %}<tr><td><code>{{ c }}</code></td></tr>{% else %}<tr><td>none configured</td></tr>{% endfor %}
+</table>
+<h1 style="margin-top:32px;font-size:18px">Whitelist</h1>
+<table>
+  <tr><th>User ID</th></tr>
+  {% for w in prefix_whitelist %}<tr><td><code>{{ w }}</code></td></tr>{% else %}<tr><td>nobody</td></tr>{% endfor %}
+</table>
+{% endblock %}

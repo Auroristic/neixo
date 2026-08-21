@@ -295,6 +295,14 @@ class Neixo(commands.Bot):
             else:
                 logging.error(f"Failed to sync commands: {e}")
 
+        # ── Web dashboard (never blocks bot startup) ─────────
+        try:
+            from dashboard.runner import start_dashboard
+
+            self._dashboard_task = start_dashboard(self)
+        except Exception:
+            logging.exception("failed to start dashboard")
+
     async def on_ready(self) -> None:
         logging.info(f"Logged in: {self.user} | {self.user.id}")
         try:

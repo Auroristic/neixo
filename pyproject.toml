@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "neixo"
@@ -19,6 +19,11 @@ dependencies = [
     "beautifulsoup4",
     "aiosqlite",
     "syncedlyrics",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "itsdangerous>=2.1",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +31,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.5.0",
+    "httpx>=0.27",
 ]
 
 [tool.ruff]
