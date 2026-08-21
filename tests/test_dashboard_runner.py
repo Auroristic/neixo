@@ -27,9 +27,13 @@ def test_start_dashboard_returns_task(monkeypatch):
     with patch("dashboard.runner.uvicorn") as m:
         m.Server = FakeServer
         m.Config = lambda *a, **kw: kw
-        t = start_dashboard(MagicMock())
-    assert isinstance(t, asyncio.Task)
-    t.cancel()
+
+        async def run():
+            t = start_dashboard(MagicMock())
+            assert isinstance(t, asyncio.Task)
+            t.cancel()
+
+        asyncio.run(run())
 
 
 def test_start_dashboard_never_raises(monkeypatch):
