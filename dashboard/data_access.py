@@ -20,8 +20,10 @@ def leaderboard(limit: int = 50) -> list[dict]:
 def set_xp(user_id: str, guild_id: str, xp: int, level: int) -> bool:
     with _db() as conn:
         cur = conn.execute(
-            "UPDATE user_xp SET xp = ?, level = ? WHERE user_id = ? AND guild_id = ?",
-            (int(xp), int(level), str(user_id), str(guild_id)),
+            "INSERT INTO user_xp (user_id, guild_id, xp, level) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(user_id, guild_id) DO UPDATE SET xp = excluded.xp, "
+            "level = excluded.level",
+            (str(user_id), str(guild_id), int(xp), int(level)),
         )
         return cur.rowcount > 0
 
