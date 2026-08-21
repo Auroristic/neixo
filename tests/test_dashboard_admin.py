@@ -89,9 +89,14 @@ def _rpc_env(tmp_path, monkeypatch):
 
     def load():
         try:
-            return json.loads(store.read_text())
+            raw = json.loads(store.read_text())
         except Exception:
-            return {}
+            raw = {}
+        # mirror cogs.profile._load_rpc normalization
+        return {
+            "entries": list(raw.get("entries", [])),
+            "interval": int(raw.get("interval", 5)),
+        }
 
     def save(state):
         store.write_text(json.dumps(state))
