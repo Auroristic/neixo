@@ -76,3 +76,87 @@ def test_logs_json_requires_auth():
         "/admin/logs/recent"
     )
     assert r.status_code == 303
+
+
+# ── bot identity + RPC ──────────────────────────────────────────
+
+def _rpc_env(tmp_path, monkeypatch):
+    import json
+
+    import cogs.profile as prof
+
+    store = tmp_path / "rpc.json"
+
+    def load():
+        try:
+            return json.loads(store.read_text())
+        except Exception:
+            return {}
+
+    def save(state):
+        store.write_text(json.dumps(state))
+
+    monkeypatch.setattr(prof, "_load_rpc", load)
+    monkeypatch.setattr(prof, "_save_rpc", save)
+    return prof.rpc
+
+
+def _identity_bot():
+    from unittest.mock import MagicMock as M
+
+    b = _bot()
+    b.fetch_user = AsyncMock(return_value=M(banner=None))
+    b.user.name = "xo"
+    b.user.display_avatar.url = "https://cdn.discordapp.com/a.png"
+    b.user.edit = AsyncMock()
+    return b
+
+
+def test_admin_page_shows_identity_and_rpc(tmp_path, monkeypatch):
+    mgr = _rpc_env(tmp_path, monkeypatch)
+    mgr.add_entry({"type": "custom", "name": "vibing", "emoji": None})
+    html = _client(_identity_bot()).get("/admin").text
+    assert "vibing" in html and "Bot identity" in html and "xo" in html
+
+
+def test_pfp_endpoint_updates_avatar(tmp_path, monkeypatch):
+    async def fake_fetch(url, max_bytes=None):
+        return b"png-bytes"
+
+    monkeypatch.setattr("dashboard.media.fetch_image", fake_fetch)
+    b = _identity_bot()
+    r = _client(b).post(
+        "/admin/pfp",
+        data={"url": "https://x/y.png", "csrf": csrf_token(CREATOR)},
+    )
+    assert r.status_code == 303
+    b.user.edit.assert_awaited_with(avatar=b"png-bytes")
+
+
+def test_pfp_reset_clears_avatar(tmp_path, monkeypatch):
+    b = _identity_bot()
+    r = _client(b).post("/admin/pfp", data={"url": "reset", "csrf": csrf_token(CREATOR)})
+    assert r.status_code == 303
+    b.user.edit.assert_awaited_with(avatar=None)
+
+
+def test_rpc_add_and_del(tmp_path, monkeypatch):
+    mgr = _rpc_env(tmp_path, monkeypatch)
+    c = _client(_identity_bot())
+    r = c.post(
+        "/admin/rpc/add",
+        data={"text": "gaming", "emoji": "", "csrf": csrf_token(CREATOR)},
+    )
+    assert r.status_code == 303
+    assert [e["name"] for e in mgr.list_entries()] == ["gaming"]
+    r = c.post("/admin/rpc/del", data={"index": 1, "csrf": csrf_token(CREATOR)})
+    assert r.status_code == 303
+    assert mgr.list_entries() == []
+
+
+def test_rpc_interval(tmp_path, monkeypatch):
+    mgr = _rpc_env(tmp_path, monkeypatch)
+    c = _client(_identity_bot())
+    r = c.post("/admin/rpc/interval", data={"seconds": 30, "csrf": csrf_token(CREATOR)})
+    assert r.status_code == 303
+    assert mgr.get_interval() == 30

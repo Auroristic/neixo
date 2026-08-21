@@ -9,14 +9,70 @@
   <div class="card stat"><div class="k">Roles</div><div class="v">{{ role_count }}</div></div>
   <div class="card stat"><div class="k">Bot joined</div><div class="v" style="font-size:16px">{{ g.me.joined_at.strftime('%Y-%m-%d') if g.me.joined_at else '?' }}</div></div>
 </div>
-<h1 style="margin-top:32px;font-size:18px">AI channels</h1>
+
+<h1 style="margin-top:32px;font-size:18px">Settings</h1>
 <table>
-  <tr><th>Channel ID</th></tr>
-  {% for c in ai_channels %}<tr><td><code>{{ c }}</code></td></tr>{% else %}<tr><td>none configured</td></tr>{% endfor %}
+  <tr><th>Setting</th><th>Value</th></tr>
+  <tr><td>AI channels</td><td>{% for c in ai_channels %}<code>{{ c }}</code> {% else %}none{% endfor %}</td></tr>
+  <tr><td>Whitelist</td><td>{% for w in prefix_whitelist %}<code>{{ w }}</code> {% else %}nobody{% endfor %}</td></tr>
 </table>
-<h1 style="margin-top:32px;font-size:18px">Whitelist</h1>
+
+<h1 style="margin-top:32px;font-size:18px">Top XP</h1>
 <table>
-  <tr><th>User ID</th></tr>
-  {% for w in prefix_whitelist %}<tr><td><code>{{ w }}</code></td></tr>{% else %}<tr><td>nobody</td></tr>{% endfor %}
+  <tr><th>#</th><th>User</th><th>XP</th></tr>
+  {% for r in xp_top %}
+  <tr><td>{{ loop.index }}</td><td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span></td><td>{{ r.value }}</td></tr>
+  {% else %}<tr><td colspan="3">none</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Top messages</h1>
+<table>
+  <tr><th>#</th><th>User</th><th>Messages</th></tr>
+  {% for r in msg_top %}
+  <tr><td>{{ loop.index }}</td><td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span></td><td>{{ r.value }}</td></tr>
+  {% else %}<tr><td colspan="3">none</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Top voice time</h1>
+<table>
+  <tr><th>#</th><th>User</th><th>Time</th></tr>
+  {% for r in vc_top %}
+  <tr><td>{{ loop.index }}</td><td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span></td><td>{{ r.pretty }}</td></tr>
+  {% else %}<tr><td colspan="3">none</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Top bumps</h1>
+<table>
+  <tr><th>#</th><th>User</th><th>Bumps</th></tr>
+  {% for r in bump_top %}
+  <tr><td>{{ loop.index }}</td><td>{{ r.display }} <span style="color:var(--muted)">{{ r.handle }}</span></td><td>{{ r.value }}</td></tr>
+  {% else %}<tr><td colspan="3">none</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Warnings</h1>
+<table>
+  <tr><th>User</th><th>Reason</th><th>When</th></tr>
+  {% for w in warn_rows %}
+  <tr><td>{{ w.display }} <span style="color:var(--muted)">{{ w.handle }}</span></td><td>{{ w.reason }}</td><td>{{ w.when }}</td></tr>
+  {% else %}<tr><td colspan="3">no warnings</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Confessions <span class="pill">{{ conf_count }}</span></h1>
+<table>
+  <tr><th>Text</th><th>When</th></tr>
+  {% for c in conf_latest %}
+  <tr><td>{{ c.text }}</td><td>{{ c.when }}</td></tr>
+  {% else %}<tr><td colspan="2">no confessions</td></tr>{% endfor %}
+</table>
+<p class="sub" style="margin-top:8px">manage (delete) these on the <a href="/moderation">Moderation</a> page</p>
+
+<h1 style="margin-top:32px;font-size:18px">Giveaways</h1>
+<table>
+  <tr><th>Prize</th><th>Status</th><th>Ends</th></tr>
+  {% for gwa in giveaways %}
+  <tr><td>{{ gwa.prize }}</td>
+      <td><span class="pill {{ 'off' if gwa.ended else 'ok' }}">{{ 'ended' if gwa.ended else 'live' }}</span></td>
+      <td>{{ gwa.end_iso }}</td></tr>
+  {% else %}<tr><td colspan="3">none</td></tr>{% endfor %}
 </table>
 {% endblock %}

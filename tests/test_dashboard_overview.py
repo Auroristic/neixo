@@ -15,15 +15,21 @@ CREATOR = 123456789
 def _bot():
     b = MagicMock()
     b.latency = 0.042
+
+    class FakeCog:
+        pass
+
+    FakeCog.__module__ = "cogs.music"
+
     g = MagicMock()
     g.member_count = 10
     g.name = "Test"
     g.id = 1
-    g.voice_clients = []
+    g.voice_client = None
     b.guilds = [g]
     b.start_time = datetime.now(timezone.utc)
     b.extensions = {"cogs.music": None}
-    b.cogs = {"Music": object()}
+    b.cogs = {"Music": FakeCog()}
     return b
 
 
@@ -32,6 +38,7 @@ def test_overview_stats_shape():
     assert s["latency_ms"] == 42
     assert s["guild_count"] == 1
     assert s["member_total"] == 10
+    assert s["voice_count"] == 0
     assert s["cogs"][0]["name"] == "Music"
     assert s["cogs"][0]["loaded"] is True
 
