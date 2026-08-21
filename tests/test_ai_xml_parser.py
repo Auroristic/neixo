@@ -62,5 +62,7 @@ def test_strip_vision_content_helper():
         {"role": "assistant", "content": "hi there"}
     ]
     cleaned = AICog._strip_vision_content(payload)
-    assert cleaned[0]["content"] == "hello"
+    # New behavior preserves text and notes image was stripped for non-vision models
+    assert cleaned[0]["content"].startswith("hello")
+    assert "image was sent" in cleaned[0]["content"]
     assert cleaned[1]["content"] == "hi there"

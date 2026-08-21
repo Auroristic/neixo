@@ -63,8 +63,10 @@ def test_login_rate_limited():
     assert rl.allow("ip2")
 
 
-def test_login_sets_state_cookie_and_redirects_to_discord():
-    r = client().get("/login")
+def test_login_sets_state_cookie_and_redirects_to_discord(monkeypatch):
+    monkeypatch.setattr(config, "DISCORD_CLIENT_ID", "123")
+    monkeypatch.setattr(config, "OAUTH_REDIRECT_URI", "https://x/cb")
+    r = client().get("/login?go=1")
     assert r.status_code == 303
     assert "discord.com/oauth2/authorize" in r.headers["location"]
     assert "state=" in r.headers["location"]

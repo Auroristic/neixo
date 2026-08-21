@@ -21,9 +21,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 def create_app(bot=None) -> FastAPI:
+    from pathlib import Path
+
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.templating import Jinja2Templates
+
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.bot = bot
     app.add_middleware(SecurityHeadersMiddleware)
+
+    base = Path(__file__).parent
+    app.state.templates = Jinja2Templates(directory=str(base / "templates"))
+    app.mount("/static", StaticFiles(directory=str(base / "static")), name="static")
 
     @app.exception_handler(NotAuthenticatedError)
     async def _not_auth(request: Request, exc: NotAuthenticatedError):
@@ -46,10 +55,14 @@ def create_app(bot=None) -> FastAPI:
         return {"user_id": uid}
 
     @router.get("/login")
-    async def login(request: Request):
+    async def login(request: Request, go: str = ""):
         ip = request.client.host if request.client else "?"
-        if not login_limiter.allow(f"login:{ip}"):
+        if not go and not login_limiter.allow(f"login:{ip}"):
             raise HTTPException(status_code=429, detail="slow down")
+        if not (config.DISCORD_CLIENT_ID and config.OAUTH_REDIRECT_URI):
+            return app.state.templates.TemplateResponse(
+                request, "login.html", {"configured": False}
+            )
         state = auth.make_state()
         resp = RedirectResponse(auth.authorize_url(state), status_code=303)
         resp.set_cookie(

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login · Neixo</title><link rel="stylesheet" href="/static/style.css"></head>
+<body class="center">
+  <div class="card login-card">
+    <h1>neixo<span>.</span></h1>
+    {% if configured %}
+      <p>Owner access only.</p>
+      <a class="btn" href="/login?go=1">Login with Discord</a>
+    {% else %}
+      <p>Dashboard OAuth is not configured yet.<br>
+         Set <code>DISCORD_CLIENT_ID</code> and <code>OAUTH_REDIRECT_URI</code> in <code>.env</code>.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

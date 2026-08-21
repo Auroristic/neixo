@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Neixo{% endblock %} · Neixo</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="nav">
+    <div class="brand">neixo<span>.</span></div>
+    <a href="/" class="{{ 'active' if request.url.path == '/' }}">Overview</a>
+    <a href="/guilds" class="{{ 'active' if request.url.path.startswith('/guilds') }}">Servers</a>
+    <a href="/moderation" class="{{ 'active' if request.url.path.startswith('/moderation') }}">Moderation</a>
+    <a href="/data" class="{{ 'active' if request.url.path.startswith('/data') }}">Data</a>
+    <a href="/admin" class="{{ 'active' if request.url.path.startswith('/admin') }}">Admin</a>
+    <a href="/audit" class="{{ 'active' if request.url.path.startswith('/audit') }}">Audit</a>
+    <form method="post" action="/logout"><button class="ghost">Log out</button></form>
+  </aside>
+  <main class="main">{% block content %}{% endblock %}</main>
+</div>
+</body>
+</html>
