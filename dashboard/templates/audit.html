@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Audit{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<p class="sub">latest {{ entries|length }} entries, newest first</p>
+<table>
+  <tr><th>Time (UTC)</th><th>Action</th><th>Guild</th><th>User</th><th>Details</th></tr>
+  {% for e in entries %}
+  <tr>
+    <td>{{ e.timestamp[:19] }}</td>
+    <td><code>{{ e.action }}</code></td>
+    <td>{{ e.guild_id }}</td>
+    <td>{{ e.user_id }}</td>
+    <td>{{ e.details }}</td>
+  </tr>
+  {% else %}<tr><td colspan="5">nothing audited yet</td></tr>{% endfor %}
+</table>
+{% endblock %}

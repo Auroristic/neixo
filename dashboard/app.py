@@ -329,5 +329,14 @@ def create_app(bot=None) -> FastAPI:
     async def logs_recent(n: int = 200, uid: int = Depends(auth.require_admin)):
         return JSONResponse({"lines": recent_logs(min(n, 500))})
 
+    # ── Audit ────────────────────────────────────────────────
+    @router.get("/audit")
+    async def audit_page(request: Request, uid: int = Depends(auth.require_admin)):
+        entries = (load_json(AUDIT_FILE) or [])[-200:]
+        entries.reverse()
+        return app.state.templates.TemplateResponse(
+            request, "audit.html", {"entries": entries}
+        )
+
     app.include_router(router)
     return app
