@@ -149,9 +149,7 @@ def create_app(bot=None) -> FastAPI:
         g = app.state.bot.get_guild(guild_id)
         if g is None:
             raise HTTPException(status_code=404, detail="unknown guild")
-        from utils import get_config
-
-        gc = get_config().get(str(guild_id), {})
+        gc = load_json(CONFIG_FILE).get(str(guild_id), {})
 
         warns = load_json(WARNS_FILE) or {}
         warn_rows = []
