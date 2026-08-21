@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Data{% endblock %}
+{% block content %}
+<h1>Data</h1>
+<p class="sub">leaderboard · giveaways · reminders</p>
+
+<h1 style="font-size:18px">Leaderboard</h1>
+<table>
+  <tr><th>#</th><th>User</th><th>Guild</th><th>XP</th><th>Level</th><th>Msgs</th><th>edit XP</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td>{{ loop.index }}</td>
+    <td><code>{{ r.user_id }}</code></td>
+    <td>{{ r.guild_id }}</td>
+    <td>{{ r.xp }}</td>
+    <td>{{ r.level }}</td>
+    <td>{{ r.messages }}</td>
+    <td>
+      <form class="inline-form" method="post" action="/data/xp">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="user_id" value="{{ r.user_id }}">
+        <input type="hidden" name="guild_id" value="{{ r.guild_id }}">
+        <input name="xp" value="{{ r.xp }}" size="7">
+        <input name="level" value="{{ r.level }}" size="3">
+        <button class="btn">save</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="7">no XP data yet</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Giveaways <span class="pill">read-only</span></h1>
+<table>
+  <tr><th>Prize</th><th>Guild</th><th>Status</th><th>Ends</th></tr>
+  {% for g in giveaways %}
+  <tr>
+    <td>{{ g.prize }}</td>
+    <td>{{ g.guild_id }}</td>
+    <td><span class="pill {{ 'off' if g.ended else 'ok' }}">{{ 'ended' if g.ended else 'live' }}</span></td>
+    <td>{{ g.end_iso[:16] }}</td>
+  </tr>
+  {% else %}<tr><td colspan="4">no giveaways</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:32px;font-size:18px">Reminders <span class="pill">read-only</span></h1>
+<table>
+  <tr><th>User</th><th>Text</th><th>Triggers</th></tr>
+  {% for r in reminders %}
+  <tr>
+    <td><code>{{ r.user_id }}</code></td>
+    <td>{{ r.text[:80] }}</td>
+    <td>{{ r.trigger_iso[:16] }}</td>
+  </tr>
+  {% else %}<tr><td colspan="3">no reminders</td></tr>{% endfor %}
+</table>
+{% endblock %}

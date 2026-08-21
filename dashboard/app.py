@@ -234,5 +234,36 @@ def create_app(bot=None) -> FastAPI:
             log_audit("dashboard.confession_delete", 0, uid, key)
         return RedirectResponse("/moderation", status_code=303)
 
+    # ── Data ─────────────────────────────────────────────────
+    from .data_access import giveaways_view, leaderboard, reminders_view, set_xp
+
+    @router.get("/data")
+    async def data_page(request: Request, uid: int = Depends(auth.require_admin)):
+        return app.state.templates.TemplateResponse(
+            request,
+            "data.html",
+            {
+                "rows": leaderboard(),
+                "giveaways": giveaways_view(),
+                "reminders": reminders_view(),
+                "csrf": auth.csrf_token(uid),
+            },
+        )
+
+    @router.post("/data/xp")
+    async def data_xp(
+        uid: int = Depends(auth.require_admin),
+        user_id: str = Form(""),
+        guild_id: str = Form(""),
+        xp: int = Form(0),
+        level: int = Form(0),
+        csrf: str = Form(""),
+    ):
+        if not auth.check_csrf(uid, csrf):
+            raise HTTPException(status_code=403, detail="bad csrf")
+        if set_xp(user_id, guild_id, xp, level):
+            log_audit("dashboard.xp_set", guild_id, uid, f"{user_id}: xp={xp} lvl={level}")
+        return RedirectResponse("/data", status_code=303)
+
     app.include_router(router)
     return app
