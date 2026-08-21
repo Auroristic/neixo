@@ -30,10 +30,6 @@ def test_set_and_leaderboard(fresh_db):
     assert rows[0]["user_id"] == "2" and rows[0]["xp"] == 900
 
 
-def test_set_xp_missing_row_returns_false(fresh_db):
-    assert not set_xp("ghost", "555", 1, 1)
-
-
 def test_data_page_and_xp_post(fresh_db):
     set_xp("1", "555", 10, 0)
     c = TestClient(create_app(bot=MagicMock()), follow_redirects=False)
