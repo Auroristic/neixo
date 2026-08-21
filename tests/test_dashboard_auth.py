@@ -79,7 +79,7 @@ def test_callback_rejects_bad_state():
 
 @patch("dashboard.auth.fetch_discord_user", new_callable=AsyncMock)
 @patch("dashboard.auth.exchange_code", new_callable=AsyncMock)
-def test_callback_creator_gets_session(mock_fetch, mock_exchange):
+def test_callback_creator_gets_session(mock_exchange, mock_fetch):
     mock_exchange.return_value = "tok"
     mock_fetch.return_value = {"id": str(CREATOR)}
     c = client()
@@ -93,7 +93,7 @@ def test_callback_creator_gets_session(mock_fetch, mock_exchange):
 
 @patch("dashboard.auth.fetch_discord_user", new_callable=AsyncMock)
 @patch("dashboard.auth.exchange_code", new_callable=AsyncMock)
-def test_callback_stranger_gets_403(mock_fetch, mock_exchange):
+def test_callback_stranger_gets_403(mock_exchange, mock_fetch):
     mock_exchange.return_value = "tok"
     mock_fetch.return_value = {"id": "999"}
     c = client()
@@ -104,7 +104,7 @@ def test_callback_stranger_gets_403(mock_fetch, mock_exchange):
 
 @patch("dashboard.auth.fetch_discord_user", new_callable=AsyncMock)
 @patch("dashboard.auth.exchange_code", new_callable=AsyncMock)
-def test_callback_bad_code_gets_502(mock_fetch, mock_exchange):
+def test_callback_bad_code_gets_502(mock_exchange, mock_fetch):
     mock_exchange.return_value = None
     c = client()
     state = make_state()
